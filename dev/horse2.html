@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8"><style>@font-face{font-family:Oswald;src:url(../fonts/oswald.woff2)}body{margin:0;background:#dfe8d9}</style>
+<canvas id="c" width="1800" height="900"></canvas>
+<script type="module">
+import { drawHorse } from '../js/draw/horse.js';
+import { ownerSilks } from '../js/world.js';
+const c = document.getElementById('c'), ctx = c.getContext('2d');
+await document.fonts.load('700 20px Oswald');
+const S = 150;
+const frames = [0.0, 0.2, 0.45, 0.8];
+frames.forEach((ph, k) => {
+  const x = 230 + (k % 3) * 600, y = 420 + Math.floor(k / 3) * 430;
+  ctx.fillStyle = '#b9a07a'; ctx.fillRect(x - 280, y, 560, 5);
+  ctx.save(); ctx.translate(x, y); ctx.scale(S, -S);
+  drawHorse(ctx, { phase: ph, coat: 'bay', marks: { face: 'blaze', socks: [true, false, false, false] }, silks: ownerSilks(3), number: 4, urge: 0 });
+  ctx.restore();
+});
+{ const x = 830, y = 850; ctx.save(); ctx.translate(x, y); ctx.scale(S, -S);
+  drawHorse(ctx, { phase: 0, gait: 'stand', coat: 'chestnut', marks: { face: 'star', socks: [false, true, false, false] }, silks: ownerSilks(7), number: 7 }); ctx.restore(); }
+window.done = true;
+</script>

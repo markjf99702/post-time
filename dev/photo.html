@@ -1,0 +1,26 @@
+<!doctype html><meta charset="utf-8"><style>@font-face{font-family:Oswald;src:url(../fonts/oswald.woff2)}@font-face{font-family:'IBM Plex Sans Condensed';src:url(../fonts/plex-condensed-600.woff2);font-weight:600}body{margin:0;background:#333;display:flex;flex-wrap:wrap;gap:8px;padding:8px}canvas{display:block}</style>
+<script type="module">
+import { createWorld, simulateRace, ownerSilks } from '../js/world.js';
+import { photoFinish } from '../js/draw/photo.js';
+import { drawCircle } from '../js/draw/circle.js';
+await document.fonts.load('600 20px Oswald');
+const w = createWorld('demo', '2026-09-26');
+let shown = 0;
+for (const race of w.cards[0].races) {
+  const run = simulateRace(race, w);
+  const runners = race.entries.map(e => { const h = w.horses[e.hid]; return { number: e.pp, coat: h.coat, marks: h.marks, silks: ownerSilks(h.owner), name: h.name }; });
+  if (shown < 3) {
+    const c = document.createElement('canvas'); c.style.width = '360px'; document.body.appendChild(c);
+    const t0 = performance.now();
+    photoFinish(c, { run, runners, width: 360, height: 220 });
+    console.log('photo ms', performance.now() - t0, 'margin', run.results[1].toPrev);
+    shown++;
+  }
+  if (race.no === 8 || race.no === 1) {
+    const c = document.createElement('canvas'); c.style.width = '360px'; c.style.height = '250px'; document.body.appendChild(c);
+    const win = race.entries[run.results[0].h]; const h = w.horses[win.hid];
+    drawCircle(c, { horse: h, silks: ownerSilks(h.owner), number: win.pp, stakes: race.cls === 'STK', you: race.no === 8, seed: race.seed });
+  }
+}
+window.done = true;
+</script>

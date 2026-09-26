@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8"><style>@font-face{font-family:Oswald;src:url(../fonts/oswald.woff2)}body{margin:0;background:#dfe8d9}</style>
+<canvas id="c" width="1800" height="900"></canvas>
+<script type="module">
+import { drawHorse } from '../js/draw/horse.js';
+import { ownerSilks } from '../js/world.js';
+const c = document.getElementById('c'), ctx = c.getContext('2d');
+await document.fonts.load('700 20px Oswald');
+const coats = ['bay','chestnut','grey','dark bay','black','roan'];
+const S = 55;
+for (let k = 0; k < 12; k++) {
+  const x = 110 + (k % 6) * 290, y = 280 + Math.floor(k / 6) * 260;
+  ctx.fillStyle = '#b9a07a'; ctx.fillRect(x - 140, y, 280, 4);
+  ctx.save(); ctx.translate(x, y); ctx.scale(S, -S);
+  drawHorse(ctx, { phase: k / 12, coat: coats[k % 6], marks: { face: ['blaze','star','none','stripe','snip','none'][k%6], socks: [k%2==0, k%3==0, false, k%4==0] }, silks: ownerSilks(k), number: k + 1, urge: k >= 6 ? 1 : 0 });
+  ctx.restore();
+  ctx.fillStyle = '#333'; ctx.font = '14px sans-serif'; ctx.fillText((k/12).toFixed(2), x - 130, y + 20);
+}
+for (let k = 0; k < 3; k++) {
+  const x = 200 + k * 500, y = 830;
+  ctx.save(); ctx.translate(x, y); ctx.scale(S, -S);
+  drawHorse(ctx, { phase: 0.3 * k, gait: k === 0 ? 'stand' : 'walk', coat: coats[k], marks: { face: 'blaze', socks: [true, false, false, true] }, silks: ownerSilks(20 + k), number: 3, blanket: k === 0 ? { base: '#3f5f2a', flowers: ['#6a4fc9', '#8e7be0', '#4a3aa8', '#ffffff'] } : null });
+  ctx.restore();
+}
+window.done = true;
+</script>

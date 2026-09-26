@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8"><style>@font-face{font-family:Oswald;src:url(../fonts/oswald.woff2)}body{margin:0;background:#222;display:flex;flex-wrap:wrap;gap:6px}canvas{display:block}.w{position:relative}.w span{position:absolute;left:4px;top:2px;color:#fff;font:12px sans-serif;text-shadow:0 0 3px #000}</style>
+<script type="module">
+import { createWorld, simulateRace, ownerSilks } from '../js/world.js';
+import { RaceScene } from '../js/draw/scene.js';
+await document.fonts.load('700 20px Oswald');
+const q = new URLSearchParams(location.search);
+const w = createWorld(q.get('seed') || 'demo', '2026-09-26');
+const race = w.cards[0].races[+(q.get('race') || 1) - 1];
+const run = simulateRace(race, w);
+const runners = race.entries.map(e => { const h = w.horses[e.hid]; return { number: e.pp, coat: h.coat, marks: h.marks, silks: ownerSilks(h.owner), name: h.name }; });
+const W = +(q.get('w') || 390), H = +(q.get('h') || 330);
+const times = (q.get('t') || '0,3,15,40,-8,-2').split(',').map(Number);
+for (const tt of times) {
+  const div = document.createElement('div'); div.className = 'w';
+  const c = document.createElement('canvas'); c.style.width = W + 'px'; c.style.height = H + 'px';
+  div.appendChild(c); document.body.appendChild(div);
+  const sc = new RaceScene(c, { race, run, runners, wx: w.cards[0].wx });
+  const t = tt < 0 ? run.t0 + run.finalTime + tt : tt;
+  sc.draw(t);
+  const m = document.createElement('canvas'); m.width = 120; m.height = 60; m.style.cssText = 'position:absolute;right:6px;top:6px;width:120px;height:60px';
+  div.appendChild(m); sc.drawMap(m.getContext('2d'), 120, 60, t);
+  const s = document.createElement('span'); s.textContent = `R${race.no} ${race.surface} t=${t.toFixed(1)}`; div.appendChild(s);
+}
+window.done = true;
+</script>

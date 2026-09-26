@@ -1,0 +1,15 @@
+{
+  "name": "post-time",
+  "private": true,
+  "type": "module",
+  "description": "A day at the races: read the form, bet the tote, and watch every race from the gate to the wire.",
+  "scripts": {
+    "start": "npx --yes http-server -c-1 -p 8080 .",
+    "test": "node --test test/*.test.mjs && node test/e2e.mjs",
+    "build": "node scripts/build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "upng-js": "^2.1.0"
+  }
+}

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Post Time</title>
+  <meta name="description" content="A day at the races at Larkspur Downs. Read the form, see what the regulars on the forum are betting, play the tote, then watch every race from the gate to the wire. Horses, odds and your bankroll carry over from one race day to the next.">
+  <meta property="og:title" content="Post Time">
+  <meta property="og:description" content="A day at the races: read the form, bet the tote, watch every race from the gate to the wire.">
+  <meta property="og:image" content="https://junkdrawer.works/post-time/og.png">
+  <meta property="og:url" content="https://junkdrawer.works/post-time/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#1f4d3a">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="preload" href="fonts/oswald.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/plex-condensed-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <noscript><p class="noscript">Post Time needs JavaScript to run the races.</p></noscript>
+  <header class="top" id="top">
+    <button class="brand" type="button" data-go="card" aria-label="Back to the race card">
+      <span class="brand-name">Post Time</span>
+      <span class="brand-track">Larkspur Downs</span>
+    </button>
+    <div class="bank" id="bank" aria-live="polite" title="Your bankroll"></div>
+    <button class="menu-btn" type="button" id="menuBtn" aria-label="Menu" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </header>
+  <nav class="menu" id="menu" hidden>
+    <button type="button" data-go="card">Today's card</button>
+    <button type="button" data-go="book">Scrapbook &amp; record</button>
+    <button type="button" data-go="help">How to play</button>
+    <label class="toggle"><input type="checkbox" id="optSound"> Sound</label>
+    <label class="toggle"><input type="checkbox" id="optVoice"> Read the race call aloud</label>
+    <button type="button" id="restart" class="quiet">Start a new meet</button>
+  </nav>
+  <main id="app" class="app"></main>
+  <div class="watch" id="watch" hidden></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
