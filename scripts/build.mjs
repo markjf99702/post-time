@@ -10,6 +10,7 @@ const read = p => readFile(new URL(p, root), 'utf8');
 const result = await build({
   entryPoints: [new URL('js/app.js', root).pathname],
   bundle: true, format: 'iife', minify: true, target: 'es2020', write: false,
+  define: { __SINGLE_FILE__: 'true' },
 });
 const js = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 

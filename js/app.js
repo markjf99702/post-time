@@ -73,8 +73,18 @@ const optSound = document.getElementById('optSound');
 const optVoice = document.getElementById('optVoice');
 optSound.addEventListener('change', () => { game.player.settings.sound = optSound.checked; audio.setSound(optSound.checked); if (optSound.checked) audio.wake(); save(); });
 optVoice.addEventListener('change', () => { game.player.settings.voice = optVoice.checked; audio.setVoice(optVoice.checked); save(); });
-document.getElementById('restart').addEventListener('click', () => {
-  if (!confirm('Start a new meet? A new barn of horses, and your bankroll goes back to $200. Your scrapbook is cleared.')) return;
+// Starting over takes two taps: the first says what it will do.
+const restart = document.getElementById('restart');
+let armed = null;
+restart.addEventListener('click', e => {
+  e.stopPropagation();
+  if (!armed) {
+    restart.textContent = 'Tap again: new horses, $200, empty scrapbook';
+    armed = setTimeout(() => { armed = null; restart.textContent = 'Start a new meet'; }, 4000);
+    return;
+  }
+  clearTimeout(armed); armed = null;
+  restart.textContent = 'Start a new meet';
   closeMenu();
   setup();
 });
@@ -126,6 +136,8 @@ if (load()) {
 
 document.addEventListener('pointerdown', () => { if (game.player?.settings?.sound) audio.wake(); }, { once: true });
 
-if ('serviceWorker' in navigator && window.isSecureContext && location.protocol !== 'file:') {
+// The one-file copy (npm run build) has no service worker to register.
+const singleFile = typeof __SINGLE_FILE__ !== 'undefined';
+if (!singleFile && 'serviceWorker' in navigator && window.isSecureContext && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
