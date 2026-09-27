@@ -57,7 +57,7 @@ export function renderWatch(el, nav, params) {
     h('div', { class: 'w-top', style: { paddingTop: '2px', paddingBottom: '2px' } }, frs),
     order,
     callBox,
-    mineList,
+    ...(mineList ? [mineList] : []), // append() would print a null as "null"
     ctl,
   );
 
