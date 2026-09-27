@@ -1,6 +1,6 @@
 // The race card: today's date and weather, the eight races, and what happened in the ones already run.
 
-import { h, money, cloth } from './dom.js';
+import { h, money, cloth, jdFoot } from './dom.js';
 import { game, card, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay } from '../game.js';
 import { longDate, clockText } from '../world.js';
 import { distanceName } from '../track.js';
@@ -42,7 +42,7 @@ export function renderCard(root, nav) {
       h('button', { class: 'btn ghost', type: 'button', onclick: () => { atm(); nav.refresh(); } }, 'Take out $100'),
     );
   }
-  root.append(foot);
+  root.append(foot, jdFoot());
 }
 
 function raceRow(r, nxt, nav) {

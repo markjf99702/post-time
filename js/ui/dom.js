@@ -39,6 +39,15 @@ export function silksCanvas(silks, px = 30) {
   return c;
 }
 
+// The line every junkdrawer.works project carries: on the race card and in How to play, never over a race.
+export function jdFoot() {
+  return h('footer', { class: 'jd-foot' },
+    h('a', { href: 'https://junkdrawer.works/' }, 'Part of junkdrawer.works'), ' ',
+    h('span', { 'aria-hidden': 'true' }, '·'), ' ',
+    h('a', { href: 'https://junkdrawer.works/privacy.html' }, 'Privacy'),
+  );
+}
+
 export function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); return el; }
 
 export function plural(n, one, many = one + 's') { return `${n} ${n === 1 ? one : many}`; }

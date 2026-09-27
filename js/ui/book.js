@@ -1,6 +1,6 @@
 // Your scrapbook of winner's circle photos, your record at the windows, and how to play.
 
-import { h, money } from './dom.js';
+import { h, money, jdFoot } from './dom.js';
 import { game, START_BANK } from '../game.js';
 import { TIPSTERS } from '../data.js';
 import { longDate } from '../world.js';
@@ -79,6 +79,7 @@ export function renderHelp(root, nav) {
       h('p', {}, "Back the winner and you're in the winner's circle photo. It goes in your scrapbook."),
       h('h3', {}, 'Saving'),
       h('p', {}, 'Everything is saved in this browser: your bankroll, tickets, scrapbook and the whole racing world. Nothing is sent anywhere. It works offline once it has loaded.'),
+      jdFoot(),
     ),
   );
 }
