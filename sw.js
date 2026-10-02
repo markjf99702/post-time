@@ -2,9 +2,9 @@
 // Your bankroll, tickets and the racing world live in localStorage, not here.
 // Network first, so a new version shows up as soon as you're online.
 
-const CACHE = 'post-time-v1'; // bump the number when the file list changes (npm test checks the list)
+const CACHE = 'post-time-v2'; // bump the number when the file list changes (npm test checks the list)
 const SHELL = [
-  './', 'index.html', 'icon.svg', 'icon-192.png', 'manifest.webmanifest',
+  './', 'index.html', 'carry.js', 'icon.svg', 'icon-192.png', 'manifest.webmanifest',
   'css/app.css',
   'fonts/oswald.woff2', 'fonts/plex-condensed-400-italic.woff2', 'fonts/plex-condensed-400.woff2',
   'fonts/plex-condensed-600.woff2',

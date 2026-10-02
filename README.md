@@ -1,6 +1,6 @@
 # Post Time
 
-**Play it: [junkdrawer.works/post-time](https://junkdrawer.works/post-time/)**
+**Play it: [post-time.junkdrawer.works](https://post-time.junkdrawer.works/)**
 
 **A day at the races at Larkspur Downs, a made-up track with eight races every Saturday.** Read the form, look the horses over in the paddock, see who the regulars on the forum like, and buy tickets at the window while the odds move. Then watch the race from the gate to the wire, with a caller, a running order and, when it's close, a photo finish. Your bankroll and the horses carry over from one race day to the next.
 
