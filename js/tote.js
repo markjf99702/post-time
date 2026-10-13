@@ -33,16 +33,24 @@ export function publicWin(tote, frac) {
   return norm(mix).map(p => p * total);
 }
 
+// The public bets the other pools in step with the win pool: for every $100 to win, $46 to place, $34
+// to show, $92 on the exacta and $70 on the trifecta. Your own tickets go only in their own pools.
+const SHARE = { win: 1, place: 0.46, show: 0.34, exacta: 0.92, trifecta: 0.7 };
+
 // Everything the board shows at `frac`, including your own bets.
 export function board(tote, frac, bets = []) {
   const win = publicWin(tote, frac);
-  for (const b of bets) for (const leg of legs(b)) if (leg.pool === 'win') win[leg.sel[0]] += leg.amt;
-  const total = win.reduce((a, b) => a + b, 0);
-  const net = total * (1 - TAKEOUT.win);
+  const pub = win.reduce((a, b) => a + b, 0);
+  const pools = Object.fromEntries(Object.entries(SHARE).map(([k, s]) => [k, pub * s]));
+  for (const b of bets) for (const leg of legs(b)) {
+    pools[leg.pool] += leg.amt;
+    if (leg.pool === 'win') win[leg.sel[0]] += leg.amt;
+  }
+  const net = pools.win * (1 - TAKEOUT.win);
   const odds = win.map(w => Math.max(0.05, net / w - 1));
   return {
     odds, text: odds.map(o => oddsText(Math.max(0.2, o))),
-    pools: { win: total, place: total * 0.46, show: total * 0.34, exacta: total * 0.92, trifecta: total * 0.7 },
+    pools,
     fav: odds.indexOf(Math.min(...odds)),
   };
 }
@@ -74,6 +82,7 @@ function harville(p, sel) {
 // Payouts per base ticket ($2, or $1 for the trifecta), with breakage to the dime and a $2.10 minimum.
 export function settle(tote, order, bets = []) {
   const final = publicWin(tote, 1);
+  const pub = final.reduce((a, b) => a + b, 0);
   const my = bets.flatMap(legs);
   const winPool = final.slice();
   for (const l of my) if (l.pool === 'win') winPool[l.sel[0]] += l.amt;
@@ -83,8 +92,8 @@ export function settle(tote, order, bets = []) {
   const n = p.length;
   const top2 = p.map((_, i) => p[i] + p.reduce((s, pj, j) => j === i ? s : s + pj * p[i] / (1 - pj), 0));
   const top3 = p.map((_, i) => Math.min(0.97, top2[i] * 1.35));
-  const placeMoney = norm(top2).map(x => x * W * 0.46);
-  const showMoney = norm(top3).map(x => x * W * 0.34);
+  const placeMoney = norm(top2).map(x => x * pub * SHARE.place);
+  const showMoney = norm(top3).map(x => x * pub * SHARE.show);
   for (const l of my) {
     if (l.pool === 'place') placeMoney[l.sel[0]] += l.amt;
     if (l.pool === 'show') showMoney[l.sel[0]] += l.amt;
@@ -109,7 +118,7 @@ export function settle(tote, order, bets = []) {
   // counts as one, so no ticket pays more than the whole pool.
   const scatter = sel => Math.exp(((hash(`${tote.seed}:${sel.join('-')}`) % 1000) / 1000 - 0.5) * 0.5);
   if (b !== undefined) {
-    const E = W * 0.92;
+    const E = pub * SHARE.exacta;
     let onCombo = E * harville(p, [a, b]) * scatter([a, b]);
     const mine = my.filter(l => l.pool === 'exacta');
     const totalE = E + mine.reduce((s, l) => s + l.amt, 0);
@@ -117,7 +126,7 @@ export function settle(tote, order, bets = []) {
     out.exacta = { sel: [a, b], pay: brk(totalE * (1 - TAKEOUT.exacta) / Math.max(onCombo, BASE.exacta), 2) };
   }
   if (c !== undefined) {
-    const T = W * 0.7;
+    const T = pub * SHARE.trifecta;
     let onCombo = T * harville(p, [a, b, c]) * scatter([a, b, c]);
     const mine = my.filter(l => l.pool === 'trifecta');
     const totalT = T + mine.reduce((s, l) => s + l.amt, 0);

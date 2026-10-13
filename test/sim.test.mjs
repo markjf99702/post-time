@@ -172,6 +172,20 @@ test('no exotic ticket pays more than the whole pool', () => {
   assert.ok(pay.trifecta.pay > 30000, 'the only ticket on it gets about the whole pool');
 });
 
+test('your win money stays in the win pool', () => {
+  // A small pool, so $100 of yours would show.
+  const p = [0.4, 0.25, 0.15, 0.1, 0.06, 0.04];
+  const tote = { n: p.length, early: p, late: p, size: 3000, wig: p.map(() => 0), seed: 'own-money' };
+  const order = [2, 0, 4];
+  const others = [{ type: 'place', sel: [2], amt: 100 }, { type: 'show', sel: [4], amt: 100 }, { type: 'exacta', sel: [2, 0], amt: 100 }, { type: 'trifecta', sel: [2, 0, 4], amt: 100 }];
+  const alone = settle(tote, order, others);
+  const withWin = settle(tote, order, [{ type: 'win', sel: [5], amt: 100 }, ...others]);
+  for (const pool of ['place', 'show', 'exacta', 'trifecta']) assert.deepEqual(withWin[pool], alone[pool], `a $100 win ticket changed what the ${pool} pays`);
+  const b = board(tote, 1, [{ type: 'win', sel: [5], amt: 100 }]);
+  assert.equal(Math.round(b.pools.win), 3100);
+  assert.equal(Math.round(b.pools.place), Math.round(3000 * 0.46));
+});
+
 test('times round up into the next minute instead of reading 60 seconds', () => {
   assert.equal(fmtTime(59.996), '1:00.00');
   assert.equal(fmtTime(119.996), '2:00.00');
