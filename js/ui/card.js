@@ -36,7 +36,7 @@ export function renderCard(root, nav) {
       h('p', { class: 'muted' }, 'Entries for next Saturday are drawn. Some of today\'s horses will be back in two or three weeks.'),
       h('button', { class: 'btn brass', type: 'button', onclick: () => { advanceDay(); nav.go('card'); window.scrollTo(0, 0); } }, 'Next race day ▸'),
     );
-  } else if (game.player.bank < 1 && !myBets(nxt).length) {
+  } else if (game.player.bank < 2 && !myBets(nxt).length) { // $2 is the least a win, place or show ticket costs
     foot.append(
       h('p', {}, "You're out of money. There's an ATM by the paddock."),
       h('button', { class: 'btn ghost', type: 'button', onclick: () => { atm(); nav.refresh(); } }, 'Take out $100'),

@@ -152,6 +152,11 @@ await page.reload();
 await page.waitForSelector('.races');
 assert.equal(await page.locator('.race-row.done').count(), 1, 'race 1 is official after a reload');
 assert.equal(await page.evaluate(() => window.postTime.game.player.bank), bank);
+// Down to $1.40, with no win, place or show ticket that cheap: the ATM is offered.
+await page.evaluate(() => { window.postTime.game.player.bank = 1.4; window.postTime.nav.refresh(); });
+assert.equal(await page.locator('.card-foot .btn').textContent(), 'Take out $100', 'no ATM with $1.40 left');
+await page.evaluate(b => { window.postTime.game.player.bank = b; window.postTime.nav.refresh(); }, bank);
+assert.equal(await page.locator('.card-foot .btn').count(), 0, 'the ATM is offered with money left');
 
 // Fits a phone: nothing scrolls sideways.
 assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the page scrolls sideways on a phone');
