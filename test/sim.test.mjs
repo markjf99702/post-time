@@ -167,3 +167,12 @@ test('the offline copy lists every file the page needs', async () => {
   const walk = d => readdirSync(join(root, d)).flatMap(f => statSync(join(root, d, f)).isDirectory() ? walk(`${d}/${f}`) : [`${d}/${f}`]);
   for (const f of [...walk('js'), ...walk('css'), ...walk('fonts')]) assert.ok(sw.includes(`'${f}'`), `sw.js is missing ${f}`);
 });
+
+test("the phone's status bar matches the header in light and dark", async () => {
+  const html = await readFile(join(root, 'index.html'), 'utf8');
+  const css = await readFile(join(root, 'css/app.css'), 'utf8');
+  const bars = Object.fromEntries([...html.matchAll(/<meta name="theme-color" content="(#[0-9a-f]{6})" media="\(prefers-color-scheme: (light|dark)\)">/g)].map(m => [m[2], m[1]]));
+  const light = css.match(/:root \{[^}]*--green: (#[0-9a-f]{6})/)[1];
+  const dark = css.match(/:root\[data-theme="dark"\] \{[^}]*--green: (#[0-9a-f]{6})/)[1];
+  assert.deepEqual(bars, { light, dark });
+});
