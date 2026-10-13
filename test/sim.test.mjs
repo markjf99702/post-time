@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { runRace, figureFor, stateAt, runningOrder } from '../js/sim.js';
 import { coursePath, FURLONG, COURSES } from '../js/track.js';
 import { createWorld, simulateRace, buildCard } from '../js/world.js';
-import { makeTote, board, settle, ticketReturn, cost } from '../js/tote.js';
+import { makeTote, board, settle, ticketReturn, cost, TAKEOUT } from '../js/tote.js';
 import { fmtTime, fmtClock } from '../js/chart.js';
 import { timeWords } from '../js/call.js';
 
@@ -159,6 +159,17 @@ test('the tote pays like a tote', () => {
     const box = ticketReturn({ type: 'exbox', sel: [order[1], order[0]], amt: 2 }, pay);
     assert.equal(box, pay.exacta.pay);
   }
+});
+
+test('no exotic ticket pays more than the whole pool', () => {
+  // Three long shots finish in front: the public has only cents on that exacta and trifecta.
+  const p = [0.5, 0.2, 0.1, 0.1, 0.05, 0.03, 0.01, 0.005, 0.003, 0.002];
+  const tote = { n: p.length, early: p, late: p, size: 70000, wig: p.map(() => 0), seed: 'long-shots' };
+  const { pools } = board(tote, 1);
+  const pay = settle(tote, [9, 8, 7]);
+  assert.ok(pay.exacta.pay <= pools.exacta * (1 - TAKEOUT.exacta), `a $2 exacta pays ${pay.exacta.pay} from a pool of ${pools.exacta * (1 - TAKEOUT.exacta)}`);
+  assert.ok(pay.trifecta.pay <= pools.trifecta * (1 - TAKEOUT.trifecta), `a $1 trifecta pays ${pay.trifecta.pay} from a pool of ${pools.trifecta * (1 - TAKEOUT.trifecta)}`);
+  assert.ok(pay.trifecta.pay > 30000, 'the only ticket on it gets about the whole pool');
 });
 
 test('times round up into the next minute instead of reading 60 seconds', () => {

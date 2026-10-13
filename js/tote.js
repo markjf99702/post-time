@@ -105,6 +105,8 @@ export function settle(tote, order, bets = []) {
   out.place = splitPool(placeMoney, [a, b].filter(x => x !== undefined), TAKEOUT.place);
   out.show = splitPool(showMoney, [a, b, c].filter(x => x !== undefined), TAKEOUT.show);
   // Exotics: the public's money on the winning combination, from their win odds, with some scatter.
+  // On a long enough combination that comes to less than one ticket, but a ticket can't be split: it
+  // counts as one, so no ticket pays more than the whole pool.
   const scatter = sel => Math.exp(((hash(`${tote.seed}:${sel.join('-')}`) % 1000) / 1000 - 0.5) * 0.5);
   if (b !== undefined) {
     const E = W * 0.92;
@@ -112,7 +114,7 @@ export function settle(tote, order, bets = []) {
     const mine = my.filter(l => l.pool === 'exacta');
     const totalE = E + mine.reduce((s, l) => s + l.amt, 0);
     onCombo += mine.filter(l => l.sel[0] === a && l.sel[1] === b).reduce((s, l) => s + l.amt, 0);
-    out.exacta = { sel: [a, b], pay: brk(totalE * (1 - TAKEOUT.exacta) / onCombo, 2) };
+    out.exacta = { sel: [a, b], pay: brk(totalE * (1 - TAKEOUT.exacta) / Math.max(onCombo, BASE.exacta), 2) };
   }
   if (c !== undefined) {
     const T = W * 0.7;
@@ -120,7 +122,7 @@ export function settle(tote, order, bets = []) {
     const mine = my.filter(l => l.pool === 'trifecta');
     const totalT = T + mine.reduce((s, l) => s + l.amt, 0);
     onCombo += mine.filter(l => l.sel[0] === a && l.sel[1] === b && l.sel[2] === c).reduce((s, l) => s + l.amt, 0);
-    out.trifecta = { sel: [a, b, c], pay: brk(totalT * (1 - TAKEOUT.trifecta) / onCombo, 1) };
+    out.trifecta = { sel: [a, b, c], pay: brk(totalT * (1 - TAKEOUT.trifecta) / Math.max(onCombo, BASE.trifecta), 1) };
   }
   return out;
 }
