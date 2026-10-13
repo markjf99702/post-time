@@ -368,7 +368,8 @@ function betPanel(panel, race, changed, isNext) {
     const bet = currentBet(st, race.entries.length);
     const c = bet ? betCost(bet) : 0;
     const msg = h('div', { class: 'cost' });
-    if (bet) msg.append(h('b', { class: 'money' }, money(c)), c > st.amt ? h('span', { class: 'muted' }, ` (${c / st.amt} bets of $${st.amt})`) : null, h('span', { class: 'muted' }, ` · you have ${money(game.player.bank)}`));
+    // append() would print a null as "null".
+    if (bet) msg.append(h('b', { class: 'money' }, money(c)), c > st.amt ? h('span', { class: 'muted' }, ` (${c / st.amt} bets of $${st.amt})`) : '', h('span', { class: 'muted' }, ` · you have ${money(game.player.bank)}`));
     else msg.append(h('span', { class: 'muted' }, needs(st)));
     const buy = h('button', {
       class: 'btn', type: 'button', disabled: !bet || !open || c > game.player.bank + 1e-9 ? true : null,

@@ -52,6 +52,7 @@ assert.ok(await page.locator('.post').count() >= 3, 'regulars post on the forum'
 // A $2 win ticket on the first horse, and an exacta.
 await page.click('.tabs button:nth-child(4)');
 await page.locator('.pick-row').nth(0).locator('button').nth(0).click();
+assert.equal(await page.locator('.bet-foot .cost').textContent(), '$2.00 · you have $200.00');
 await page.click('.builder .btn');
 await page.locator('.seg button', { hasText: /^Exacta$/ }).click();
 await page.locator('.pick-row').nth(0).locator('button').nth(1).click();
