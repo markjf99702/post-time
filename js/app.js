@@ -121,7 +121,11 @@ function applySettings() {
   audio.setVoice(s.voice);
 }
 
-window.addEventListener('post-time:saved', () => { if (game.player && game.world) updateBank(); });
+window.addEventListener('post-time:saved', () => {
+  if (game.player && game.world) updateBank();
+  // The race has a Sound button of its own: keep the menu in step with it.
+  if (game.player?.settings) { optSound.checked = !!game.player.settings.sound; optVoice.checked = !!game.player.settings.voice; }
+});
 
 // Tests and screenshots drive the app through this.
 window.postTime = { game, nav, save, card, nextRace };

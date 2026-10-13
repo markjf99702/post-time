@@ -7,7 +7,7 @@ import { photoFinish } from '../draw/photo.js';
 import { stateAt, runningOrder } from '../sim.js';
 import { FURLONG } from '../track.js';
 import { marginShort, fmtTime } from '../chart.js';
-import { game, goToGate, callFor, runnersFor, raceLabel, horseOf, myBets } from '../game.js';
+import { game, save, goToGate, callFor, runnersFor, raceLabel, horseOf, myBets } from '../game.js';
 import { BET_NAMES } from '../tote.js';
 import { clockText } from '../world.js';
 import * as audio from '../audio.js';
@@ -46,6 +46,7 @@ export function renderWatch(el, nav, params) {
     audio.setSound(game.player.settings.sound);
     soundBtn.setAttribute('aria-pressed', String(game.player.settings.sound));
     if (game.player.settings.sound && T > 0 && T < endT) audio.startRace();
+    save(); // the same setting as Sound in the menu, kept the same way
   } }, 'Sound');
   const skipBtn = h('button', { type: 'button', onclick: skip }, 'Skip ▸▸');
   const doneBtn = h('button', { class: 'btn brass', type: 'button', hidden: true, onclick: () => leave('result') }, 'Results ▸');

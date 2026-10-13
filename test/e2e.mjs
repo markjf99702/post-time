@@ -87,6 +87,11 @@ const keptFocus = await page.evaluate(async () => {
   return !!a.closest('.order') && name(a) === name(b);
 });
 assert.ok(keptFocus, 'the running order loses the keyboard focus while the race is on');
+// The race's Sound button is the menu's Sound setting, and it's kept.
+await page.locator('.w-ctl button', { hasText: /^sound$/i }).click();
+const soundOff = await page.evaluate(() => ({ menu: document.getElementById('optSound').checked, saved: JSON.parse(localStorage.getItem('post-time/player')).settings.sound }));
+assert.deepEqual(soundOff, { menu: false, saved: false }, "turning the sound off in a race isn't kept, or the menu doesn't show it");
+await page.locator('.w-ctl button', { hasText: /^sound$/i }).click();
 await page.evaluate(() => window.__watch.setT(window.__watch.endT - 0.05));
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 // The running order left on the screen at the end is the official one.
