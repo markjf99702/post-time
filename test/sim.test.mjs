@@ -9,6 +9,8 @@ import { runRace, figureFor, stateAt, runningOrder } from '../js/sim.js';
 import { coursePath, FURLONG, COURSES } from '../js/track.js';
 import { createWorld, simulateRace } from '../js/world.js';
 import { makeTote, board, settle, ticketReturn, cost } from '../js/tote.js';
+import { fmtTime, fmtClock } from '../js/chart.js';
+import { timeWords } from '../js/call.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const race = (f, surface = 'dirt', seed = 'x') => {
@@ -142,6 +144,22 @@ test('the tote pays like a tote', () => {
     const box = ticketReturn({ type: 'exbox', sel: [order[1], order[0]], amt: 2 }, pay);
     assert.equal(box, pay.exacta.pay);
   }
+});
+
+test('times round up into the next minute instead of reading 60 seconds', () => {
+  assert.equal(fmtTime(59.996), '1:00.00');
+  assert.equal(fmtTime(119.996), '2:00.00');
+  assert.equal(fmtTime(59.994), ':59.99');
+  assert.equal(fmtTime(22.4), ':22.40');
+  assert.equal(fmtTime(71.126), '1:11.13');
+  assert.equal(fmtClock(59.97), '1:00.0');
+  assert.equal(fmtClock(119.96), '2:00.0');
+  assert.equal(fmtClock(59.94), '0:59.9');
+  assert.equal(fmtClock(5.04), '0:05.0');
+  assert.equal(timeWords(59.996), '1:00.00');
+  assert.equal(timeWords(119.996), '2:00.00');
+  assert.equal(timeWords(58.5), '58.50');
+  assert.equal(timeWords(97.44), '1:37.44');
 });
 
 test('the offline copy lists every file the page needs', async () => {

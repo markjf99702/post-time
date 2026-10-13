@@ -94,11 +94,18 @@ export function ordinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
+// Times are rounded before they're split into minutes and seconds, so 59.996 reads 1:00.00, not :60.00.
 export function fmtTime(t) {
   if (t == null) return '';
-  const m = Math.floor(t / 60);
-  const s = t - m * 60;
-  return m ? `${m}:${s.toFixed(2).padStart(5, '0')}` : `:${s.toFixed(2).padStart(5, '0')}`;
+  const h = Math.round(t * 100);
+  const m = Math.floor(h / 6000);
+  const s = ((h % 6000) / 100).toFixed(2).padStart(5, '0');
+  return m ? `${m}:${s}` : `:${s}`;
+}
+// The race clock, to a tenth: 1:12.4.
+export function fmtClock(t) {
+  const d = Math.round(t * 10);
+  return `${Math.floor(d / 600)}:${((d % 600) / 10).toFixed(1).padStart(4, '0')}`;
 }
 
 export const LENGTH_M = LENGTH;

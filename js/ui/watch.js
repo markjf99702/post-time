@@ -6,7 +6,7 @@ import { RaceScene } from '../draw/scene.js';
 import { photoFinish } from '../draw/photo.js';
 import { stateAt, runningOrder } from '../sim.js';
 import { FURLONG } from '../track.js';
-import { marginShort, fmtTime } from '../chart.js';
+import { marginShort, fmtTime, fmtClock } from '../chart.js';
 import { game, save, goToGate, callFor, runnersFor, raceLabel, horseOf, myBets } from '../game.js';
 import { BET_NAMES } from '../tote.js';
 import { clockText } from '../world.js';
@@ -247,10 +247,6 @@ function myTickets(race) {
   }));
 }
 
-function fmtClock(t) {
-  const m = Math.floor(t / 60), s = t - m * 60;
-  return `${m}:${s.toFixed(1).padStart(4, '0')}`;
-}
 function fracName(at) {
   const q = Math.round(at / (FURLONG * 2));
   return { 1: '¼', 2: '½', 3: '¾', 4: 'Mile', 5: '1¼' }[q] || '';

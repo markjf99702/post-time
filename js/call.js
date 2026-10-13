@@ -14,10 +14,12 @@ function secsWords(t) {
   const fifth = Math.min(4, Math.floor((t - whole) * 5));
   return `${whole}${fifth ? ` and ${fifth}` : ' flat'}`;
 }
-function timeWords(t) {
-  const m = Math.floor(t / 60);
-  const s = t - m * 60;
-  return m ? `${m}:${s.toFixed(2).padStart(5, '0')}` : `${s.toFixed(2)}`;
+// Rounded before it's split into minutes and seconds, so it never says 1:60.00.
+export function timeWords(t) {
+  const h = Math.round(t * 100);
+  const m = Math.floor(h / 6000);
+  const s = (h % 6000) / 100;
+  return m ? `${m}:${s.toFixed(2).padStart(5, '0')}` : s.toFixed(2);
 }
 
 function gapWords(l) {
