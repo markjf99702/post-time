@@ -98,6 +98,19 @@ await page.evaluate(() => window.__watch.setT(25));
 await page.waitForTimeout(400);
 assert.ok((await page.locator('.order button').count()) >= 5, 'the running order shows');
 assert.ok((await page.locator('.call .now').textContent()).length > 5, 'the caller is calling it');
+// On a phone with room for it, the line before the current one is shown whole, not cut off.
+const lineBefore = await page.evaluate(async () => {
+  const w = window.__watch;
+  const lines = w.call.lines;
+  const i = lines.slice(0, -1).reduce((a, l, k) => (l.text.length > lines[a].text.length ? k : a), 0);
+  w.setT(w.t0 + lines[i + 1].t + 0.05);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const prev = document.querySelector('.call .prev');
+  const out = { same: prev.textContent === lines[i].text, cut: prev.scrollWidth > prev.clientWidth + 1 };
+  w.setT(25);
+  return out;
+});
+assert.deepEqual(lineBefore, { same: true, cut: false }, 'the line before is cut off on a phone with room for it');
 // The keyboard keeps its place in the running order as the order changes.
 const keptFocus = await page.evaluate(async () => {
   const name = b => b.getAttribute('aria-label').replace(/^\d+: /, '');

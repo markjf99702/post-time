@@ -145,9 +145,12 @@ export function renderWatch(el, nav, params) {
     raf = requestAnimationFrame(frame);
   }
 
-  // A long line on a narrow screen gets a smaller size rather than spilling out of the box.
+  // A long line on a narrow screen gets a smaller size rather than spilling out of the box. The line
+  // before is shown whole when there's room for it, and cut to one line when there isn't.
   function fitCall() {
     now.style.fontSize = '';
+    prev.classList.remove('clip');
+    if (callBox.scrollHeight > callBox.clientHeight + 1) prev.classList.add('clip');
     let px = parseFloat(getComputedStyle(now).fontSize);
     while (callBox.scrollHeight > callBox.clientHeight + 1 && px > 12) {
       px -= 1;
