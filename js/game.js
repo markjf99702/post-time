@@ -32,10 +32,42 @@ export function load() {
     if (w && p) {
       game.world = JSON.parse(w);
       game.player = { ...freshPlayer(), ...JSON.parse(p) };
+      try { refundStrays(); } catch { /* a save this can't make sense of loads as it is */ }
       return true;
     }
   } catch { /* storage unavailable or corrupt: start fresh */ }
   return false;
+}
+
+// Starting a new meet on the first race day used to carry the last meet's betting slip over, so a
+// ticket could be bought on a number that isn't in the race. It can't be shown or settled: take it
+// off the books and give the money back.
+function refundStrays() {
+  const c = game.world?.cards?.[game.world.day];
+  if (!c || !game.player.bets) return;
+  for (const race of c.races) {
+    const k = raceKey(race);
+    const list = game.player.bets[k];
+    if (!Array.isArray(list)) continue;
+    const s = game.player.settled[k];
+    const line = game.player.ledger.find(l => l.day === race.day && l.no === race.no);
+    let removed = 0;
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (inRace(race, list[i].sel)) continue;
+      const [b] = list.splice(i, 1);
+      const cost = b.cost || 0;
+      removed++;
+      game.player.bank = round2(game.player.bank + cost);
+      // A stray ticket never pays, so only the money spent changes.
+      if (s && Array.isArray(s.returns)) { s.returns.splice(i, 1); s.spent = round2(s.spent - cost); }
+      if (line) line.spent = round2(line.spent - cost);
+    }
+    if (removed && line && !list.length) game.player.ledger.splice(game.player.ledger.indexOf(line), 1);
+  }
+}
+
+function inRace(race, sel) {
+  return Array.isArray(sel) && sel.length > 0 && sel.every(i => Number.isInteger(i) && i >= 0 && i < race.entries.length);
 }
 
 export function save() {
@@ -72,10 +104,13 @@ export const card = () => game.world.cards[game.world.day];
 export const raceKey = race => `${race.day}:${race.no}`;
 export const horseOf = e => game.world.horses[e.hid];
 export const nextRace = () => card().races.find(r => r.status !== 'official') || null;
+// Things kept in memory for a race (its tote, your betting slip) are kept per meet too: a new meet
+// starts again at race day 1 with the same race numbers.
+export const memoKey = race => `${game.world.seed}:${raceKey(race)}`;
 
 const totes = new Map();
 export function toteFor(race) {
-  const k = raceKey(race);
+  const k = memoKey(race);
   if (!totes.has(k)) totes.set(k, makeTote(race, game.world));
   return totes.get(k);
 }
@@ -100,7 +135,7 @@ export function myBets(race) { return game.player.bets[raceKey(race)] || []; }
 
 export function placeBet(race, bet) {
   const c = betCost(bet);
-  if (c <= 0) return { ok: false, why: 'Pick your horses first.' };
+  if (c <= 0 || !inRace(race, bet.sel)) return { ok: false, why: 'Pick your horses first.' };
   if (c > game.player.bank + 1e-9) return { ok: false, why: `That ticket costs ${c.toFixed(2)} and you have ${game.player.bank.toFixed(2)}.` };
   const k = raceKey(race);
   (game.player.bets[k] || (game.player.bets[k] = [])).push({ ...bet, cost: c });

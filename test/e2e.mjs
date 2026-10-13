@@ -130,6 +130,22 @@ await page.click('.w-ctl .btn');
 await page.waitForSelector('.official');
 await page.setViewportSize({ width: 390, height: 844 });
 
+// A new meet starts on race day 1 again: its betting slip and tote are its own, not the last meet's.
+await page.locator('.actions .btn', { hasText: /^Race 3/ }).click();
+await page.waitForSelector('.entry');
+await page.click('.tabs button:nth-child(4)');
+await page.locator('.pick-row').nth(0).locator('button').last().click();
+await page.click('#menuBtn');
+await page.click('#restart');
+await page.click('#restart');
+await page.waitForSelector('.races', { timeout: 30000 });
+assert.equal(await page.locator('#bank').textContent(), '$200.00', 'a new meet starts with $200');
+await page.locator('.race-row').nth(2).click();
+await page.click('.tabs button:nth-child(4)');
+assert.equal(await page.locator('.bet-foot .cost').textContent(), 'Pick a horse.', 'the last meet\'s pick is still on the slip');
+assert.equal(await page.locator('.tote-cell').count(), await page.evaluate(() => window.postTime.card().races[2].entries.length));
+assert.ok(!/NaN/.test(await page.locator('.tote').textContent()), 'the tote has no odds for some horses');
+
 // Works offline once it has been opened.
 await page.waitForFunction(() => navigator.serviceWorker?.controller, null, { timeout: 10000 }).catch(() => {});
 await ctx.setOffline(true);

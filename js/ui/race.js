@@ -1,7 +1,7 @@
 // A race before it runs: the past performances, the paddock, the forum and the betting window.
 
 import { h, money, cloth, silksCanvas, clear, ago, plural } from './dom.js';
-import { game, card, raceKey, horseOf, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor } from '../game.js';
+import { game, card, raceKey, memoKey, horseOf, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor } from '../game.js';
 import { ownerSilks, ageOf, shortDate, clockText, CLASSES, meetStats } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
 import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES } from '../data.js';
@@ -314,7 +314,7 @@ const HELP = {
 const state = new Map(); // per race: builder choices survive switching tabs
 
 function betPanel(panel, race, changed, isNext) {
-  const k = raceKey(race);
+  const k = memoKey(race);
   const st = state.get(k) || { type: 'win', picks: [[], [], []], amt: 2 };
   state.set(k, st);
   const open = isNext && race.status !== 'official';
@@ -365,7 +365,7 @@ function betPanel(panel, race, changed, isNext) {
       amts.append(h('button', { type: 'button', 'aria-pressed': String(st.amt === a), onclick: () => { st.amt = a; draw(); } }, `$${a}`));
     }
     builder.append(amts);
-    const bet = currentBet(st);
+    const bet = currentBet(st, race.entries.length);
     const c = bet ? betCost(bet) : 0;
     const msg = h('div', { class: 'cost' });
     if (bet) msg.append(h('b', { class: 'money' }, money(c)), c > st.amt ? h('span', { class: 'muted' }, ` (${c / st.amt} bets of $${st.amt})`) : null, h('span', { class: 'muted' }, ` · you have ${money(game.player.bank)}`));
@@ -389,8 +389,8 @@ function betPanel(panel, race, changed, isNext) {
 
 function legType(t) { return t === 'trifecta' || t === 'tribox' ? 'trifecta' : t === 'exacta' || t === 'exbox' ? 'exacta' : 'win'; }
 
-function currentBet(st) {
-  const p = st.picks;
+function currentBet(st, runners) {
+  const p = st.picks.map(row => row.filter(i => i < runners));
   if (['win', 'place', 'show', 'wps'].includes(st.type)) return p[0].length === 1 ? { type: st.type, sel: [p[0][0]], amt: st.amt } : null;
   if (st.type === 'exacta') return p[0].length && p[1].length ? { type: 'exacta', sel: [p[0][0], p[1][0]], amt: st.amt } : null;
   if (st.type === 'trifecta') return p[0].length && p[1].length && p[2].length ? { type: 'trifecta', sel: [p[0][0], p[1][0], p[2][0]], amt: st.amt } : null;
