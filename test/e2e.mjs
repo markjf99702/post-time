@@ -69,6 +69,16 @@ await page.evaluate(() => window.__watch.setT(25));
 await page.waitForTimeout(400);
 assert.ok((await page.locator('.order button').count()) >= 5, 'the running order shows');
 assert.ok((await page.locator('.call .now').textContent()).length > 5, 'the caller is calling it');
+// The keyboard keeps its place in the running order as the order changes.
+const keptFocus = await page.evaluate(async () => {
+  const name = b => b.getAttribute('aria-label').replace(/^\d+: /, '');
+  const b = document.querySelectorAll('.order button')[2];
+  b.focus();
+  await new Promise(r => setTimeout(r, 1000));
+  const a = document.activeElement;
+  return !!a.closest('.order') && name(a) === name(b);
+});
+assert.ok(keptFocus, 'the running order loses the keyboard focus while the race is on');
 await page.evaluate(() => window.__watch.setT(window.__watch.endT - 0.05));
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 // The running order left on the screen at the end is the official one.

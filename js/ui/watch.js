@@ -154,17 +154,27 @@ export function renderWatch(el, nav, params) {
     }
   }
 
+  let orderShown = '';
   function drawOrder(t) {
     // In the gate, list them by post position.
     const o = t > 1 ? runningOrder(run, t) : runners.map((r, i) => ({ i, gap: 0 }));
+    const gaps = o.map((x, k) => (k > 0 && t > 1 ? marginShort(x.gap) : ''));
+    // Rebuilt only when something on it changes, since a rebuilt button loses the keyboard's place;
+    // the horse that had it gets it back.
+    const shows = `${following}|${o.map((x, k) => `${x.i} ${gaps[k]}`).join(',')}`;
+    if (shows === orderShown) return;
+    orderShown = shows;
+    const had = order.contains(document.activeElement) ? document.activeElement.dataset.i : null;
     clear(order);
     o.forEach((x, k) => {
-      if (k > 0 && t > 1) order.append(h('span', { class: 'gap' }, marginShort(x.gap)));
+      if (gaps[k]) order.append(h('span', { class: 'gap' }, gaps[k]));
       const r = runners[x.i];
-      order.append(h('button', {
-        type: 'button', class: `${r.mine ? 'me' : ''}${following === x.i ? ' follow' : ''}`, 'aria-label': `${k + 1}: number ${r.number}, ${r.name}`,
+      const b = h('button', {
+        type: 'button', class: `${r.mine ? 'me' : ''}${following === x.i ? ' follow' : ''}`, 'aria-label': `${k + 1}: number ${r.number}, ${r.name}`, data: { i: x.i },
         onclick: () => { following = following === x.i ? null : x.i; scene.setFocus(following); orderAt = -1; },
-      }, cloth(r.number, 'sm')));
+      }, cloth(r.number, 'sm'));
+      order.append(b);
+      if (had === String(x.i)) b.focus({ preventScroll: true });
     });
   }
 
