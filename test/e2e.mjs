@@ -155,6 +155,9 @@ assert.equal(await page.evaluate(() => window.postTime.game.player.bank), bank);
 // Down to $1.40, with no win, place or show ticket that cheap: the ATM is offered.
 await page.evaluate(() => { window.postTime.game.player.bank = 1.4; window.postTime.nav.refresh(); });
 assert.equal(await page.locator('.card-foot .btn').textContent(), 'Take out $100', 'no ATM with $1.40 left');
+assert.equal(await page.locator('.card-foot p').textContent(), "You're down to $1.40, not enough for a $2 ticket. There's an ATM by the paddock.", 'the card says $1.40 is no money at all');
+await page.evaluate(() => { window.postTime.game.player.bank = 0.4; window.postTime.nav.refresh(); });
+assert.equal(await page.locator('.card-foot p').textContent(), "You're out of money. There's an ATM by the paddock.");
 await page.evaluate(b => { window.postTime.game.player.bank = b; window.postTime.nav.refresh(); }, bank);
 assert.equal(await page.locator('.card-foot .btn').count(), 0, 'the ATM is offered with money left');
 
