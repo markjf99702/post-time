@@ -151,6 +151,22 @@ assert.equal(await page.locator('.bet-foot .cost').textContent(), 'Pick a horse.
 assert.equal(await page.locator('.tote-cell').count(), await page.evaluate(() => window.postTime.card().races[2].entries.length));
 assert.ok(!/NaN/.test(await page.locator('.tote').textContent()), 'the tote has no odds for some horses');
 
+// While a race is on, the keyboard can't get to the page behind it; and if the page moves on anyway,
+// the race goes with it instead of staying on top, stuck.
+await page.click('.post-bar .btn.ghost');
+await page.click('.post-bar .btn.brass');
+await page.waitForSelector('.watch:not([hidden]) canvas.scene');
+const cover = await page.evaluate(() => {
+  const brand = document.querySelector('#top .brand');
+  brand.focus();
+  return { reached: document.activeElement === brand, inert: ['top', 'menu', 'app'].map(id => document.getElementById(id).inert) };
+});
+assert.deepEqual(cover, { reached: false, inert: [true, true, true] }, 'the header can be reached behind the race');
+await page.evaluate(() => window.postTime.nav.go('card'));
+await page.waitForSelector('.races');
+const after = await page.evaluate(() => ({ hidden: document.getElementById('watch').hidden, overflow: document.body.style.overflow, inert: document.getElementById('app').inert }));
+assert.deepEqual(after, { hidden: true, overflow: '', inert: false }, 'the race stays on top of the card');
+
 // Works offline once it has been opened.
 await page.waitForFunction(() => navigator.serviceWorker?.controller, null, { timeout: 10000 }).catch(() => {});
 await ctx.setOffline(true);

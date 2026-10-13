@@ -26,6 +26,9 @@ export function renderWatch(el, nav, params) {
   clear(el);
   el.hidden = false;
   document.body.style.overflow = 'hidden';
+  // The page behind the race can't be reached while it's on, by the keyboard or by a screen reader.
+  const behind = ['top', 'menu', 'app'].map(id => document.getElementById(id)).filter(Boolean);
+  for (const x of behind) x.inert = true;
   // Start with the text the first frame would show, so nothing changes size once the race starts.
   const clock = h('div', { class: 'clock' }, clockText(race.post));
   const frs = h('div', { class: 'fr' }, fieldText(race));
@@ -192,7 +195,11 @@ export function renderWatch(el, nav, params) {
     } else setTimeout(done, 900);
   }
 
-  function leave(where) {
+  // Put everything back the way it was, whichever way the race is left.
+  let gone = false;
+  function teardown() {
+    if (gone) return;
+    gone = true;
     cancelAnimationFrame(raf);
     audio.stopRace();
     audio.hush();
@@ -200,13 +207,19 @@ export function renderWatch(el, nav, params) {
     el.hidden = true;
     clear(el);
     document.body.style.overflow = '';
+    for (const x of behind) x.inert = false;
+  }
+  function leave(where) {
+    teardown();
     nav.go(where, { no: race.no, fresh: true });
   }
 
   raf = requestAnimationFrame(frame);
+  el.tabIndex = -1;
+  el.focus({ preventScroll: true });
   // Debug hook for tests and screenshots.
   window.__watch = { setT: t => { T = t; scene.lastT = null; }, get T() { return T; }, winT, endT, t0, leave, run, call, pause: () => { speed = 0; } };
-  return () => { cancelAnimationFrame(raf); audio.stopRace(); stopResizing(); };
+  return teardown;
 }
 
 function fieldText(race) {
