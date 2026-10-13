@@ -158,6 +158,19 @@ assert.equal(await page.locator('.card-foot .btn').textContent(), 'Take out $100
 await page.evaluate(b => { window.postTime.game.player.bank = b; window.postTime.nav.refresh(); }, bank);
 assert.equal(await page.locator('.card-foot .btn').count(), 0, 'the ATM is offered with money left');
 
+// The game open in a second tab: when that one saves, this one loads the newer save instead of carrying
+// on with its old copy of the meet (and betting on a race it could see the result of over there).
+const other = await ctx.newPage();
+other.on('pageerror', e => problems.push(e.message));
+await other.goto(base, { waitUntil: 'domcontentloaded' });
+await other.waitForSelector('.races');
+await page.evaluate(() => { window.staleCopy = true; });
+await other.evaluate(() => { const { game, save } = window.postTime; game.player.bank += 5; save(); });
+await page.waitForFunction(() => !window.staleCopy && document.querySelector('.races'), null, { timeout: 15000 });
+assert.equal(await page.evaluate(() => window.postTime.game.player.bank), bank + 5, 'the first tab carries on with its old copy of the meet');
+await other.close();
+await page.evaluate(b => { window.postTime.game.player.bank = b; window.postTime.save(); }, bank);
+
 // Fits a phone: nothing scrolls sideways.
 assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the page scrolls sideways on a phone');
 

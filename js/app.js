@@ -127,6 +127,11 @@ window.addEventListener('post-time:saved', () => {
   if (game.player?.settings) { optSound.checked = !!game.player.settings.sound; optVoice.checked = !!game.player.settings.voice; }
 });
 
+// The game open in another tab (or as the installed app) has saved, so this copy of the meet is out of
+// date. Carrying on with it would let a result seen there be bet on here, and its next save would write
+// over what happened there. Load the newer one instead.
+window.addEventListener('storage', e => { if (e.key?.startsWith('post-time/')) location.reload(); });
+
 // Tests and screenshots drive the app through this.
 window.postTime = { game, nav, save, card, nextRace };
 
