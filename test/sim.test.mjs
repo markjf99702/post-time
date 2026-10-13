@@ -7,7 +7,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runRace, figureFor, stateAt, runningOrder } from '../js/sim.js';
 import { coursePath, FURLONG, COURSES } from '../js/track.js';
-import { createWorld, simulateRace, buildCard } from '../js/world.js';
+import { createWorld, simulateRace, buildCard, applyResult, nextDay } from '../js/world.js';
 import { makeTote, board, settle, ticketReturn, cost, TAKEOUT } from '../js/tote.js';
 import { fmtTime, fmtClock } from '../js/chart.js';
 import { timeWords } from '../js/call.js';
@@ -170,6 +170,39 @@ test('no exotic ticket pays more than the whole pool', () => {
   assert.ok(pay.exacta.pay <= pools.exacta * (1 - TAKEOUT.exacta), `a $2 exacta pays ${pay.exacta.pay} from a pool of ${pools.exacta * (1 - TAKEOUT.exacta)}`);
   assert.ok(pay.trifecta.pay <= pools.trifecta * (1 - TAKEOUT.trifecta), `a $1 trifecta pays ${pay.trifecta.pay} from a pool of ${pools.trifecta * (1 - TAKEOUT.trifecta)}`);
   assert.ok(pay.trifecta.pay > 30000, 'the only ticket on it gets about the whole pool');
+});
+
+test("following the late money doesn't pay, and neither do long-shot trifectas", () => {
+  // Forty race days. Bet $2 to win on the horse whose odds came in most between the opening and 2
+  // minutes to post, as the board shows them. When the final price kept little of what the late money
+  // knew, that got back more than $2 for every $1 bet.
+  const w = createWorld('late-money', '2026-09-26');
+  let spent = 0, back = 0, tri = 0, races = 0;
+  for (let d = 0; d < 40; d++) {
+    for (const r of w.cards[w.day].races) {
+      const tote = makeTote(r, w);
+      const open = board(tote, 0).odds, late = board(tote, 0.9).odds;
+      const move = late.map((o, i) => (open[i] + 1) / (o + 1));
+      const steam = move.indexOf(Math.max(...move));
+      const run = simulateRace(r, w, { record: false });
+      const order = run.results.map(x => x.h);
+      if (move[steam] > 1.15) {
+        const bet = { type: 'win', sel: [steam], amt: 2 };
+        spent += 2;
+        back += ticketReturn(bet, settle(tote, order, [bet]));
+      }
+      // What a $1 trifecta on a combination picked at random gets back, on average.
+      const n = r.entries.length;
+      tri += settle(tote, order, [{ type: 'trifecta', sel: order.slice(0, 3), amt: 1 }]).trifecta.pay / (n * (n - 1) * (n - 2));
+      races++;
+      applyResult(w, r, run, board(tote, 1).odds);
+    }
+    nextDay(w);
+  }
+  assert.ok(back / spent < 1.4, `following the late money got back $${(back / spent).toFixed(2)} for every $1`);
+  // The takeout is 25%. With the public's trifecta money spread as if second and third were as easy to
+  // call as the winner, the long shots underneath paid so much that a random ticket got back about $1.
+  assert.ok(tri / races < 0.9, `a random trifecta got back $${(tri / races).toFixed(2)} for every $1`);
 });
 
 test('your win money stays in the win pool', () => {

@@ -13,10 +13,14 @@ const POOL = { MCL: 70000, MSW: 95000, C10: 65000, C16: 80000, C25: 95000, C40: 
 export function makeTote(race, world) {
   const R = rng(`tote:${race.seed}`);
   const n = race.entries.length;
-  const pub = race.entries.map(e => publicRating(world.horses[e.hid], race, e) + R.gauss() * 1.6);
+  const seen = race.entries.map(e => publicRating(world.horses[e.hid], race, e));
+  const pub = seen.map(r => r + R.gauss() * 1.6);
   const early = probsFrom(pub, 0.15).map((p, i) => 0.6 * p + 0.4 * (1 / (race.entries[i].ml + 1)));
-  const truth = probsFrom(race.entries.map(e => e.rating), 0.12);
-  const late = early.map((p, i) => 0.55 * p + 0.45 * truth[i]);
+  // The late money knows what the public knows, and has a fair but rough idea of how each horse is
+  // doing today: its day rating, give or take about seven points. It's most of the pool by the off, so
+  // what it knows is in the final price as well as in the way the odds moved.
+  const L = rng(`late:${race.seed}`);
+  const late = probsFrom(seen.map((r, i) => 0.062 * r + 0.101 * (race.entries[i].rating + L.gauss() * 7)), 1);
   const size = (POOL[race.cls] || 80000) * (race.purse >= 300000 ? 2.2 : 1) * R.range(0.8, 1.25) * (race.no === 8 ? 1.3 : 1);
   const wig = [...Array(n)].map(() => R.range(0, 1000));
   return { n, early: norm(early), late: norm(late), size, wig, seed: race.seed };
@@ -25,8 +29,9 @@ export function makeTote(race, world) {
 function norm(a) { const s = a.reduce((x, y) => x + y, 0); return a.map(x => x / s); }
 
 // The public's win money at a moment in the betting, `frac` from 0 (window opens) to 1 (post time).
+// The late money comes in as post time nears: by the off it's 85% of the pool.
 export function publicWin(tote, frac) {
-  const a = 0.5 * frac * frac;
+  const a = 0.85 * frac * frac;
   const total = tote.size * (0.22 + 0.78 * Math.pow(frac, 1.5));
   const tick = Math.floor(frac * 40);
   const mix = tote.early.map((p, i) => ((1 - a) * p + a * tote.late[i]) * (1 + 0.06 * Math.sin(tote.wig[i] + tick * 1.7) * (1 - frac * 0.6)));
@@ -73,9 +78,17 @@ export function legs(bet) {
 }
 export function cost(bet) { return legs(bet).reduce((s, l) => s + l.amt, 0); }
 
-function harville(p, sel) {
-  let pr = 1, left = 1;
-  for (const i of sel) { pr *= p[i] / left; left -= p[i]; }
+// How likely the public thinks a finish in this order is, from the win chances. Using them as they are
+// for second and third makes the places as easy to call as the win, which overrates the favourites
+// underneath and leaves the long shots there paying too much. So they're flattened for second and
+// third (powers 0.81 and 0.65, the usual correction to Harville's formula).
+const FLATTEN = [1, 0.81, 0.65];
+function inOrder(p, sel) {
+  let pr = 1;
+  sel.forEach((x, k) => {
+    const q = norm(p.map(v => v ** FLATTEN[k]));
+    pr *= q[x] / (1 - sel.slice(0, k).reduce((s, i) => s + q[i], 0));
+  });
   return pr;
 }
 
@@ -119,7 +132,7 @@ export function settle(tote, order, bets = []) {
   const scatter = sel => Math.exp(((hash(`${tote.seed}:${sel.join('-')}`) % 1000) / 1000 - 0.5) * 0.5);
   if (b !== undefined) {
     const E = pub * SHARE.exacta;
-    let onCombo = E * harville(p, [a, b]) * scatter([a, b]);
+    let onCombo = E * inOrder(p, [a, b]) * scatter([a, b]);
     const mine = my.filter(l => l.pool === 'exacta');
     const totalE = E + mine.reduce((s, l) => s + l.amt, 0);
     onCombo += mine.filter(l => l.sel[0] === a && l.sel[1] === b).reduce((s, l) => s + l.amt, 0);
@@ -127,7 +140,7 @@ export function settle(tote, order, bets = []) {
   }
   if (c !== undefined) {
     const T = pub * SHARE.trifecta;
-    let onCombo = T * harville(p, [a, b, c]) * scatter([a, b, c]);
+    let onCombo = T * inOrder(p, [a, b, c]) * scatter([a, b, c]);
     const mine = my.filter(l => l.pool === 'trifecta');
     const totalT = T + mine.reduce((s, l) => s + l.amt, 0);
     onCombo += mine.filter(l => l.sel[0] === a && l.sel[1] === b && l.sel[2] === c).reduce((s, l) => s + l.amt, 0);
