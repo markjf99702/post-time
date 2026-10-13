@@ -44,6 +44,16 @@ const early = await page.evaluate(() => {
 });
 if (early.building) assert.equal(early.stored, null, 'changing a setting during Opening day saved an empty meet');
 await page.waitForSelector('.races', { timeout: 30000 });
+// While a meet is being built the bankroll is blank, and so is its box.
+const emptyBank = await page.evaluate(() => {
+  const b = document.getElementById('bank');
+  const was = b.textContent;
+  b.textContent = '';
+  const shown = getComputedStyle(b).visibility;
+  b.textContent = was;
+  return shown;
+});
+assert.equal(emptyBank, 'hidden', 'an empty box shows where the bankroll goes');
 await page.evaluate(() => document.fonts.ready);
 assert.equal(await page.locator('.race-row').count(), 8, 'eight races on the card');
 assert.equal(await page.locator('#bank').textContent(), '$200.00');

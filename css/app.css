@@ -94,6 +94,7 @@ a { color: var(--green-2); }
 }
 .bank.up { background: #2d7a3e; }
 .bank.down { background: rgba(179, 55, 44, .7); }
+.bank:empty { visibility: hidden; } /* while a meet is being built; it keeps its place */
 .menu-btn { background: none; border: 0; padding: 6px; margin-right: -6px; cursor: pointer; color: #f3ecd8; }
 .menu-btn svg { width: 26px; height: 26px; display: block; }
 .menu {
