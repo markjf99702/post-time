@@ -6,12 +6,13 @@ import { TIPSTERS, SIRES, JOCKEYS } from './data.js';
 import { formRating } from './handicap.js';
 import { FURLONG } from './track.js';
 
-// How a horse usually runs, read from its past performances: E (need the lead) .. S (closer).
+// How a horse usually runs, read from its past performances: E (need the lead) .. S (closer). A horse
+// that's first or second at the first call, on average, is one that needs the lead.
 export function runStyle(h) {
   const lines = h.pps.slice(-4).map(p => p.line[0] && p.line[0][0]).filter(Boolean);
   if (!lines.length) return null;
   const avg = lines.reduce((a, b) => a + b, 0) / lines.length;
-  return avg <= 1.6 ? 'E' : avg <= 3 ? 'E/P' : avg <= 5 ? 'P' : 'S';
+  return avg <= 2 ? 'E' : avg <= 3.2 ? 'E/P' : avg <= 5 ? 'P' : 'S';
 }
 
 function label(race, i) { return `#${race.entries[i].pp}`; }
