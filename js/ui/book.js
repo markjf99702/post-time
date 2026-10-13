@@ -72,7 +72,7 @@ export function renderHelp(root, nav) {
       h('dl', {},
         h('dt', {}, 'Win, place, show'), h('dd', {}, 'Your horse finishes first; first or second; first, second or third.'),
         h('dt', {}, 'Exacta, trifecta'), h('dd', {}, 'The first two, or the first three, in order. A box covers every order of the horses you pick, one bet per order.'),
-        h('dt', {}, 'Odds'), h('dd', {}, '5-2 means $5 profit for every $2 bet, so a $2 win ticket pays $7. Payouts are rounded down to the dime, and the least a winning $2 ticket pays is $2.10.'),
+        h('dt', {}, 'Odds'), h('dd', {}, '5-2 means $5 profit for every $2 bet, so a $2 win ticket pays $7. Payouts are worked out per dollar and rounded down to the dime, so a $2 ticket pays in steps of 20 cents, and never less than $2.10.'),
       ),
       h('h3', {}, 'The race'),
       h('p', {}, 'The camera follows the leaders. Tap a number in the running order to follow one horse instead. The little map shows the whole field on the oval. In a close finish the stewards look at the photo: a finish-line camera that only sees the line, so the horses in it are stretched and squashed by their speed.'),
