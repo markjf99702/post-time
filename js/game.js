@@ -2,7 +2,7 @@
 // localStorage. A race is settled the moment you send the horses to the gate, so closing the page
 // halfway through a race doesn't change what happened.
 
-import { buildWorld, simulateRace, applyResult, nextDay as worldNextDay, ownerSilks, firstSaturday, CLASSES } from './world.js';
+import { buildWorld, simulateRace, applyResult, nextDay as worldNextDay, ownerSilks, firstSaturday, CLASSES, redrawShortRaces } from './world.js';
 import { makeTote, board, settle, ticketReturn, cost as betCost, legs } from './tote.js';
 import { forumPosts, reactions, scoreTipsters } from './forum.js';
 import { oddsText } from './handicap.js';
@@ -32,13 +32,25 @@ export function load() {
     if (w && p) {
       game.world = JSON.parse(w);
       game.player = { ...freshPlayer(), ...JSON.parse(p) };
-      for (const fix of [refundStrays, stopEarlyClocks]) {
+      for (const fix of [redrawShort, refundStrays, stopEarlyClocks]) {
         try { fix(); } catch { /* a save this can't make sense of loads as it is */ }
       }
       return true;
     }
   } catch { /* storage unavailable or corrupt: start fresh */ }
   return false;
+}
+
+// Late in a long meet a maiden race could be left with one horse in it or none. It couldn't be run, so
+// the day never ended. Draw it again (it's open to winners now) and give back anything bet on it.
+function redrawShort() {
+  for (const race of redrawShortRaces(game.world)) {
+    const k = raceKey(race);
+    for (const b of game.player.bets[k] || []) game.player.bank = round2(game.player.bank + (b.cost || 0));
+    delete game.player.bets[k];
+    delete game.player.opened[k];
+    delete race.forum;
+  }
 }
 
 // Starting a new meet on the first race day used to carry the last meet's betting slip over, so a

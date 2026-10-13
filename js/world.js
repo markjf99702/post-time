@@ -267,11 +267,27 @@ export function buildCard(world, day) {
     };
   });
   fillRaces(world, races, R, day);
-  for (const race of races) {
-    const ml = morningLine(race, world.horses);
-    race.entries.forEach((e, i) => { e.ml = ml[i][0]; e.mlText = ml[i][1]; });
-  }
+  for (const race of races) setMorningLine(world, race);
   return { day, date, wx, races };
+}
+
+function setMorningLine(world, race) {
+  const ml = morningLine(race, world.horses);
+  race.entries.forEach((e, i) => { e.ml = ml[i][0]; e.mlText = ml[i][1]; });
+}
+
+// A race with one horse in it, or none, can't be run, and the day can't end without it. A card drawn
+// before short maiden races were opened all the way up could have one: draw it again from the horses
+// that are free that day. Returns the races it drew again.
+export function redrawShortRaces(world) {
+  const card = world.cards[world.day];
+  const short = card ? card.races.filter(r => r.status !== 'official' && r.entries.length < 2) : [];
+  if (!short.length) return short;
+  const busy = new Set(card.races.filter(r => !short.includes(r)).flatMap(r => r.entries.map(e => e.hid)));
+  for (const race of short) race.entries = [];
+  fillRaces(world, short, rng(`redraw:${world.seed}:${world.day}`), world.day, busy);
+  for (const race of short) setMorningLine(world, race);
+  return short;
 }
 
 function trainerEstimate(h, R) {
@@ -283,8 +299,9 @@ function aptitude(h, race) {
   return -4 * dd * dd + (race.surface === 'turf' ? h.turf : 0);
 }
 
-function fillRaces(world, races, R, day) {
-  const pool = world.horses.filter(h => !h.retired && (h.last === null || h.last <= day - 2));
+// `busy` has the ids of horses already entered in another race that day.
+function fillRaces(world, races, R, day, busy = new Set()) {
+  const pool = world.horses.filter(h => !h.retired && (h.last === null || h.last <= day - 2) && !busy.has(h.id));
   const est = new Map(pool.map(h => [h, trainerEstimate(h, R)]));
   const used = new Set();
   const order = races.slice().sort((a, b) => b.par - a.par);
@@ -307,12 +324,20 @@ function fillRaces(world, races, R, day) {
   };
   order.forEach(fill);
   // A race short of horses is opened up: first to colts and geldings, then to winners of any kind.
+  const toWinners = race => { race.cls = 'C10'; race.par = CLASSES.C10.par; race.claim = CLASSES.C10.claim; race.purse = CLASSES.C10.purse; };
   for (const race of order) {
     if (race.entries.length >= 5) continue;
     for (const e of race.entries) used.delete(world.horses[e.hid]);
     if (race.fm) race.fm = false;
-    else if (CLASSES[race.cls].maiden) { race.cls = 'C10'; race.par = CLASSES.C10.par; race.claim = CLASSES.C10.claim; race.purse = CLASSES.C10.purse; }
+    else if (CLASSES[race.cls].maiden) toWinners(race);
     fill(race);
+    // A fillies-and-mares maiden race can still be short once it's open to colts: late in a long meet
+    // most of the maidens have won. Open it to winners too.
+    if (race.entries.length < 5 && CLASSES[race.cls].maiden) {
+      for (const e of race.entries) used.delete(world.horses[e.hid]);
+      toWinners(race);
+      fill(race);
+    }
   }
 
   for (const race of races) {

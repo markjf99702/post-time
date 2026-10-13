@@ -7,7 +7,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runRace, figureFor, stateAt, runningOrder } from '../js/sim.js';
 import { coursePath, FURLONG, COURSES } from '../js/track.js';
-import { createWorld, simulateRace } from '../js/world.js';
+import { createWorld, simulateRace, buildCard } from '../js/world.js';
 import { makeTote, board, settle, ticketReturn, cost } from '../js/tote.js';
 import { fmtTime, fmtClock } from '../js/chart.js';
 import { timeWords } from '../js/call.js';
@@ -118,6 +118,21 @@ test('the world builds a full card with past performances that happened', () => 
     assert.equal(new Set(ids).size, ids.length);
   }
   assert.ok(JSON.stringify(w).length < 900_000, 'the save stays small');
+});
+
+test('a maiden race short of horses is opened up until it has a field', () => {
+  const w = createWorld('test-maidens', '2026-09-26');
+  // Late in a long meet most of the maidens have won: leave six.
+  let left = 6;
+  for (const h of w.horses) if (h.maiden && !h.retired && left-- <= 0) h.maiden = false;
+  let opened = 0;
+  for (let d = 1; d <= 12; d++) {
+    for (const r of buildCard(w, d).races) {
+      assert.ok(r.entries.length >= 5, `race day ${d + 1}, race ${r.no} has ${r.entries.length} horses`);
+      if (r.no === 1 || r.no === 3) opened += r.cls === 'C10';
+    }
+  }
+  assert.ok(opened > 0, 'no maiden race was short of horses');
 });
 
 test('the tote pays like a tote', () => {
