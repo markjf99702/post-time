@@ -1,5 +1,6 @@
 // Plays whole meets with nobody watching and reports how the betting comes out: how often the favourite
-// wins, what simple ways of betting get back, how the forum regulars do, and checks on the tote's sums.
+// wins, how much the odds move before the off, what simple ways of betting get back, how the forum
+// regulars do, and checks on the tote's sums.
 // For tuning the tote, the handicapping and the barn.
 //   npm run sim                                     6 meets of 20 race days: 960 races, under a minute
 //   npm run sim -- --meets 2 --days 40 --seed lab --quick
@@ -48,6 +49,7 @@ const random = { win: [], exacta: [], trifecta: [] }; // a straight ticket picke
 const fav = { off: 0, late: 0, ml: 0 };
 const bands = [[0, 1], [1, 2], [2, 5], [5, 10], [10, 20], [20, 35], [35, Infinity]].map(b => ({ b, n: 0, won: 0, share: 0 }));
 const big = { win: 0, exacta: 0, trifecta: 0 };
+const moves = { keep: 0, keepLate: 0, halves: 0, logs: [] }; // how much the board moves before the off
 let races = 0, short = 0, overPool = 0, winPaid = 0, winBet = 0;
 const tipsters = {};
 const t0 = Date.now();
@@ -82,6 +84,10 @@ for (let m = 0; m < MEETS; m++) {
       if (argmin(off.odds) === a) fav.off++;
       if (argmin(late) === a) fav.late++;
       if (argmin(race.entries.map(e => e.ml)) === a) fav.ml++;
+      if (argmin(open) === argmin(off.odds)) moves.keep++;
+      if (argmin(late) === argmin(off.odds)) moves.keepLate++;
+      if (open.some((o, i) => (o + 1) / (late[i] + 1) >= 2)) moves.halves++;
+      open.forEach((o, i) => moves.logs.push(Math.abs(Math.log((o + 1) / (off.odds[i] + 1)))));
       const implied = off.odds.map(o => 1 / (o + 1)), book = implied.reduce((s, x) => s + x, 0);
       off.odds.forEach((o, i) => { const B = bands.find(x => o >= x.b[0] && o < x.b[1]); B.n++; B.share += implied[i] / book; if (i === a) B.won++; });
       // The tote's sums: what share of the win pool comes back, and no ticket paying more than its pool.
@@ -137,6 +143,13 @@ out.push('', 'How often the favourite wins');
 out.push(`  at the off               ${share(fav.off / races)}`);
 out.push(`  at 2 minutes to post     ${share(fav.late / races)}`);
 out.push(`  on the morning line      ${share(fav.ml / races)}`);
+const median = list => list.slice().sort((x, y) => x - y)[Math.floor(list.length / 2)];
+out.push('', 'How much the odds move');
+out.push('  the favourite is still the favourite at the off');
+out.push(`    from the opening       ${share(moves.keep / races)}`);
+out.push(`    from 2 minutes to post ${share(moves.keepLate / races)}`);
+out.push(`  races with a payout that halves by 2 minutes to post   ${share(moves.halves / races)}`);
+out.push(`  a typical horse's payout, opening to the off           x${Math.exp(median(moves.logs)).toFixed(2)} up or down`);
 out.push('', `${'Winners by their odds at the off'.padEnd(54)}horses     won   share of the betting`);
 for (const B of bands) if (B.n) out.push(row(B.b[0] === 0 ? 'odds-on' : B.b[1] === Infinity ? `${B.b[0]}-1 or longer` : `${B.b[0]}-1 to ${B.b[1]}-1`, B.n, `${share(B.won / B.n).padStart(6)}   ${share(B.share / B.n).padStart(6)}`));
 out.push('', `${'Ways of betting, picked at 2 minutes to post'.padEnd(54)} races   won or lost per $1`);

@@ -33,7 +33,7 @@ It's a static site: plain HTML, CSS and JavaScript, with no build step.
 ```sh
 npx serve .                   # or any static file server, then open the printed address
 npm test                      # checks the racing logic in Node, then plays a race in Chromium (needs Playwright)
-npm run sim                   # plays a few meets with nobody watching: how often favourites win, what ways of betting get back
+npm run sim                   # plays a few meets with nobody watching: how often favourites win, how much the odds move, what ways of betting get back
 npm install                   # once, for the screenshot tool's PNG compressor and the bundler
 node tools/screenshots.mjs    # redraws docs/*.png and og.png
 node tools/make-icons.mjs     # redraws the PNG icons from icon.svg
