@@ -10,7 +10,7 @@ globalThis.localStorage = {
   removeItem: k => { store.delete(k); },
 };
 globalThis.window = new EventTarget();
-const { game, newMeet, load, save, card, toteFor, placeBet, goToGate, mtpState } = await import('../js/game.js');
+const { game, newMeet, load, save, card, toteFor, placeBet, goToGate, mtpState, advanceDay } = await import('../js/game.js');
 
 function build(seed) {
   const meet = newMeet(seed);
@@ -80,4 +80,25 @@ test("looking ahead at a later race doesn't start its clock", () => {
   load();
   assert.equal(game.player.opened['0:3'], undefined);
   assert.ok(game.player.opened['0:1']);
+});
+
+test('the next race day comes after the page is opened again', () => {
+  build('reopened');
+  advanceDay();
+  assert.equal('_names' in JSON.parse(store.get('post-time/world')), false, 'the save has a list of names that JSON empties');
+  // A save from before: the names in use were kept with the world, and JSON had made them {}.
+  const old = JSON.parse(store.get('post-time/world'));
+  old._names = {};
+  store.set('post-time/world', JSON.stringify(old));
+  // Reopen the page before every race day, until horses have shipped in on two of them.
+  let shippedDays = 0;
+  for (let k = 0; k < 10 && shippedDays < 2; k++) {
+    load();
+    const before = game.world.horses.length;
+    advanceDay();
+    if (game.world.horses.length > before) shippedDays++;
+  }
+  assert.equal(shippedDays, 2, 'no horses shipped in, so their names were never needed');
+  const names = game.world.horses.map(h => h.name);
+  assert.equal(new Set(names).size, names.length, 'two horses have the same name');
 });

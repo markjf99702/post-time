@@ -57,7 +57,9 @@ const COATS = [
 ];
 
 function newHorse(world, R, { age, id }) {
-  const taken = world._names || (world._names = new Set(world.horses.map(h => h.name)));
+  // The names in use, gathered once a day. A save from before they were cleared at the end of the
+  // day has them as {}, which is what JSON makes of a Set: gather them again.
+  const taken = world._names instanceof Set ? world._names : (world._names = new Set(world.horses.map(h => h.name)));
   const female = R.chance(0.42);
   const sire = R.weighted(SIRES.map(s => [s, 1 + s.q]));
   const coat = R.weighted(COATS.map(c => [c, c[2]]));
@@ -162,6 +164,7 @@ export function nextDay(world) {
   endOfDay(world, world.day);
   world.day += 1;
   world.cards = { [world.day]: buildCard(world, world.day) };
+  delete world._names; // a Set doesn't survive being saved
 }
 
 function endOfDay(world, day) {
