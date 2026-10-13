@@ -70,6 +70,10 @@ assert.ok((await page.locator('.order button').count()) >= 5, 'the running order
 assert.ok((await page.locator('.call .now').textContent()).length > 5, 'the caller is calling it');
 await page.evaluate(() => window.__watch.setT(window.__watch.endT - 0.05));
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
+// The running order left on the screen at the end is the official one.
+const shownOrder = await page.locator('.order button').evaluateAll(bs => bs.map(b => +b.getAttribute('aria-label').match(/number (\d+)/)[1]));
+const officialOrder = await page.evaluate(() => { const r = window.postTime.card().races[0]; return r.result.order.map(o => r.entries[o.k].pp); });
+assert.deepEqual(shownOrder, officialOrder, 'the running order at the end is not the official order');
 await page.click('.w-ctl .btn');
 await page.waitForSelector('.official');
 assert.equal(await page.locator('.board tbody tr.mine').count() >= 1, true, 'your horses are marked in the order of finish');

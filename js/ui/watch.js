@@ -4,8 +4,8 @@
 import { h, clear, cloth } from './dom.js';
 import { RaceScene } from '../draw/scene.js';
 import { photoFinish } from '../draw/photo.js';
-import { stateAt } from '../sim.js';
-import { LENGTH, FURLONG } from '../track.js';
+import { stateAt, runningOrder } from '../sim.js';
+import { FURLONG } from '../track.js';
 import { marginShort, fmtTime } from '../chart.js';
 import { game, goToGate, callFor, runnersFor, raceLabel, horseOf, myBets } from '../game.js';
 import { BET_NAMES } from '../tote.js';
@@ -152,15 +152,11 @@ export function renderWatch(el, nav, params) {
   }
 
   function drawOrder(t) {
-    const st = stateAt(run, t, []);
     // In the gate, list them by post position.
-    const o = st.map((s, i) => ({ ...s, i })).sort((a, b) => t > 1 ? b.p - a.p : a.i - b.i);
+    const o = t > 1 ? runningOrder(run, t) : runners.map((r, i) => ({ i, gap: 0 }));
     clear(order);
     o.forEach((x, k) => {
-      if (k > 0 && t > 1) {
-        const gap = (o[k - 1].p - x.p) / LENGTH;
-        order.append(h('span', { class: 'gap' }, gap < 0.06 ? 'no' : marginShort(gap)));
-      }
+      if (k > 0 && t > 1) order.append(h('span', { class: 'gap' }, marginShort(x.gap)));
       const r = runners[x.i];
       order.append(h('button', {
         type: 'button', class: `${r.mine ? 'me' : ''}${following === x.i ? ' follow' : ''}`, 'aria-label': `${k + 1}: number ${r.number}, ${r.name}`,

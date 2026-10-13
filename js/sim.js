@@ -400,4 +400,21 @@ export function stateAt(run, t, out = []) {
   return out;
 }
 
+// The running order at time t, front to back, with each horse's gap to the one in front in lengths.
+// Horses past the wire come first, in the official order with the official margins (after the wire
+// they keep running, and a faster one can go by the winner); the rest follow by where they are, the
+// first of them measured from the wire.
+export function runningOrder(run, t) {
+  const st = stateAt(run, t, []);
+  const done = run.results.filter(r => run.t0 + r.time <= t);
+  const out = done.map((r, k) => ({ i: r.h, gap: k ? r.toPrev : 0 }));
+  const finished = new Set(out.map(x => x.i));
+  const rest = st.map((s, i) => ({ i, p: s.p })).filter(x => !finished.has(x.i)).sort((a, b) => b.p - a.p);
+  rest.forEach((x, k) => {
+    const ahead = k ? rest[k - 1].p : done.length ? run.distance : x.p;
+    out.push({ i: x.i, gap: Math.max(0, (ahead - x.p) / LENGTH) });
+  });
+  return out;
+}
+
 export function runDuration(run) { return run.frames.length * run.dt; }

@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runRace, figureFor } from '../js/sim.js';
+import { runRace, figureFor, stateAt, runningOrder } from '../js/sim.js';
 import { coursePath, FURLONG, COURSES } from '../js/track.js';
 import { createWorld, simulateRace } from '../js/world.js';
 import { makeTote, board, settle, ticketReturn, cost } from '../js/tote.js';
@@ -70,6 +70,31 @@ test('pace matters: lone speed does better than speed in a duel', () => {
   const lone = wins([0.9, 0.4, 0.4, 0.2, 0.2, 0.3, 0.1, 0.45]);
   const duel = wins([0.9, 0.85, 0.95, 0.8, 0.2, 0.2, 0.1, 0.3]);
   assert.ok(lone > duel + 0.08, `lone speed ${lone}, in a duel ${duel}`);
+});
+
+test('the running order at the finish is the official order, with the official margins', () => {
+  let goneBy = 0;
+  for (let s = 0; s < 30; s++) {
+    const field = Array.from({ length: 9 }, (_, i) => horse({ rating: 78 + ((i + s) % 4), style: ((i + s) * 0.37) % 1, reserve: 100 + ((i + s) * 7) % 30 }));
+    const run = runRace(race([6, 7, 8.5, 5.5][s % 4], 'dirt', `order${s}`), field);
+    const end = run.frames.length * run.dt;
+    const o = runningOrder(run, end);
+    assert.deepEqual(o.map(x => x.i), run.results.map(r => r.h), `race ${s}`);
+    o.forEach((x, k) => assert.equal(x.gap, k ? run.results[k].toPrev : 0));
+    // They keep running after the wire, and by then a horse that finished behind has often gone by.
+    const live = stateAt(run, end).map((x, i) => [x.p, i]).sort((a, b) => b[0] - a[0]).map(x => x[1]);
+    if (live.join() !== o.map(x => x.i).join()) goneBy++;
+    // Halfway through the finish: the ones home in the official order, then the rest by where they are.
+    const k = Math.floor(run.results.length / 2);
+    const t = run.t0 + run.results[k].time + 0.001;
+    const mid = runningOrder(run, t);
+    assert.deepEqual(mid.slice(0, k + 1).map(x => x.i), run.results.slice(0, k + 1).map(r => r.h));
+    const st = stateAt(run, t);
+    const rest = mid.slice(k + 1).map(x => st[x.i].p);
+    assert.deepEqual(rest, rest.slice().sort((a, b) => b - a));
+    assert.ok(mid.every(x => x.gap >= 0));
+  }
+  assert.ok(goneBy > 0, 'no race in the sample where the order by position at the end is wrong');
 });
 
 test('the world builds a full card with past performances that happened', () => {
