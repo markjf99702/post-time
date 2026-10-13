@@ -26,8 +26,9 @@ export function renderWatch(el, nav, params) {
   clear(el);
   el.hidden = false;
   document.body.style.overflow = 'hidden';
-  const clock = h('div', { class: 'clock' }, '');
-  const frs = h('div', { class: 'fr' }, '');
+  // Start with the text the first frame would show, so nothing changes size once the race starts.
+  const clock = h('div', { class: 'clock' }, clockText(race.post));
+  const frs = h('div', { class: 'fr' }, fieldText(race));
   const canvas = h('canvas', { class: 'scene', 'aria-label': `Race ${race.no}, running now. The race call below describes it.` });
   const mapC = h('canvas', { width: 220, height: 108, 'aria-hidden': 'true' });
   const stage = h('div', { class: 'w-stage' }, canvas, h('div', { class: 'w-map' }, mapC));
@@ -62,8 +63,6 @@ export function renderWatch(el, nav, params) {
   );
 
   const scene = new RaceScene(canvas, { race, run, runners, wx: game.world.cards[game.world.day].wx });
-  const onResize = () => scene.resize();
-  window.addEventListener('resize', onResize);
   let T = -5.2;            // sim time; negative is the wait in the gate
   let speed = 1;
   let last = performance.now();
@@ -72,6 +71,11 @@ export function renderWatch(el, nav, params) {
   let rung = false, cheered = false, ended = false, photoShown = false;
   let orderAt = -1;
   let following = null;
+  // The picture follows the size of its box (the screen turning, the buttons changing at the finish).
+  const onResize = () => { scene.resize(); scene.draw(Math.max(0, T)); fitCall(); };
+  const resizer = typeof ResizeObserver === 'function' ? new ResizeObserver(onResize) : null;
+  if (resizer) resizer.observe(stage); else window.addEventListener('resize', onResize);
+  const stopResizing = () => { if (resizer) resizer.disconnect(); else window.removeEventListener('resize', onResize); };
   if (game.player.settings.sound) audio.bugle();
 
   function setSpeed(s) {
@@ -103,7 +107,7 @@ export function renderWatch(el, nav, params) {
     // Clock and fractions.
     clock.textContent = T < 0 ? clockText(race.post) : clockT < 0 ? '0:00.0' : fmtClock(Math.min(clockT, run.results[0].time));
     const fr = run.fractions.filter(f => f.t <= clockT);
-    frs.textContent = fr.length ? fr.map((f, i) => `${i === fr.length - 1 && f.at >= race.distance - 1 ? 'Final' : fracName(f.at)} ${fmtTime(f.t)}`).join('   ') : `${race.entries.length} runners · ${race.surface} · ${race.cond}`;
+    frs.textContent = fr.length ? fr.map((f, i) => `${i === fr.length - 1 && f.at >= race.distance - 1 ? 'Final' : fracName(f.at)} ${fmtTime(f.t)}`).join('   ') : fieldText(race);
 
     // The call.
     let idx = -1;
@@ -112,6 +116,7 @@ export function renderWatch(el, nav, params) {
       shown = idx;
       prev.textContent = idx > 0 ? call.lines[idx - 1].text : '';
       now.textContent = call.lines[idx].text;
+      fitCall();
       now.style.animation = 'none'; void now.offsetWidth; now.style.animation = '';
       if (speed === 1) audio.say(call.lines[idx].text);
     }
@@ -134,6 +139,16 @@ export function renderWatch(el, nav, params) {
 
     if (!ended && T >= endT - 0.01) finish();
     raf = requestAnimationFrame(frame);
+  }
+
+  // A long line on a narrow screen gets a smaller size rather than spilling out of the box.
+  function fitCall() {
+    now.style.fontSize = '';
+    let px = parseFloat(getComputedStyle(now).fontSize);
+    while (callBox.scrollHeight > callBox.clientHeight + 1 && px > 12) {
+      px -= 1;
+      now.style.fontSize = `${px}px`;
+    }
   }
 
   function drawOrder(t) {
@@ -185,7 +200,7 @@ export function renderWatch(el, nav, params) {
     cancelAnimationFrame(raf);
     audio.stopRace();
     audio.hush();
-    window.removeEventListener('resize', onResize);
+    stopResizing();
     el.hidden = true;
     clear(el);
     document.body.style.overflow = '';
@@ -194,8 +209,12 @@ export function renderWatch(el, nav, params) {
 
   raf = requestAnimationFrame(frame);
   // Debug hook for tests and screenshots.
-  window.__watch = { setT: t => { T = t; scene.lastT = null; }, get T() { return T; }, winT, endT, t0, leave, run, pause: () => { speed = 0; } };
-  return () => { cancelAnimationFrame(raf); audio.stopRace(); window.removeEventListener('resize', onResize); };
+  window.__watch = { setT: t => { T = t; scene.lastT = null; }, get T() { return T; }, winT, endT, t0, leave, run, call, pause: () => { speed = 0; } };
+  return () => { cancelAnimationFrame(raf); audio.stopRace(); stopResizing(); };
+}
+
+function fieldText(race) {
+  return `${race.entries.length} runners · ${race.surface} · ${race.cond}`;
 }
 
 function myTickets(race) {

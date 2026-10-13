@@ -94,6 +94,42 @@ assert.equal(await page.evaluate(() => window.postTime.game.player.bank), bank);
 // Fits a phone: nothing scrolls sideways.
 assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the page scrolls sideways on a phone');
 
+// A small phone with the browser's bars showing: the call stays in its box, the picture doesn't change
+// size as the lines come and go, and the Results button is on the screen at the end.
+await page.setViewportSize({ width: 320, height: 568 });
+await page.click('.race-row.next');
+await page.click('.tabs button:nth-child(4)');
+await page.locator('.pick-row').nth(0).locator('button').nth(0).click();
+await page.click('.builder .btn');
+await page.click('.post-bar .btn.brass');
+await page.waitForSelector('.watch:not([hidden]) canvas.scene');
+const small = await page.evaluate(async () => {
+  const w = window.__watch;
+  w.pause();
+  const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const box = document.querySelector('.call');
+  const stage = () => Math.round(document.querySelector('.w-stage').getBoundingClientRect().height);
+  const heights = new Set([stage()]);
+  let spill = 0;
+  for (const line of w.call.lines.slice().sort((a, b) => b.text.length - a.text.length).slice(0, 3)) {
+    w.setT(w.t0 + line.t + 0.05);
+    await frames();
+    spill = Math.max(spill, box.scrollHeight - box.clientHeight);
+    heights.add(stage());
+  }
+  return { spill, heights: [...heights], label: document.querySelector('.w-top span').getBoundingClientRect().height };
+});
+assert.ok(small.spill <= 1, `the race call spills ${small.spill}px out of its box on a small phone`);
+assert.equal(small.heights.length, 1, `the picture changes size with the call: ${small.heights}`);
+assert.ok(small.label < 24, 'the race number wraps onto two lines');
+await page.evaluate(() => window.__watch.setT(window.__watch.endT));
+await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
+const resultsBtn = await page.locator('.w-ctl .btn').boundingBox();
+assert.ok(resultsBtn.y + resultsBtn.height <= 568, `the Results button is off the bottom of a small phone (${resultsBtn.y + resultsBtn.height})`);
+await page.click('.w-ctl .btn');
+await page.waitForSelector('.official');
+await page.setViewportSize({ width: 390, height: 844 });
+
 // Works offline once it has been opened.
 await page.waitForFunction(() => navigator.serviceWorker?.controller, null, { timeout: 10000 }).catch(() => {});
 await ctx.setOffline(true);
