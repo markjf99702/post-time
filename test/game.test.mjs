@@ -10,7 +10,7 @@ globalThis.localStorage = {
   removeItem: k => { store.delete(k); },
 };
 globalThis.window = new EventTarget();
-const { game, newMeet, load, save, card, toteFor, placeBet, goToGate } = await import('../js/game.js');
+const { game, newMeet, load, save, card, toteFor, placeBet, goToGate, mtpState } = await import('../js/game.js');
 
 function build(seed) {
   const meet = newMeet(seed);
@@ -52,4 +52,19 @@ test("a ticket on a number that isn't in the race is taken back, and the money w
   assert.equal(s.returns.length, 1, 'the settled race keeps one return per ticket');
   assert.equal(s.spent, 2);
   assert.equal(game.player.ledger.find(l => l.no === 1).spent, 2);
+});
+
+test("looking ahead at a later race doesn't start its clock", () => {
+  build('clocks');
+  const [r1, , r3] = card().races;
+  assert.deepEqual(mtpState(r3), { mtp: 12, frac: 0 }, 'a later race shows the opening odds');
+  assert.equal(game.player.opened['0:3'], undefined, "race 3's clock started while race 1 was up");
+  mtpState(r1);
+  assert.ok(game.player.opened['0:1'], 'the race up next has its clock');
+  // A save from before: race 3's clock was started ten minutes ago, from a look at its form.
+  game.player.opened['0:3'] = Date.now() - 600000;
+  save();
+  load();
+  assert.equal(game.player.opened['0:3'], undefined);
+  assert.ok(game.player.opened['0:1']);
 });

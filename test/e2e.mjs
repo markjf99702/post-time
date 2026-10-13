@@ -37,6 +37,14 @@ await page.evaluate(() => document.fonts.ready);
 assert.equal(await page.locator('.race-row').count(), 8, 'eight races on the card');
 assert.equal(await page.locator('#bank').textContent(), '$200.00');
 
+// A look at a later race shows its opening odds, and doesn't start its clock.
+await page.locator('.race-row').nth(2).click();
+await page.click('.tabs button:nth-child(4)');
+assert.equal(await page.locator('.tote-top span').first().textContent(), 'Opening odds');
+assert.equal(await page.evaluate(() => window.postTime.game.player.opened['0:3']), undefined, "race 3's clock started while race 1 was up");
+await page.click('.rhead .back');
+await page.waitForSelector('.races');
+
 // The form: past performances open up.
 await page.click('.race-row.next');
 await page.waitForSelector('.entry');

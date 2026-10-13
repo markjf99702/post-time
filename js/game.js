@@ -32,7 +32,9 @@ export function load() {
     if (w && p) {
       game.world = JSON.parse(w);
       game.player = { ...freshPlayer(), ...JSON.parse(p) };
-      try { refundStrays(); } catch { /* a save this can't make sense of loads as it is */ }
+      for (const fix of [refundStrays, stopEarlyClocks]) {
+        try { fix(); } catch { /* a save this can't make sense of loads as it is */ }
+      }
       return true;
     }
   } catch { /* storage unavailable or corrupt: start fresh */ }
@@ -64,6 +66,15 @@ function refundStrays() {
     }
     if (removed && line && !list.length) game.player.ledger.splice(game.player.ledger.indexOf(line), 1);
   }
+}
+
+// Looking ahead at a later race used to start its clock, so it came up at 2 minutes to post with
+// the betting nearly over. Only the race that's up next keeps one.
+function stopEarlyClocks() {
+  const c = game.world?.cards?.[game.world.day];
+  if (!c || !game.player.opened) return;
+  const up = c.races.find(r => r.status !== 'official');
+  for (const r of c.races) if (r !== up && r.status !== 'official') delete game.player.opened[raceKey(r)];
 }
 
 function inRace(race, sel) {
@@ -116,9 +127,11 @@ export function toteFor(race) {
 }
 
 // Minutes to post, and how far through the betting we are, from when you first opened the race.
+// Only the race that's up next has a clock running; a later one shows its opening odds until then.
 export function mtpState(race) {
   const k = raceKey(race);
   if (race.status === 'official') return { mtp: 0, frac: 1 };
+  if (nextRace() !== race) return { mtp: MTP_START, frac: 0 };
   const opened = game.player.opened[k] || (game.player.opened[k] = Date.now());
   const secs = (Date.now() - opened) / 1000;
   const mtp = Math.max(2, MTP_START - Math.floor(secs / MTP_SECONDS));

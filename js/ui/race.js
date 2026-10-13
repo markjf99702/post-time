@@ -427,8 +427,9 @@ function toteBoard(race) {
       h('div', { class: 'pay' }, `pays ~$${Math.max(2.2, Math.floor((vals[i] + 1) * 20) / 10).toFixed(0)}`),
     ));
   });
+  const live = nextRace() === race; // a later race shows its opening odds until it's up
   return h('div', { class: 'tote', id: 'tote' },
-    h('div', { class: 'tote-top' }, h('span', {}, final ? 'Final odds' : `Odds · ${mtp} min to post`), h('span', {}, `Win pool ${money(b.pools.win, { cents: false })}`)),
+    h('div', { class: 'tote-top' }, h('span', {}, final ? 'Final odds' : live ? `Odds · ${mtp} min to post` : 'Opening odds'), h('span', {}, `Win pool ${money(b.pools.win, { cents: false })}`)),
     grid,
   );
 }
