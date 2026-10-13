@@ -17,6 +17,19 @@ function build(seed) {
   while (!meet.step()) { /* a week of history at a time */ }
 }
 
+test("a setting changed while the first meet is being built doesn't save an empty meet", () => {
+  // What the page has during Opening day, before the meet exists.
+  game.world = null;
+  game.player = { settings: { sound: false, voice: false }, bank: 0 };
+  save();
+  assert.equal(store.size, 0, 'saved a meet that is not there');
+  assert.equal(load(), false, 'the next visit would open an empty meet instead of building one');
+  build('settings-first');
+  assert.equal(game.player.settings.sound, false, 'the setting is kept with the new meet');
+  assert.equal(game.player.bank, 200);
+  assert.ok(JSON.parse(store.get('post-time/world')).cards, 'the new meet is saved');
+});
+
 test("a new meet starts with its own tote, not the last meet's", () => {
   build('meet-a');
   const before = card().races[0];

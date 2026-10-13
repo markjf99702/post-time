@@ -135,6 +135,7 @@ if (load()) {
   nav.go('card');
 } else {
   game.player = { settings: { sound: true, voice: false }, bank: 0 };
+  applySettings(); // so the menu shows them while the first meet is built
   setup();
 }
 

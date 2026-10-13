@@ -82,6 +82,8 @@ function inRace(race, sel) {
 }
 
 export function save() {
+  // Until the first meet is built there's nothing to keep; a setting changed meanwhile is kept with it.
+  if (!game.world) return;
   window.dispatchEvent(new Event('post-time:saved'));
   try {
     localStorage.setItem(KEY_WORLD, JSON.stringify(game.world, (k, v) => (k === 'path' ? undefined : v)));

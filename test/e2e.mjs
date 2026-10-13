@@ -30,8 +30,19 @@ page.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
 page.on('requestfailed', r => problems.push('failed: ' + r.url()));
 page.on('request', r => { if (!r.url().startsWith(base)) problems.push('left the site: ' + r.url()); });
 
-await page.goto(base);
-// First visit: the meet is built, with ten weeks of races behind it.
+await page.goto(base, { waitUntil: 'domcontentloaded' });
+// First visit: the meet is built, with ten weeks of races behind it. Changing a setting meanwhile
+// doesn't save an empty meet in its place.
+await page.waitForSelector('.setup');
+const early = await page.evaluate(() => {
+  const building = !!document.querySelector('.setup');
+  document.getElementById('menuBtn').click();
+  document.getElementById('optSound').click();
+  document.getElementById('optSound').click();
+  document.getElementById('menuBtn').click();
+  return { building, stored: localStorage.getItem('post-time/world') };
+});
+if (early.building) assert.equal(early.stored, null, 'changing a setting during Opening day saved an empty meet');
 await page.waitForSelector('.races', { timeout: 30000 });
 await page.evaluate(() => document.fonts.ready);
 assert.equal(await page.locator('.race-row').count(), 8, 'eight races on the card');
