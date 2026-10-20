@@ -186,12 +186,13 @@ export function cash() {
   }
 }
 
-// The race call, read aloud by the browser's own voice, if there is one.
+// The race call, read aloud by the browser's own voice, if there is one. It's a setting of its own, so it
+// reads the call with the sound effects off too.
 let voiceOn = false;
 export function setVoice(on) { voiceOn = on; if (!on) window.speechSynthesis?.cancel(); }
 export function voiceEnabled() { return voiceOn && 'speechSynthesis' in window; }
 export function say(text, rate = 1.15) {
-  if (!voiceEnabled() || !enabled) return;
+  if (!voiceEnabled()) return;
   const u = new SpeechSynthesisUtterance(text);
   u.rate = rate; u.pitch = 1.05;
   const voices = speechSynthesis.getVoices();

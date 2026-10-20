@@ -55,5 +55,5 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `js/audio.js`: the bugle, the starting bell, the crowd and the cash window, all synthesised.
 - `fonts/`: Oswald and IBM Plex Sans Condensed (SIL Open Font License), served from here so nothing loads from elsewhere.
 - `sw.js`: keeps a copy for playing offline.
-- `test/sim.test.mjs`, `test/game.test.mjs`, `test/e2e.mjs`: the tests.
+- `test/sim.test.mjs`, `test/game.test.mjs`, `test/audio.test.mjs`, `test/e2e.mjs`: the tests.
 - `dev/`: pages that draw the horses, a race, the photo finish and the winner's circle on their own, for tuning by eye.
