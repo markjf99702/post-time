@@ -10,11 +10,32 @@ globalThis.localStorage = {
   removeItem: k => { store.delete(k); },
 };
 globalThis.window = new EventTarget();
-const { game, newMeet, load, save, card, toteFor, placeBet, goToGate, mtpState, advanceDay } = await import('../js/game.js');
+const { game, newMeet, load, save, card, toteFor, placeBet, goToGate, mtpState, advanceDay, callFor, horseOf } = await import('../js/game.js');
 
 function build(seed) {
   const meet = newMeet(seed);
   while (!meet.step()) { /* a week of history at a time */ }
+}
+
+// A long meet played the way the page plays it: every race sent to the gate and called. What each race
+// came to is kept for the tests below, so the meet is played once.
+let longMeet = null;
+function playLongMeet(days = 60) {
+  if (longMeet) return longMeet;
+  build('long-meet');
+  const races = [];
+  for (let d = 0; d < days; d++) {
+    for (const race of card().races) {
+      const { run } = goToGate(race);
+      const call = callFor(race, run);
+      races.push({
+        day: d + 1, no: race.no, field: race.entries.length, lines: call.lines.map(l => l.text), photo: call.photo,
+        winner: horseOf(race.entries[run.results[0].h]).name, reactions: (race.forumAfter || []).map(p => p.text),
+      });
+    }
+    advanceDay();
+  }
+  return (longMeet = races);
 }
 
 test("a setting changed while the first meet is being built doesn't save an empty meet", () => {
@@ -129,4 +150,13 @@ test('a race left with fewer than three horses is drawn again when the game load
   assert.ok(races.every(r => r.status === 'official'));
   advanceDay();
   assert.equal(game.world.day, 1);
+});
+
+test('a long meet keeps running: sixty race days, and every race has a field', () => {
+  // Maidens win faster than new ones ship in, so meets used to stop between race days 25 and 45 on a
+  // race with one horse or none, which couldn't be sent to the gate or called.
+  const races = playLongMeet();
+  assert.equal(races.length, 60 * 8);
+  assert.deepEqual(races.filter(r => r.field < 5).map(r => `race day ${r.day}, race ${r.no}: ${r.field} horses`), []);
+  assert.deepEqual(races.filter(r => r.lines.some(l => /undefined|NaN/.test(l))).map(r => `race day ${r.day}, race ${r.no}`), []);
 });
