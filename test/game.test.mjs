@@ -103,20 +103,22 @@ test('the next race day comes after the page is opened again', () => {
   assert.equal(new Set(names).size, names.length, 'two horses have the same name');
 });
 
-test('a race left with one horse or none is drawn again when the game loads', () => {
+test('a race left with fewer than three horses is drawn again when the game loads', () => {
   build('short-field');
-  const [r1, r2, r3] = card().races;
+  const [r1, r2, r3, r4] = card().races;
   goToGate(r1);
   goToGate(r2);
-  // A save from before: race 3, a maiden race, was left with one horse, and there's a ticket on it.
-  r3.entries = r3.entries.slice(0, 1);
+  // A save from before: race 3, a maiden race, was left with two horses, and there's a ticket on it;
+  // race 4 has one.
+  r3.entries = r3.entries.slice(0, 2);
+  r4.entries = r4.entries.slice(0, 1);
   game.player.bets['0:3'] = [{ type: 'win', sel: [0], amt: 2, cost: 2 }];
   game.player.bank -= 2;
   const bank = game.player.bank;
   save();
   load();
   const races = card().races;
-  assert.ok(races[2].entries.length >= 5, `race 3 has ${races[2].entries.length} horses`);
+  for (const r of [races[2], races[3]]) assert.ok(r.entries.length >= 5, `race ${r.no} has ${r.entries.length} horses`);
   assert.equal(game.player.bank, bank + 2, 'the ticket on it is paid back');
   assert.equal(game.player.bets['0:3'], undefined);
   const ids = races.flatMap(r => r.entries.map(e => e.hid));

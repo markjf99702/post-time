@@ -41,8 +41,9 @@ export function load() {
   return false;
 }
 
-// Late in a long meet a maiden race could be left with one horse in it or none. It couldn't be run, so
-// the day never ended. Draw it again (it's open to winners now) and give back anything bet on it.
+// Late in a long meet a maiden race could be left with fewer than three horses (one or none, and it
+// couldn't be run, so the day never ended). Draw it again (it's open to winners now, as a claimer) under
+// the same race number, and give back anything bet on it.
 function redrawShort() {
   for (const race of redrawShortRaces(game.world)) {
     const k = raceKey(race);

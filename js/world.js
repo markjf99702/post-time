@@ -276,12 +276,12 @@ function setMorningLine(world, race) {
   race.entries.forEach((e, i) => { e.ml = ml[i][0]; e.mlText = ml[i][1]; });
 }
 
-// A race with one horse in it, or none, can't be run, and the day can't end without it. A card drawn
-// before short maiden races were opened all the way up could have one: draw it again from the horses
-// that are free that day. Returns the races it drew again.
+// A race with one horse in it, or none, couldn't be run, and the day can't end without it; two horses
+// make a match race, not a betting race. A card drawn before short maiden races were opened all the way
+// up could have one: draw it again from the horses that are free that day. Returns the races it drew again.
 export function redrawShortRaces(world) {
   const card = world.cards[world.day];
-  const short = card ? card.races.filter(r => r.status !== 'official' && r.entries.length < 2) : [];
+  const short = card ? card.races.filter(r => r.status !== 'official' && r.entries.length < 3) : [];
   if (!short.length) return short;
   const busy = new Set(card.races.filter(r => !short.includes(r)).flatMap(r => r.entries.map(e => e.hid)));
   for (const race of short) race.entries = [];
