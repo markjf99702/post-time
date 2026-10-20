@@ -61,12 +61,12 @@ export function raceCall(race, run, names) {
   {
     const st = at(firstT);
     const o = ordered(st);
-    const a = o[0], b = o[1], c = o[2];
-    const g = (a.p - b.p) / LENGTH;
+    const a = o[0], b = o[1], c = o[2]; // a field of one or two has no b or c
+    const g = b ? (a.p - b.p) / LENGTH : Infinity;
     const verb = R.pick(['goes right to the front', 'shoots to the lead', 'takes them along']);
     const text = g > 1.2
-      ? `${nm(a.i)} ${verb}. ${nm(b.i)} second, ${nm(c.i)} third.`
-      : `${nm(a.i)} and ${nm(b.i)} vie for the early lead, ${nm(c.i)} right there.`;
+      ? `${nm(a.i)} ${verb}.${b ? ` ${nm(b.i)} second${c ? `, ${nm(c.i)} third` : ''}.` : ''}`
+      : `${nm(a.i)} and ${nm(b.i)} vie for the early lead${c ? `, ${nm(c.i)} right there` : ''}.`;
     say(firstT, text);
   }
 
@@ -124,21 +124,21 @@ export function raceCall(race, run, names) {
 
     if (!inStretch && seg.name !== lastSeg && seg.name !== 'chute') {
       lastSeg = seg.name;
-      const gap = (L.p - o[1].p) / LENGTH;
       const where = { backstretch: 'Down the backstretch', 'far turn': 'Around the far turn', 'clubhouse turn': 'Into the clubhouse turn', stretch: 'Past the stands' }[seg.name] || 'Up front';
       const tail = o[o.length - 1];
-      const extra = R.chance(0.5) ? ` ${nm(o[2].i)} is third, and ${nm(tail.i)} brings up the rear.` : ` ${nm(o[2].i)} sits third.`;
-      say(t, `${where}, ${nm(L.i)} leads by ${gapWords(gap)}. ${nm(o[1].i)} second.${extra}`);
+      const rear = R.chance(0.5) && o.length > 3;
+      const extra = !o[2] ? '' : rear ? ` ${nm(o[2].i)} is third, and ${nm(tail.i)} brings up the rear.` : ` ${nm(o[2].i)} sits third.`;
+      say(t, o[1] ? `${where}, ${nm(L.i)} leads by ${gapWords((L.p - o[1].p) / LENGTH)}. ${nm(o[1].i)} second.${extra}` : `${where}, ${nm(L.i)} all alone.`);
       nextFree = t + 4.5; continue;
     }
     if (inStretch && lastSeg !== 'home') {
       lastSeg = 'home';
-      const gap = (L.p - o[1].p) / LENGTH;
       const closers = o.slice(1, 5).filter(x => x.v > L.v + 0.3).map(x => x.i);
       const tail = closers.length ? ` ${nm(closers[0])} ${R.pick(['is coming!', 'is flying on the outside!', 'is charging!'])}` : '';
-      say(t, `Turning for home, it's ${nm(L.i)} by ${gapWords(gap)}.${tail}`);
+      say(t, o[1] ? `Turning for home, it's ${nm(L.i)} by ${gapWords((L.p - o[1].p) / LENGTH)}.${tail}` : `Turning for home, it's ${nm(L.i)} all alone.`);
       nextFree = t + 3.5; continue;
     }
+    if (!o[1]) continue; // the rest of the stretch calls are about who's chasing
     if (inStretch && toGo < FURLONG + 20 && toGo > FURLONG - 40 && !moveSeen.has('eighth')) {
       moveSeen.add('eighth');
       const gap = (L.p - o[1].p) / LENGTH;
@@ -161,10 +161,11 @@ export function raceCall(race, run, names) {
     say(finishT + 0.1, `${nm(w.h)} and ${nm(s.h)} hit the wire together. It's a photo!`, 'finish');
   } else {
     const m = s ? s.toPrev : 0;
-    const how = m > 6 ? `in a romp, by ${Math.round(m)} lengths!` : m > 2.5 ? `by ${gapWords(m)}, going away!` : m < 0.6 ? 'by a whisker!' : `by ${gapWords(m)}!`;
+    const how = !s ? 'all alone!' : m > 6 ? `in a romp, by ${Math.round(m)} lengths!` : m > 2.5 ? `by ${gapWords(m)}, going away!` : m < 0.6 ? 'by a whisker!' : `by ${gapWords(m)}!`;
     say(finishT + 0.1, `${nm(w.h)} wins it ${how}`, 'finish');
   }
-  if (s && th) say(finishT + 3.2, `${nm(s.h)} ${photo ? 'in the photo' : 'second'}, ${nm(th.h)} third. The time, ${timeWords(finishT)}.`, 'finish');
+  const placed = [s && `${nm(s.h)} ${photo ? 'in the photo' : 'second'}`, th && `${nm(th.h)} third`].filter(Boolean).join(', ');
+  say(finishT + 3.2, `${placed ? `${placed}. ` : ''}The time, ${timeWords(finishT)}.`, 'finish');
   lines.sort((a, b) => a.t - b.t);
   // Keep lines from crowding each other.
   for (let i = 1; i < lines.length; i++) if (lines[i].t < lines[i - 1].t + 1.8 && lines[i].kind !== 'finish') lines[i].t = lines[i - 1].t + 1.8;

@@ -28,7 +28,9 @@ const SYSTEMS = {
     });
     const idx = rankBy(figs.map(f => f ?? -99));
     const a = idx[0], b = idx[1];
-    if (figs[a] === null) return { pick: idx.slice(0, 3), text: 'All first-timers. No numbers, no opinion. Passing.', pass: true };
+    if (a === undefined || figs[a] === null) return { pick: idx.slice(0, 3), text: 'All first-timers. No numbers, no opinion. Passing.', pass: true };
+    // One horse with a number: the only one in the race, or the only one that has run.
+    if (b === undefined || figs[b] === null) return { pick: idx.slice(0, 3), text: `Top fig belongs to ${label(race, a)} ${nm(world, race, a)}, ${figs[a]}. Nobody else in here has a number. Single.` };
     const gap = figs[a] - figs[b];
     const apart = gap === 0 ? 'even on the numbers' : `${gap} point${gap === 1 ? '' : 's'} apart on the numbers`;
     const text = gap >= 4

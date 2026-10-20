@@ -10,7 +10,8 @@ import { coursePath, FURLONG, COURSES } from '../js/track.js';
 import { createWorld, simulateRace, buildCard, applyResult, nextDay } from '../js/world.js';
 import { makeTote, board, settle, ticketReturn, cost, TAKEOUT } from '../js/tote.js';
 import { fmtTime, fmtClock } from '../js/chart.js';
-import { timeWords } from '../js/call.js';
+import { timeWords, raceCall } from '../js/call.js';
+import { forumPosts } from '../js/forum.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const race = (f, surface = 'dirt', seed = 'x') => {
@@ -133,6 +134,22 @@ test('a maiden race short of horses is opened up until it has a field', () => {
     }
   }
   assert.ok(opened > 0, 'no maiden race was short of horses');
+});
+
+test('a field of one or two horses can be called, and the forum can talk about it', () => {
+  // Late in a long meet a race could be left this short, and its forum and race call both broke on it.
+  const w = createWorld('test-small-field', '2026-09-26');
+  for (const n of [1, 2]) {
+    for (const full of w.cards[0].races.slice(0, 2)) {
+      const r = { ...full, entries: full.entries.slice(0, n), seed: `${full.seed}:${n}` };
+      const run = simulateRace(r, w, { record: true });
+      const call = raceCall(r, run, r.entries.map(e => w.horses[e.hid].name));
+      const posts = forumPosts(w, r, { odds: r.entries.map(() => 1), text: r.entries.map(() => '1-1') });
+      const said = [...call.lines, ...posts].map(x => x.text).join('\n');
+      assert.ok(!/undefined|NaN/.test(said), `${n} horses:\n${said}`);
+      assert.match(call.lines[call.lines.length - 1].text, /The time, /, `${n} horses: the time isn't called`);
+    }
+  }
 });
 
 test('the tote pays like a tote', () => {
