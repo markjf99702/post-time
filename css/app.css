@@ -348,8 +348,12 @@ a { color: var(--green-2); }
 .w-flash.official { background: #f3ecd8; color: #1f4d3a; }
 @keyframes pop { from { transform: translate(-50%, -50%) scale(.6); opacity: 0; } }
 .w-photo { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(8,10,8,.82); flex-direction: column; gap: 10px; padding: 10px; }
-.w-photo canvas { max-width: 100%; max-height: calc(100% - 60px); border: 6px solid #f3efe3; box-shadow: 0 10px 40px rgba(0,0,0,.5); image-rendering: auto; }
+.w-photo canvas { max-width: 100%; max-height: calc(100% - 100px); border: 6px solid #f3efe3; box-shadow: 0 10px 40px rgba(0,0,0,.5); image-rendering: auto; }
 .w-photo .cap { font: 500 14px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; color: #e8e0c8; }
+/* After a photo the official sign is smaller and sits under the caption, so the photo stays clear. */
+.w-photo .w-flash.under { position: static; transform: none; font-size: 24px; padding: 6px 14px; visibility: hidden; animation: none; }
+.w-photo .w-flash.under.up { visibility: visible; animation: popin .35s ease-out; }
+@keyframes popin { from { transform: scale(.6); opacity: 0; } }
 .order {
   display: flex; gap: 4px; padding: 8px 10px; overflow-x: auto; scrollbar-width: none; background: #161c17; align-items: center;
   min-height: 52px;

@@ -201,10 +201,13 @@ export function renderWatch(el, nav, params) {
         const w = Math.min(560, Math.round(stage.clientWidth - 30));
         photoFinish(pc, { run, runners, width: Math.max(260, w), height: Math.round(Math.max(260, w) * 0.6) });
         const first = runners[run.results[0].h], second = runners[run.results[1].h];
-        const box = h('div', { class: 'w-photo' }, pc, h('div', { class: 'cap' }, `#${first.number} ${first.name} by a ${marginWord(run.results[1].toPrev)} over #${second.number}`));
+        // The official sign goes up under the caption, clear of the photo. Its room is there from the start,
+        // so the photo doesn't move when it does.
+        const sign = h('div', { class: 'w-flash official under' }, 'OFFICIAL');
+        const box = h('div', { class: 'w-photo' }, pc, h('div', { class: 'cap' }, `#${first.number} ${first.name} by a ${marginWord(run.results[1].toPrev)} over #${second.number}`), sign);
         stage.append(box);
         photoShown = true;
-        setTimeout(() => { box.append(h('div', { class: 'w-flash official', style: { top: '12%' } }, 'OFFICIAL')); done(); }, 1600);
+        setTimeout(() => { sign.classList.add('up'); done(); }, 1600);
       }, 1600);
     } else setTimeout(done, 900);
   }

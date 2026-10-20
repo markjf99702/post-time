@@ -222,8 +222,15 @@ const small = await page.evaluate(async () => {
 assert.ok(small.spill <= 1, `the race call spills ${small.spill}px out of its box on a small phone`);
 assert.equal(small.heights.length, 1, `the picture changes size with the call: ${small.heights}`);
 assert.ok(small.label < 24, 'the race number wraps onto two lines');
-await page.evaluate(() => window.__watch.setT(window.__watch.endT));
+// This one goes to a photo. The official sign goes up under the photo, not over it.
+await page.evaluate(() => { window.__watch.call.photo = true; window.__watch.setT(window.__watch.endT); });
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
+const photoSign = await page.evaluate(() => {
+  const box = s => document.querySelector(s).getBoundingClientRect();
+  const pic = box('.w-photo canvas'), sign = box('.w-photo .w-flash'), stage = box('.w-stage');
+  return { clear: sign.top >= pic.bottom, inside: sign.bottom <= stage.bottom + 0.5, shown: getComputedStyle(document.querySelector('.w-photo .w-flash')).visibility };
+});
+assert.deepEqual(photoSign, { clear: true, inside: true, shown: 'visible' }, 'the official sign covers the photo, or falls off the picture');
 const resultsBtn = await page.locator('.w-ctl .btn').boundingBox();
 assert.ok(resultsBtn.y + resultsBtn.height <= 568, `the Results button is off the bottom of a small phone (${resultsBtn.y + resultsBtn.height})`);
 await page.click('.w-ctl .btn');
