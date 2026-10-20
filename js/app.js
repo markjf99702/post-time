@@ -51,7 +51,7 @@ const nav = {
 const UP = { watch: 'result', circle: 'result' };
 let above = false; // the history has an entry above the card's
 let ours = 0;      // steps back the game took itself, on its way to the card
-const entry = (screen, params) => ({ postTime: 1, screen, params });
+const entry = (screen, params) => ({ postTime: 1, screen, params, day: game.world?.day, meet: game.world?.seed });
 
 function remember(screen, params) {
   try {
@@ -66,9 +66,11 @@ window.addEventListener('popstate', e => {
   if (ours) { ours--; return; }
   const s = e.state;
   if (s && s.postTime) {
-    // Forward, onto a screen: show it if it's still there (a new race day or meet has its own races).
+    // Forward, onto a screen: show it if it's still there. A race's screens go with its race day and meet:
+    // the next race day has a race with the same number, but it isn't that one.
     above = true;
-    const race = !waiting && s.params && s.params.no ? card().races.find(r => r.no === s.params.no) : null;
+    const here = !waiting && s.day === game.world.day && s.meet === game.world.seed;
+    const race = here && s.params && s.params.no ? card().races.find(r => r.no === s.params.no) : null;
     const screen = s.screen === 'watch' ? 'result' : s.screen;
     const ok = waiting ? screen === 'help'
       : screen === 'book' || screen === 'help' || (screen === 'race' && !!race) || ((screen === 'result' || screen === 'circle') && race?.status === 'official');

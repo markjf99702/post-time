@@ -352,6 +352,17 @@ assert.equal(await page.locator('#bank').textContent(), '$200.00', 'the new meet
   await first.goBack();
   await first.waitForSelector('.races');
   assert.ok(await first.evaluate(() => history.length) <= entries + 1, 'moving between screens piles up history');
+  // Forward onto a race from a race day that's over stays on the card, rather than opening today's race
+  // with the same number.
+  await first.click('.race-row.next');
+  await first.waitForSelector('.entry');
+  await first.click('.rhead .back');
+  await first.waitForSelector('.races');
+  await first.evaluate(async () => { (await import('./js/game.js')).advanceDay(); window.postTime.nav.go('card'); });
+  await first.goForward();
+  await first.waitForTimeout(500);
+  assert.equal(await first.locator('.races').count(), 1, "Forward opened today's race in place of the one from the day before");
+  await first.waitForFunction(() => history.state === null); // and the game has stepped back to the card's entry
   await first.goBack();
   assert.match(first.url(), /manifest\.webmanifest$/, 'Back on the card stays in the game');
   await ctx2.close();
