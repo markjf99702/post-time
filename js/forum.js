@@ -30,9 +30,10 @@ const SYSTEMS = {
     const a = idx[0], b = idx[1];
     if (figs[a] === null) return { pick: idx.slice(0, 3), text: 'All first-timers. No numbers, no opinion. Passing.', pass: true };
     const gap = figs[a] - figs[b];
+    const apart = gap === 0 ? 'even on the numbers' : `${gap} point${gap === 1 ? '' : 's'} apart on the numbers`;
     const text = gap >= 4
       ? `Top fig belongs to ${label(race, a)} ${nm(world, race, a)}, ${figs[a]}, ${gap} clear of the next best. Single.`
-      : `${label(race, a)} (${figs[a]}) and ${label(race, b)} (${figs[b]}) are a point or two apart on the numbers. ${label(race, a)} on top, ${label(race, b)} underneath.`;
+      : `${label(race, a)} (${figs[a]}) and ${label(race, b)} (${figs[b]}) are ${apart}. ${label(race, a)} on top, ${label(race, b)} underneath.`;
     return { pick: idx.slice(0, 3), text };
   },
 
