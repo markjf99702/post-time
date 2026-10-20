@@ -167,6 +167,23 @@ test('a field of one or two horses can be called, and the forum can talk about i
   }
 });
 
+test('a first-time starter in a maiden claimer is seldom the morning-line favourite', () => {
+  // The public guessed every horse that hadn't run at a 64, which is better than most maiden claimers
+  // ever run, so one of them was the favourite in about a quarter of those races and seldom won.
+  const w = createWorld('test-debut', '2026-09-26');
+  let races = 0, first = 0, favs = 0;
+  for (let d = 1; d <= 40; d++) {
+    const r = buildCard(w, d).races.find(x => x.cls === 'MCL');
+    if (!r) continue;
+    races++;
+    first += r.entries.filter(e => !w.horses[e.hid].pps.length).length;
+    const fav = r.entries.reduce((a, e) => (e.ml < a.ml ? e : a));
+    if (!w.horses[fav.hid].pps.length) favs++;
+  }
+  assert.ok(first >= 10, `only ${first} first-time starters in ${races} maiden claimers`);
+  assert.ok(favs <= 2, `a first-time starter is the morning-line favourite in ${favs} of ${races} maiden claimers`);
+});
+
 test('the tote pays like a tote', () => {
   const w = createWorld('test-tote', '2026-09-26');
   for (const r of w.cards[0].races) {

@@ -11,7 +11,7 @@ export function lastFigs(h, n = 3) {
 // Recent figures, weighted toward the latest, adjusted for how the horse ran on this sort of going.
 export function formRating(h, race) {
   const pps = h.pps.slice(-4).reverse();
-  if (!pps.length) return firstTimerGuess(h);
+  if (!pps.length) return firstTimerGuess(h, race);
   const w = [0.45, 0.3, 0.17, 0.08];
   let s = 0, ws = 0;
   pps.forEach((p, i) => {
@@ -24,12 +24,13 @@ export function formRating(h, race) {
   return s / ws;
 }
 
-// A first-time starter: the public goes on workouts, pedigree and who trains it.
-export function firstTimerGuess(h) {
+// A first-time starter: the public goes on workouts, pedigree and who trains it. One that starts out in a
+// maiden claimer is for sale before it has shown anything, and the public expects that much less of it.
+export function firstTimerGuess(h, race) {
   const sire = SIRES.find(s => s.name === h.sire);
   const works = h.works.slice(-3);
   const workScore = works.length ? works.reduce((s, w) => s + (w.rank / w.of < 0.2 ? 3 : w.rank / w.of < 0.5 ? 1 : -1), 0) : 0;
-  return 64 + (sire ? sire.q * 1.5 : 0) + workScore;
+  return (race && race.cls === 'MCL' ? race.par - 8 : 64) + (sire ? sire.q * 1.5 : 0) + workScore;
 }
 
 export function surfaceRecord(h, surface) {
