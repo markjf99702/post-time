@@ -136,6 +136,21 @@ test('a maiden race short of horses is opened up until it has a field', () => {
   assert.ok(opened > 0, 'no maiden race was short of horses');
 });
 
+test('a race that winners still leave short is opened to any horse, but nobody runs twice in a day', () => {
+  const w = createWorld('test-open-up', '2026-09-26');
+  // Most of the barn ran last week: leave thirty horses rested for next Saturday.
+  let rested = 30;
+  for (const h of w.horses) if (!h.retired && rested-- <= 0) h.last = 0;
+  const card = buildCard(w, 1);
+  for (const r of card.races) {
+    assert.ok(r.entries.length >= 5, `race ${r.no} has ${r.entries.length} horses`);
+    assert.ok(r.entries.every(e => Number.isFinite(e.wt) && Number.isFinite(e.rating) && e.j >= 0 && e.ml > 0), `race ${r.no} has a horse without a weight, rider or morning line`);
+  }
+  const ids = card.races.flatMap(r => r.entries.map(e => e.hid));
+  assert.equal(new Set(ids).size, ids.length, 'a horse is in two races');
+  assert.ok(ids.some(id => w.horses[id].last === 0), 'no horse that ran last week was called on');
+});
+
 test('a field of one or two horses can be called, and the forum can talk about it', () => {
   // Late in a long meet a race could be left this short, and its forum and race call both broke on it.
   const w = createWorld('test-small-field', '2026-09-26');

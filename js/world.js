@@ -301,14 +301,22 @@ function aptitude(h, race) {
 
 // `busy` has the ids of horses already entered in another race that day.
 function fillRaces(world, races, R, day, busy = new Set()) {
-  const pool = world.horses.filter(h => !h.retired && (h.last === null || h.last <= day - 2) && !busy.has(h.id));
+  const free = h => !h.retired && !busy.has(h.id);
+  const pool = world.horses.filter(h => free(h) && (h.last === null || h.last <= day - 2));
   const est = new Map(pool.map(h => [h, trainerEstimate(h, R)]));
+  // Horses that ran last week, called on only when a race can't be filled any other way.
+  let tired = null;
+  const tiredPool = () => tired || (tired = world.horses.filter(h => free(h) && h.last !== null && h.last > day - 2 && h.last < day)
+    .map(h => { est.set(h, trainerEstimate(h, R)); return h; }));
   const used = new Set();
   const order = races.slice().sort((a, b) => b.par - a.par);
-  const fill = race => {
+  // `open` is how far the race has been opened up: 0 as written, 1 to any horse that's had a week off,
+  // 2 to any horse at all.
+  const fill = (race, open = 0) => {
     const C = CLASSES[race.cls];
     const target = race.cls === 'STK' ? R.int(7, 10) : R.int(7, 11);
-    const cands = pool.filter(h => !used.has(h) && (C.maiden ? h.maiden : !h.maiden) && (!race.fm || h.sex === 'f' || h.sex === 'm'))
+    const from = open >= 2 ? pool.concat(tiredPool()) : pool;
+    const cands = from.filter(h => !used.has(h) && (open >= 1 || (C.maiden ? h.maiden : !h.maiden)) && (!race.fm || h.sex === 'f' || h.sex === 'm'))
       .map(h => {
         const e = est.get(h) + aptitude(h, race) * 0.8;
         const diff = e - race.par;
@@ -322,21 +330,20 @@ function fillRaces(world, races, R, day, busy = new Set()) {
     for (const c of picked) used.add(c.h);
     race.entries = picked.map(c => ({ hid: c.h.id }));
   };
-  order.forEach(fill);
-  // A race short of horses is opened up: first to colts and geldings, then to winners of any kind.
+  order.forEach(race => fill(race));
+  // A race short of horses is opened up a step at a time until it has five: to colts and geldings, then
+  // (a maiden race; late in a long meet most of the maidens have won) to winners as a $10,000 claimer,
+  // then to any horse that's had a week off, then to any horse at all. Still none runs twice in a day.
   const toWinners = race => { race.cls = 'C10'; race.par = CLASSES.C10.par; race.claim = CLASSES.C10.claim; race.purse = CLASSES.C10.purse; };
   for (const race of order) {
-    if (race.entries.length >= 5) continue;
-    for (const e of race.entries) used.delete(world.horses[e.hid]);
-    if (race.fm) race.fm = false;
-    else if (CLASSES[race.cls].maiden) toWinners(race);
-    fill(race);
-    // A fillies-and-mares maiden race can still be short once it's open to colts: late in a long meet
-    // most of the maidens have won. Open it to winners too.
-    if (race.entries.length < 5 && CLASSES[race.cls].maiden) {
+    let open = 0;
+    while (race.entries.length < 5) {
+      if (race.fm) race.fm = false;
+      else if (CLASSES[race.cls].maiden) toWinners(race);
+      else if (open < 2) open++;
+      else break; // with two hundred horses in the barn it never comes to this
       for (const e of race.entries) used.delete(world.horses[e.hid]);
-      toWinners(race);
-      fill(race);
+      fill(race, open);
     }
   }
 
