@@ -89,6 +89,23 @@ await page.locator('.pick-row').nth(1).locator('button').nth(0).click();
 await page.click('.builder .btn');
 assert.equal(await page.locator('.ticket').count(), 2, 'two tickets printed');
 assert.equal(await page.locator('#bank').textContent(), '$196.00', 'the tickets came out of the bankroll');
+// In the dark, the pressed bet type and amount stand out from the others, and Buy ticket from its card.
+await page.emulateMedia({ colorScheme: 'dark' });
+const dark = await page.evaluate(() => {
+  const lum = c => c.match(/[\d.]+/g).slice(0, 3).map(v => v / 255).map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+  const bg = sel => getComputedStyle(document.querySelector(sel)).backgroundColor;
+  return {
+    type: ratio(bg('.seg button[aria-pressed="true"]'), bg('.seg button[aria-pressed="false"]')),
+    amount: ratio(bg('.seg.amounts button[aria-pressed="true"]'), bg('.seg.amounts button[aria-pressed="false"]')),
+    buy: ratio(bg('.builder .btn'), bg('.builder')),
+    header: bg('#top'),
+  };
+});
+await page.emulateMedia({ colorScheme: 'light' });
+assert.ok(dark.type >= 3 && dark.amount >= 3, `in the dark the pressed bet type (${dark.type.toFixed(2)}:1) or amount (${dark.amount.toFixed(2)}:1) is hard to tell from the others`);
+assert.ok(dark.buy >= 3, `in the dark Buy ticket is ${dark.buy.toFixed(2)}:1 against its card`);
+assert.equal(dark.header, 'rgb(23, 58, 44)', 'the header changed colour in the dark');
 
 // Off they go; skip to the end.
 await page.click('.post-bar .btn.brass');

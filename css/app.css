@@ -274,6 +274,14 @@ a { color: var(--green-2); }
   font: 500 14px/1 var(--display); letter-spacing: .06em; text-transform: uppercase;
 }
 .seg button[aria-pressed="true"] { background: var(--green); color: #f3ecd8; }
+/* In the dark, the header's green is too close to the cards and to an unpressed button: the pressed bet
+   type and amount, and the green buttons (Buy ticket, Results), use the lighter green instead. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .seg button[aria-pressed="true"],
+  :root:not([data-theme="light"]) .btn:not(.brass):not(.ghost) { background: var(--green-2); }
+}
+:root[data-theme="dark"] .seg button[aria-pressed="true"],
+:root[data-theme="dark"] .btn:not(.brass):not(.ghost) { background: var(--green-2); }
 .bet-help { font-size: 14px; color: var(--muted); margin: 10px 0 8px; min-height: 2.6em; }
 .pick-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
 .pick-row .lbl { width: 34px; font: 500 12px/1 var(--display); letter-spacing: .08em; color: var(--muted); text-transform: uppercase; flex: none; }
