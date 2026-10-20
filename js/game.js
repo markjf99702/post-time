@@ -25,20 +25,39 @@ function freshPlayer() {
   };
 }
 
+// True when the saved meet loaded, false when there's none, and 'damaged' when there's one that can't be
+// used (damaged, or changed by hand). That one is left in storage: starting a new meet over it is the
+// player's call, since it takes their bankroll and scrapbook with it. Their settings are kept meanwhile.
 export function load() {
   try {
     const w = localStorage.getItem(KEY_WORLD);
     const p = localStorage.getItem(KEY_PLAYER);
     if (w && p) {
-      game.world = JSON.parse(w);
-      game.player = { ...freshPlayer(), ...JSON.parse(p) };
+      const world = parsed(w), player = parsed(p);
+      if (!isMeet(world) || !player || typeof player !== 'object') {
+        game.world = null;
+        game.player = { settings: { ...freshPlayer().settings, ...(player && typeof player.settings === 'object' ? player.settings : null) }, bank: 0 };
+        return 'damaged';
+      }
+      game.world = world;
+      game.player = { ...freshPlayer(), ...player };
       for (const fix of [redrawShort, refundStrays, stopEarlyClocks]) {
         try { fix(); } catch { /* a save this can't make sense of loads as it is */ }
       }
       return true;
     }
-  } catch { /* storage unavailable or corrupt: start fresh */ }
+  } catch { /* storage unavailable: start fresh */ }
   return false;
+}
+
+function parsed(text) {
+  try { return JSON.parse(text); } catch { return null; }
+}
+
+// Enough of a meet to show today's card.
+function isMeet(w) {
+  const c = w && typeof w === 'object' && w.cards && typeof w.cards === 'object' ? w.cards[w.day] : null;
+  return !!(c && Array.isArray(c.races) && c.races.length && Array.isArray(w.horses) && w.horses.length);
 }
 
 // Late in a long meet a maiden race could be left with fewer than three horses (one or none, and it

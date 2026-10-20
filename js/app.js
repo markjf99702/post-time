@@ -119,6 +119,17 @@ function setup() {
   setTimeout(step, 30);
 }
 
+// The meet saved in this browser can't be read. Say so, and leave it where it is until the player starts
+// a new meet over it.
+function cantRead() {
+  waiting = h('div', { class: 'setup' },
+    h('p', { class: 'h2' }, "Your saved meet can't be read"),
+    h('p', { class: 'muted' }, "Something has changed or damaged what this browser saved, so there's no card to show. A new meet starts over with new horses, $200 and an empty scrapbook."),
+    h('button', { class: 'btn brass', type: 'button', onclick: () => setup() }, 'Start a new meet'),
+  );
+  nav.go('card');
+}
+
 function applySettings() {
   const s = game.player.settings;
   optSound.checked = s.sound;
@@ -141,9 +152,13 @@ window.addEventListener('storage', e => { if (e.key?.startsWith('post-time/')) l
 // Tests and screenshots drive the app through this.
 window.postTime = { game, nav, save, card, nextRace };
 
-if (load()) {
+const loaded = load();
+if (loaded === true) {
   applySettings();
   nav.go('card');
+} else if (loaded === 'damaged') {
+  applySettings();
+  cantRead();
 } else {
   game.player = { settings: { sound: true, voice: false }, bank: 0 };
   applySettings(); // so the menu shows them while the first meet is built

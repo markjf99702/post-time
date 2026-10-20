@@ -175,3 +175,27 @@ test("the caller doesn't sound sure of a leader who then gets caught or goes to 
   assert.deepEqual(wrong.map(r => `race day ${r.day}, race ${r.no}: ${r.lines.slice(-3).join(' / ')}`), []);
   assert.ok(sure.length > races.length / 10, `the caller is sure of a winner in only ${sure.length} races`);
 });
+
+test("a save that isn't a meet is left alone until a new meet is started", () => {
+  build('damaged');
+  game.player.settings.sound = false;
+  save();
+  const world = store.get('post-time/world'), player = store.get('post-time/player');
+  const later = JSON.parse(world);
+  later.day += 1; // no card drawn for that day
+  for (const bad of ['null', '{}', '[]', 'not json', JSON.stringify(later)]) {
+    store.set('post-time/world', bad);
+    assert.equal(load(), 'damaged', `a save of ${bad.slice(0, 20)} loaded as a meet`);
+    assert.equal(game.world, null);
+    assert.equal(game.player.settings.sound, false, 'the settings were lost');
+    save();
+    assert.equal(store.get('post-time/world'), bad, 'the save was written over before a new meet was asked for');
+    assert.equal(store.get('post-time/player'), player);
+  }
+  store.set('post-time/world', world);
+  store.set('post-time/player', '{"bank": 12');
+  assert.equal(load(), 'damaged', "a player record that doesn't parse loaded");
+  store.set('post-time/player', player);
+  assert.equal(load(), true);
+  assert.ok(card().races.length);
+});

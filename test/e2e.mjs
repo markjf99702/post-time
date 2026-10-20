@@ -277,6 +277,24 @@ await page.waitForSelector('.races', { timeout: 10000 });
 assert.ok(await page.title(), 'the page did not load offline');
 await ctx.setOffline(false);
 
+// A save that reads but isn't a meet: a short message and a way to start over, instead of a blank page,
+// and the save is left as it is until then.
+await page.evaluate(() => localStorage.setItem('post-time/world', '{}'));
+const keptPlayer = await page.evaluate(() => localStorage.getItem('post-time/player'));
+await page.reload();
+await page.waitForSelector('#app .setup .btn');
+assert.match(await page.locator('#app .setup').textContent(), /can't be read/);
+assert.equal(await page.locator('#bank').textContent(), '', 'a bankroll shows over a save that can\'t be read');
+for (const go of ['card', 'book']) {
+  await page.click('#menuBtn');
+  await page.click(`#menu [data-go="${go}"]`);
+  assert.equal(await page.locator('#app .setup .btn').count(), 1, `the menu's ${go} took the message away`);
+}
+assert.deepEqual(await page.evaluate(() => [localStorage.getItem('post-time/world'), localStorage.getItem('post-time/player')]), ['{}', keptPlayer], 'the save was written over before anyone asked');
+await page.click('#app .setup .btn');
+await page.waitForSelector('.races', { timeout: 60000 });
+assert.equal(await page.locator('#bank').textContent(), '$200.00', 'the new meet starts with $200');
+
 // Opening day, with the build held part-way: there's no card or scrapbook yet, so tapping them (or the
 // name) leaves the progress up. How to play can be read meanwhile, and going back brings the progress back.
 {
