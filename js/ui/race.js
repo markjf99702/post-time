@@ -115,7 +115,7 @@ function entryCard(race, e, i, stats, board) {
     silksCanvas(silks, 30),
     h('div', { class: 'nm' }, hs.name),
     h('div', { class: 'ml' }, h('small', {}, race.status === 'official' ? 'Final' : 'Odds'), race.status === 'official' ? race.result.oddsText[i] : board.text[i]),
-    h('div', { class: 'who' }, `${JOCKEYS[e.j].name} (${js.w}-${js.starts}) · Tr. ${TRAINERS[hs.trainer]} (${ts.w}-${ts.starts}) · ${e.wt} lb · ML ${e.mlText}`),
+    h('div', { class: 'who' }, `${JOCKEYS[e.j].name} (${js.w}-${js.starts}) · Tr. ${TRAINERS[hs.trainer]} (${ts.w}-${ts.starts}) · ${e.wt} lb · ML ${e.mlText}`),
   );
   head.addEventListener('click', () => {
     const open = more.hidden;
