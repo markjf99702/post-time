@@ -11,6 +11,7 @@ globalThis.localStorage = {
 };
 globalThis.window = new EventTarget();
 const { game, newMeet, load, save, card, toteFor, placeBet, goToGate, mtpState, advanceDay, callFor, horseOf } = await import('../js/game.js');
+const { stateAt } = await import('../js/sim.js');
 
 function build(seed) {
   const meet = newMeet(seed);
@@ -28,9 +29,17 @@ function playLongMeet(days = 60) {
     for (const race of card().races) {
       const { run } = goToGate(race);
       const call = callFor(race, run);
+      // Each horse the caller says is closing fast, and whether it was running faster than the leader then.
+      const names = race.entries.map(e => horseOf(e).name);
+      const closing = call.lines.flatMap(l => {
+        const m = /^(.+) closing fast, but (.+) still in front!$/.exec(l.text);
+        if (!m) return [];
+        const st = stateAt(run, run.t0 + l.t);
+        return [{ text: l.text, gaining: st[names.indexOf(m[1])].v > st[names.indexOf(m[2])].v }];
+      });
       races.push({
         day: d + 1, no: race.no, field: race.entries.length, lines: call.lines.map(l => l.text), photo: call.photo,
-        winner: horseOf(race.entries[run.results[0].h]).name, reactions: (race.forumAfter || []).map(p => p.text),
+        winner: horseOf(race.entries[run.results[0].h]).name, reactions: (race.forumAfter || []).map(p => p.text), closing,
       });
     }
     advanceDay();
@@ -174,6 +183,14 @@ test("the caller doesn't sound sure of a leader who then gets caught or goes to 
   const wrong = sure.filter(r => r.photo || !r.lines.find(l => /clear and drawing away|won't catch/.test(l)).includes(r.winner));
   assert.deepEqual(wrong.map(r => `race day ${r.day}, race ${r.no}: ${r.lines.slice(-3).join(' / ')}`), []);
   assert.ok(sure.length > races.length / 10, `the caller is sure of a winner in only ${sure.length} races`);
+});
+
+test('the caller says a horse is closing only when it is gaining on the leader', () => {
+  const races = playLongMeet();
+  const wrong = races.filter(r => r.closing.some(c => !c.gaining));
+  assert.deepEqual(wrong.map(r => `race day ${r.day}, race ${r.no}: ${r.closing.map(c => c.text).join(' / ')}`), []);
+  assert.ok(races.some(r => r.closing.length), 'nobody is ever called closing');
+  assert.ok(races.some(r => r.lines.some(l => / still in front by /.test(l))), "the caller never just says who's still in front");
 });
 
 test("a save that isn't a meet is left alone until a new meet is started", () => {

@@ -153,9 +153,14 @@ export function raceCall(race, run, names) {
       const ago = at(t - 1);
       const was = (ago[L.i].p - Math.max(...ago.filter((x, i) => i !== L.i).map(x => x.p))) / LENGTH;
       const sure = gap >= 1.5 && gap >= was;
+      // Short of that, a horse is called closing only if it's running faster than the leader right now;
+      // when none of the next three is, the caller says the leader is still in front, and by how much.
       const fast = o.slice(1, 4).find(x => x.v > L.v + 0.5);
-      const chaser = fast || o.slice(1, 4).reduce((a, b) => (b.v > a.v ? b : a));
-      say(t, gap < 0.6 ? `${nm(L.i)}, ${nm(o[1].i)}, it's a battle to the wire!` : fast || !sure ? `${nm(chaser.i)} closing fast, but ${nm(L.i)} still in front!` : R.pick([`${nm(L.i)}, clear and drawing away!`, `They won't catch ${nm(L.i)} today!`]));
+      const chaser = fast || o.slice(1, 4).filter(x => x.v > L.v).reduce((a, b) => (!a || b.v > a.v ? b : a), null);
+      say(t, gap < 0.6 ? `${nm(L.i)}, ${nm(o[1].i)}, it's a battle to the wire!`
+        : chaser && (fast || !sure) ? `${nm(chaser.i)} closing fast, but ${nm(L.i)} still in front!`
+        : !sure ? `${nm(L.i)} still in front by ${gapWords(gap)}!`
+        : R.pick([`${nm(L.i)}, clear and drawing away!`, `They won't catch ${nm(L.i)} today!`]));
       nextFree = t + 2.4; continue;
     }
   }
