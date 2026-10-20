@@ -307,6 +307,7 @@ assert.equal(await page.locator('#bank').textContent(), '$200.00', 'the new meet
     window.setTimeout = (fn, ms, ...a) => (performance.now() - t0 > 300 && !window.letGo ? (held.push(() => fn(...a)), 0) : later(fn, ms, ...a));
     window.finishBuilding = () => { window.letGo = true; held.splice(0).forEach(f => later(f, 0)); };
   });
+  await first.goto(`${base}manifest.webmanifest`); // somewhere to leave to, for Back on the card
   await first.goto(base, { waitUntil: 'domcontentloaded' });
   await first.waitForSelector('.setup');
   await first.waitForTimeout(500);
@@ -326,6 +327,33 @@ assert.equal(await page.locator('#bank').textContent(), '$200.00', 'the new meet
   await first.evaluate(() => window.finishBuilding());
   await first.waitForSelector('.races', { timeout: 60000 });
   assert.equal(await first.locator('#bank').textContent(), '$200.00');
+
+  // The Back button goes back a screen, the way the page's own back buttons do: from a race to the card
+  // (not to the tab before), from a race that's running to its result, from the winner's circle to the
+  // result, and from the result to the card. On the card it leaves.
+  const entries = await first.evaluate(() => history.length);
+  await first.click('.race-row.next');
+  await first.waitForSelector('.entry');
+  for (const n of [2, 3, 4]) await first.click(`.tabs button:nth-child(${n})`);
+  await first.goBack();
+  await first.waitForSelector('.races');
+  await first.click('.race-row.next');
+  await first.click('.tabs button:nth-child(4)');
+  await first.click('.post-bar .btn.brass');
+  await first.waitForSelector('.watch:not([hidden]) canvas.scene');
+  await first.goBack();
+  await first.waitForSelector('.official');
+  assert.deepEqual(await first.evaluate(() => ({ race: document.getElementById('watch').hidden, behind: document.getElementById('app').inert, scroll: document.body.style.overflow })),
+    { race: true, behind: false, scroll: '' }, 'Back during a race left it on top of the result');
+  await first.click('.actions .btn.brass');
+  await first.waitForSelector('.photo-frame canvas');
+  await first.goBack();
+  await first.waitForSelector('.official');
+  await first.goBack();
+  await first.waitForSelector('.races');
+  assert.ok(await first.evaluate(() => history.length) <= entries + 1, 'moving between screens piles up history');
+  await first.goBack();
+  assert.match(first.url(), /manifest\.webmanifest$/, 'Back on the card stays in the game');
   await ctx2.close();
 }
 

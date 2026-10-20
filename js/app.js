@@ -28,12 +28,62 @@ const nav = {
     if (waiting && screen === 'book') { closeMenu(); return; }
     if (cleanup) { cleanup(); cleanup = null; }
     view = { screen, params };
+    remember(screen, params);
     closeMenu();
     render();
     if (screen !== 'watch') window.scrollTo(0, 0);
   },
   refresh() { nav.go(view.screen, view.params); },
+  // A race's tabs change its entry in the history rather than adding one, so Back doesn't step through them.
+  tab(which) {
+    view.params = { ...view.params, tab: which };
+    try { if (above) history.replaceState(entry(view.screen, view.params), ''); } catch { /* see remember() */ }
+  },
 };
+
+// ------------------------------------------------------------------ the Back button
+
+// The browser's or the phone's Back button goes back a screen, the way the back buttons on the page do:
+// to the card from a race, its result, the scrapbook or How to play; to the result from the winner's
+// circle, and from a race that's running, since it was settled when it went to the gate. On the card it
+// leaves, as it always has. The history holds the card's entry and at most one more above it, replaced
+// as you go from screen to screen.
+const UP = { watch: 'result', circle: 'result' };
+let above = false; // the history has an entry above the card's
+let ours = 0;      // steps back the game took itself, on its way to the card
+const entry = (screen, params) => ({ postTime: 1, screen, params });
+
+function remember(screen, params) {
+  try {
+    if (screen === 'card') {
+      if (above) { above = false; history.back(); ours++; }
+    } else if (above) history.replaceState(entry(screen, params), '');
+    else { history.pushState(entry(screen, params), ''); above = true; }
+  } catch { /* a copy that can't keep a history (in a sandboxed frame, say) still changes screens */ }
+}
+
+window.addEventListener('popstate', e => {
+  if (ours) { ours--; return; }
+  const s = e.state;
+  if (s && s.postTime) {
+    // Forward, onto a screen: show it if it's still there (a new race day or meet has its own races).
+    above = true;
+    const race = !waiting && s.params && s.params.no ? card().races.find(r => r.no === s.params.no) : null;
+    const screen = s.screen === 'watch' ? 'result' : s.screen;
+    const ok = waiting ? screen === 'help'
+      : screen === 'book' || screen === 'help' || (screen === 'race' && !!race) || ((screen === 'result' || screen === 'circle') && race?.status === 'official');
+    nav.go(ok ? screen : 'card', ok ? s.params : {});
+    return;
+  }
+  // Back, onto the card's entry: one screen back from this one.
+  above = false;
+  const up = !waiting && UP[view.screen];
+  nav.go(up || 'card', up ? { no: view.params.no } : {});
+});
+
+// A reload keeps the history entry it happened on, which may be a screen's. The game opens on the card,
+// so that entry is the card's now.
+try { if (history.state && history.state.postTime) history.replaceState(null, ''); } catch { /* see remember() */ }
 
 function render() {
   clear(app);

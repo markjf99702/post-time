@@ -46,7 +46,7 @@ export function renderRace(root, nav, params) {
     clear(tabs);
     for (const [k, label] of TABS) {
       const count = k === 'bet' ? myBets(race).length : 0;
-      tabs.append(h('button', { type: 'button', role: 'tab', 'aria-selected': String(k === which), onclick: () => { show(k); window.scrollTo({ top: 0 }); } }, label, count ? h('span', { class: 'n' }, String(count)) : null));
+      tabs.append(h('button', { type: 'button', role: 'tab', 'aria-selected': String(k === which), onclick: () => { show(k); nav.tab(k); window.scrollTo({ top: 0 }); } }, label, count ? h('span', { class: 'n' }, String(count)) : null));
     }
     clear(panel);
     if (which === 'form') formPanel(panel, race);
