@@ -172,9 +172,11 @@ export function forumPosts(world, race, ctx) {
 export function reactions(world, race, posts, order, pay, run) {
   const win = order[0];
   const out = [];
+  const said = new Set(); // two regulars don't post the same line about one race
   for (const p of posts) {
     const R = rng(`react:${race.seed}:${p.who}`);
     if (p.pass || !p.pick.length) continue;
+    const fresh = lines => { const left = lines.filter(l => !said.has(l)); return left.length ? R.pick(left) : null; };
     const top = p.pick[0];
     const res = run.results.find(r => r.h === top);
     let text = null;
@@ -190,15 +192,15 @@ export function reactions(world, race, posts, order, pay, run) {
         greg: world.horses[race.entries[win].hid].coat === 'grey' ? `THE GREY. $${$}. I'll never stop.` : `The name I liked came in. $${$}. The system works.`,
       }[p.who];
     } else if (res && res.pos <= 3) {
-      text = R.pick([`Second guessed myself on the exacta. Ran ${ordinalWord(res.pos)}.`, `${ordinalWord(res.pos, true)}. Close enough to hurt.`, `Hit the board at least. ${ordinalWord(res.pos, true)}.`]);
+      text = fresh([`Second guessed myself on the exacta. Ran ${ordinalWord(res.pos)}.`, `${ordinalWord(res.pos, true)}. Close enough to hurt.`, `Hit the board at least. ${ordinalWord(res.pos, true)}.`]);
     } else if (res) {
-      if (res.checked || res.blocked > 3.5) text = R.pick(['Blocked the whole stretch. Robbed.', 'Nowhere to go. Rider should be fined.', 'Had horse, had no room. Next time.', 'Stuck on the rail behind a wall of horses. Unbelievable.']);
-      else if (res.stumble || res.slow) text = R.pick(['Lost it at the break. Throw it out.', 'Missed the start. Race over right there.']);
-      else if (res.wide > 3) text = `Parked ${Math.round(res.wide) + 1} wide on the turn. Can't win like that.`;
-      else if (res.duel > 6) text = 'Cooked in a speed duel. Classic.';
-      else text = R.pick(['Never fired. Moving on.', 'Nothing. Tossing that one.', 'Ugh.', 'I need a new hobby.', 'Well, that was expensive.']);
+      if (res.checked || res.blocked > 3.5) text = fresh(['Blocked the whole stretch. Robbed.', 'Nowhere to go. Rider should be fined.', 'Had horse, had no room. Next time.', 'Stuck on the rail behind a wall of horses. Unbelievable.']);
+      else if (res.stumble || res.slow) text = fresh(['Lost it at the break. Throw it out.', 'Missed the start. Race over right there.']);
+      else if (res.wide > 3) text = fresh([`Parked ${Math.round(res.wide) + 1} wide on the turn. Can't win like that.`]);
+      else if (res.duel > 6) text = fresh(['Cooked in a speed duel. Classic.']);
+      else text = fresh(['Never fired. Moving on.', 'Nothing. Tossing that one.', 'Ugh.', 'I need a new hobby.', 'Well, that was expensive.']);
     }
-    if (text && (top === win || R.chance(0.75))) out.push({ who: p.who, text, won: top === win });
+    if (text && (top === win || R.chance(0.75))) { out.push({ who: p.who, text, won: top === win }); said.add(text); }
   }
   return out;
 }

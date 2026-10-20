@@ -160,3 +160,10 @@ test('a long meet keeps running: sixty race days, and every race has a field', (
   assert.deepEqual(races.filter(r => r.field < 5).map(r => `race day ${r.day}, race ${r.no}: ${r.field} horses`), []);
   assert.deepEqual(races.filter(r => r.lines.some(l => /undefined|NaN/.test(l))).map(r => `race day ${r.day}, race ${r.no}`), []);
 });
+
+test("two regulars don't post the same reaction after a race", () => {
+  const races = playLongMeet();
+  const twice = races.filter(r => new Set(r.reactions).size !== r.reactions.length);
+  assert.deepEqual(twice.map(r => `race day ${r.day}, race ${r.no}: ${r.reactions.join(' / ')}`), []);
+  assert.ok(races.reduce((n, r) => n + r.reactions.length, 0) > races.length * 3, 'the regulars have gone quiet');
+});
