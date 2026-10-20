@@ -277,6 +277,40 @@ await page.waitForSelector('.races', { timeout: 10000 });
 assert.ok(await page.title(), 'the page did not load offline');
 await ctx.setOffline(false);
 
+// Opening day, with the build held part-way: there's no card or scrapbook yet, so tapping them (or the
+// name) leaves the progress up. How to play can be read meanwhile, and going back brings the progress back.
+{
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
+  const first = await ctx2.newPage();
+  first.on('pageerror', e => problems.push(e.message));
+  first.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
+  await first.addInitScript(() => {
+    const later = window.setTimeout, t0 = performance.now(), held = [];
+    window.setTimeout = (fn, ms, ...a) => (performance.now() - t0 > 300 && !window.letGo ? (held.push(() => fn(...a)), 0) : later(fn, ms, ...a));
+    window.finishBuilding = () => { window.letGo = true; held.splice(0).forEach(f => later(f, 0)); };
+  });
+  await first.goto(base, { waitUntil: 'domcontentloaded' });
+  await first.waitForSelector('.setup');
+  await first.waitForTimeout(500);
+  const opening = () => first.evaluate(() => ({ progress: !!document.querySelector('#app .setup'), bank: document.getElementById('bank').textContent }));
+  for (const go of ['card', 'book']) {
+    await first.click('#menuBtn');
+    await first.click(`#menu [data-go="${go}"]`);
+    assert.deepEqual(await opening(), { progress: true, bank: '' }, `the menu's ${go} took the Opening day screen away`);
+  }
+  await first.click('#top .brand');
+  assert.deepEqual(await opening(), { progress: true, bank: '' }, 'the name took the Opening day screen away');
+  await first.click('#menuBtn');
+  await first.click('#menu [data-go="help"]');
+  assert.equal(await first.locator('#app .help').count(), 1, "How to play can't be read during Opening day");
+  await first.click('.rhead .back');
+  assert.deepEqual(await opening(), { progress: true, bank: '' }, "the progress doesn't come back after How to play");
+  await first.evaluate(() => window.finishBuilding());
+  await first.waitForSelector('.races', { timeout: 60000 });
+  assert.equal(await first.locator('#bank').textContent(), '$200.00');
+  await ctx2.close();
+}
+
 assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems while using it');
 await browser.close();
 server.close();

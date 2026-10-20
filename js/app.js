@@ -18,9 +18,14 @@ const menuBtn = document.getElementById('menuBtn');
 let cleanup = null;
 let view = { screen: 'card', params: {} };
 let lastBank = null;
+// While a meet is being built there's no card or scrapbook to show yet: the Opening day screen stands in
+// for the card (so How to play can still be read, and the card brings the progress back), and the
+// scrapbook stays shut.
+let waiting = null;
 
 const nav = {
   go(screen, params = {}) {
+    if (waiting && screen === 'book') { closeMenu(); return; }
     if (cleanup) { cleanup(); cleanup = null; }
     view = { screen, params };
     closeMenu();
@@ -34,6 +39,7 @@ function render() {
   clear(app);
   updateBank();
   const { screen, params } = view;
+  if (waiting && screen === 'card') { app.append(waiting); return; }
   if (screen === 'watch') {
     cleanup = renderWatch(watchEl, { go: (s, p) => { cleanup = null; nav.go(s, p); } }, params);
     return;
@@ -47,6 +53,7 @@ function render() {
 }
 
 function updateBank() {
+  if (waiting) { bankEl.textContent = ''; return; } // no bankroll until the meet is built
   const b = game.player.bank;
   bankEl.textContent = money(b);
   if (lastBank !== null && b !== lastBank) {
@@ -92,22 +99,21 @@ restart.addEventListener('click', e => {
 // ------------------------------------------------------------------ start
 
 function setup() {
-  clear(app);
   const bar = h('i');
-  app.append(h('div', { class: 'setup' },
+  waiting = h('div', { class: 'setup' },
     h('div', { class: 'kicker' }, 'Opening day'),
     h('p', { class: 'h2' }, 'Larkspur Downs'),
     h('p', { class: 'muted' }, 'Running the last ten weeks of races, so the form has something in it.'),
     h('div', { class: 'bar' }, bar),
-  ));
-  bankEl.textContent = '';
+  );
+  nav.go('card');
   const meet = newMeet();
   const step = () => {
     let done = false;
     const until = performance.now() + 40;
     while (!done && performance.now() < until) done = meet.step();
     bar.style.width = `${Math.round((done ? 1 : meet.progress()) * 100)}%`;
-    if (done) { lastBank = null; applySettings(); nav.go('card'); }
+    if (done) { waiting = null; lastBank = null; applySettings(); nav.go('card'); }
     else setTimeout(step, 0);
   };
   setTimeout(step, 30);
