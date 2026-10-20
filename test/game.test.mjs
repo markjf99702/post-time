@@ -167,3 +167,11 @@ test("two regulars don't post the same reaction after a race", () => {
   assert.deepEqual(twice.map(r => `race day ${r.day}, race ${r.no}: ${r.reactions.join(' / ')}`), []);
   assert.ok(races.reduce((n, r) => n + r.reactions.length, 0) > races.length * 3, 'the regulars have gone quiet');
 });
+
+test("the caller doesn't sound sure of a leader who then gets caught or goes to a photo", () => {
+  const races = playLongMeet();
+  const sure = races.filter(r => r.lines.some(l => /clear and drawing away|won't catch/.test(l)));
+  const wrong = sure.filter(r => r.photo || !r.lines.find(l => /clear and drawing away|won't catch/.test(l)).includes(r.winner));
+  assert.deepEqual(wrong.map(r => `race day ${r.day}, race ${r.no}: ${r.lines.slice(-3).join(' / ')}`), []);
+  assert.ok(sure.length > races.length / 10, `the caller is sure of a winner in only ${sure.length} races`);
+});

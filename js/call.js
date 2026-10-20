@@ -148,8 +148,14 @@ export function raceCall(race, run, names) {
     if (inStretch && toGo < 110 && toGo > 45 && !moveSeen.has('late')) {
       moveSeen.add('late');
       const gap = (L.p - o[1].p) / LENGTH;
+      // The caller only sounds sure of a lead of a length and a half or more that hasn't shrunk in the
+      // last second; anything less can still end in a photo, or with the leader caught.
+      const ago = at(t - 1);
+      const was = (ago[L.i].p - Math.max(...ago.filter((x, i) => i !== L.i).map(x => x.p))) / LENGTH;
+      const sure = gap >= 1.5 && gap >= was;
       const fast = o.slice(1, 4).find(x => x.v > L.v + 0.5);
-      say(t, gap < 0.6 ? `${nm(L.i)}, ${nm(o[1].i)}, it's a battle to the wire!` : fast ? `${nm(fast.i)} closing fast, but ${nm(L.i)} still in front!` : R.pick([`${nm(L.i)}, clear and drawing away!`, `They won't catch ${nm(L.i)} today!`]));
+      const chaser = fast || o.slice(1, 4).reduce((a, b) => (b.v > a.v ? b : a));
+      say(t, gap < 0.6 ? `${nm(L.i)}, ${nm(o[1].i)}, it's a battle to the wire!` : fast || !sure ? `${nm(chaser.i)} closing fast, but ${nm(L.i)} still in front!` : R.pick([`${nm(L.i)}, clear and drawing away!`, `They won't catch ${nm(L.i)} today!`]));
       nextFree = t + 2.4; continue;
     }
   }
