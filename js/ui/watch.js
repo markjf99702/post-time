@@ -41,10 +41,16 @@ export function renderWatch(el, nav, params) {
   const callBox = h('div', { class: 'call' }, prev, now);
   const mineList = myTickets(race);
   const speedBtns = [1, 2, 4].map(s => h('button', { type: 'button', 'aria-pressed': String(s === 1), onclick: () => setSpeed(s) }, `${s}×`));
+  // Turned off here, Sound quiets the caller too, until it's turned back on: the menu, where reading the call
+  // aloud has a tick of its own, can't be reached during a race. The next race is read aloud again if that
+  // tick is on, whether Sound is or not.
+  let quiet = false;
   const soundBtn = h('button', { type: 'button', 'aria-pressed': String(game.player.settings.sound), onclick: () => {
     game.player.settings.sound = !game.player.settings.sound;
     audio.setSound(game.player.settings.sound);
     soundBtn.setAttribute('aria-pressed', String(game.player.settings.sound));
+    quiet = !game.player.settings.sound;
+    if (quiet) audio.hush();
     if (game.player.settings.sound && T > 0 && T < endT) audio.startRace();
     save(); // the same setting as Sound in the menu, kept the same way
   } }, 'Sound');
@@ -122,7 +128,7 @@ export function renderWatch(el, nav, params) {
       now.textContent = call.lines[idx].text;
       fitCall();
       now.style.animation = 'none'; void now.offsetWidth; now.style.animation = '';
-      if (speed === 1) audio.say(call.lines[idx].text);
+      if (speed === 1 && !quiet) audio.say(call.lines[idx].text);
     }
 
     // Running order, a few times a second.

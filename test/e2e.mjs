@@ -295,6 +295,59 @@ await page.click('#app .setup .btn');
 await page.waitForSelector('.races', { timeout: 60000 });
 assert.equal(await page.locator('#bank').textContent(), '$200.00', 'the new meet starts with $200');
 
+// The race's Sound button quiets the caller too: turned off during a race, it cuts off the line being read
+// and the ones after it until it's turned back on. The next race is read again with Sound off, since
+// reading the call aloud has a tick of its own in the menu. A stand-in for the browser's voice notes what
+// it's asked to read, and nothing is heard.
+await page.evaluate(() => {
+  window.__voice = [];
+  speechSynthesis.speak = u => window.__voice.push(u.text);
+  speechSynthesis.cancel = () => window.__voice.push('(cancel)');
+});
+await page.click('#menuBtn');
+await page.check('#optSound');
+await page.check('#optVoice');
+await page.click('#menuBtn');
+await page.click('.race-row.next');
+await page.click('.post-bar .btn.brass');
+await page.waitForSelector('.watch:not([hidden]) canvas.scene');
+const quieted = await page.evaluate(async () => {
+  const w = window.__watch, lines = w.call.lines, v = window.__voice;
+  const reach = async k => { w.setT(w.t0 + lines[k].t + 0.05); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); };
+  const sound = () => [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === 'Sound').click();
+  const readSince = i => v.slice(i).filter(x => x !== '(cancel)');
+  const mid = Math.max(3, Math.floor(lines.length / 2));
+  await reach(2);
+  const read = readSince(0).length > 0;
+  sound(); // off
+  const cut = v[v.length - 1] === '(cancel)';
+  const off = v.length;
+  await reach(mid);
+  const whileOff = readSince(off);
+  sound(); // on again
+  const on = v.length;
+  await reach(mid + 1);
+  return { read, cut, whileOff, again: readSince(on).length > 0 };
+});
+assert.deepEqual(quieted, { read: true, cut: true, whileOff: [], again: true }, "the race's Sound button doesn't quiet the caller, or doesn't let it carry on when it's back on");
+await page.locator('.w-ctl button', { hasText: /^sound$/i }).click(); // off, and left off for the next race
+await page.evaluate(() => window.__watch.setT(window.__watch.endT - 0.05));
+await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
+await page.click('.w-ctl .btn');
+await page.waitForSelector('.official');
+await page.locator('.actions .btn', { hasText: /^Race 2/ }).click();
+await page.click('.post-bar .btn.brass');
+await page.waitForSelector('.watch:not([hidden]) canvas.scene');
+const nextRace = await page.evaluate(async () => {
+  const w = window.__watch, from = window.__voice.length;
+  w.setT(w.t0 + w.call.lines[2].t + 0.05);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  return { menu: ['optSound', 'optVoice'].map(id => document.getElementById(id).checked), read: window.__voice.slice(from).some(x => x !== '(cancel)') };
+});
+assert.deepEqual(nextRace, { menu: [false, true], read: true }, "the next race isn't read aloud with Sound off and the call's own tick on");
+await page.evaluate(() => window.postTime.nav.go('card'));
+await page.waitForSelector('.races');
+
 // Opening day, with the build held part-way: there's no card or scrapbook yet, so tapping them (or the
 // name) leaves the progress up. How to play can be read meanwhile, and going back brings the progress back.
 {
