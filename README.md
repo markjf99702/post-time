@@ -54,6 +54,6 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `js/ui/`, `js/game.js`, `js/app.js`: the screens, your bankroll and tickets, and saving.
 - `js/audio.js`: the bugle, the starting bell, the crowd and the cash window, all synthesised.
 - `fonts/`: Oswald and IBM Plex Sans Condensed (SIL Open Font License), served from here so nothing loads from elsewhere.
-- `sw.js`: keeps a copy for playing offline.
+- `sw.js`: keeps a copy for playing offline. On a connection that isn't answering, a page opens from that copy after four seconds. `FILES` in it is a fingerprint of the files it keeps: change one and `npm test` says what to set it to, so a release never leaves the copy half old.
 - `test/sim.test.mjs`, `test/game.test.mjs`, `test/audio.test.mjs`, `test/e2e.mjs`: the tests.
 - `dev/`: pages that draw the horses, a race, the photo finish and the winner's circle on their own, for tuning by eye.
