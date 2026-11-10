@@ -25,7 +25,7 @@ export function wake() {
     master.gain.value = 0.8;
     master.connect(ac.destination);
   }
-  if (ac.state === 'suspended') ac.resume();
+  if (ac.state !== 'running') ac.resume(); // suspended, or "interrupted" on an iPhone after a call or a lock
   return ac;
 }
 
@@ -430,6 +430,12 @@ export function callQueue(voice, { now = () => performance.now(), later = (fn, m
       held = null;
       if (cur) cut();
     },
+    // The same, but cancels whatever the queue believes: for a voice the browser may have left stuck.
+    unstick() {
+      held = null;
+      if (cur) cut();
+      else { voice.stop(); quietUntil = now() + GAP; }
+    },
     // The line being said, if any, is let finish; the one waiting is forgotten.
     settle() { held = null; },
     speaking: () => !!cur,
@@ -481,11 +487,58 @@ export function say(line, opts) {
 }
 // One line in the chosen voice, for the menu's Hear it. A second tap starts it again.
 export function hearIt(line, opts) {
-  if (!canSpeak()) return;
+  if (!voiceEnabled()) return;
+  primeVoice();
   caller.stop();
   caller.speak(line, opts);
 }
 // Stops the caller mid-line. With `finish`, the line being said is let finish, and nothing follows it.
 export function hush({ finish = false } = {}) {
   if (finish) caller.settle(); else caller.stop();
+}
+
+// A phone only lets a page speak once it has spoken inside a tap, and the call's first line comes a few
+// seconds after the tap that sends the horses to the gate. So the taps that lead to speech (the menu's
+// tick, Hear it, To the gate) each call this, and the first of them says one word at no volume.
+let primed = false;
+export function primeVoice() {
+  if (primed || !voiceEnabled()) return;
+  primed = true;
+  try {
+    const u = new SpeechSynthesisUtterance('a');
+    u.volume = 0;
+    u.rate = 1.6;
+    u.lang = 'en-US';
+    if (picked) u.voice = picked;
+    synth().speak(u);
+  } catch { /* a browser that won't: the tap carries on, and the call's own lines find out */ }
+}
+
+// Another tab, or the phone locked: the browser stops drawing, so the race stops where it is. The voice
+// used to finish its line and the crowd and the hooves carried on over nothing. Now the voice stops, the
+// line waiting is forgotten and the sound is held until the page is back. Coming back, the voice is
+// cancelled once more, since a phone can leave it stuck, and it says nothing until the next line is due.
+let out = false;       // the page is out of sight
+let soundHeld = false; // the sound is held by us, not by a browser that hasn't had its tap yet
+const quietly = promise => { if (promise && promise.catch) promise.catch(() => {}); };
+function away() {
+  out = true;
+  caller.stop();
+  if (ac && ac.state === 'running') { soundHeld = true; quietly(ac.suspend()); }
+}
+function back() {
+  if (!out) return;
+  out = false;
+  if (voiceEnabled()) caller.unstick();
+  if (!ac || !soundHeld) return;
+  soundHeld = false;
+  quietly(ac.resume());
+  // A phone may not let the sound back without a tap: ask again at the next one.
+  document.addEventListener('pointerdown', () => { if (ac.state !== 'running') quietly(ac.resume()); }, { once: true });
+}
+if (typeof document !== 'undefined' && document.addEventListener) {
+  document.addEventListener('visibilitychange', () => { if (document.hidden) away(); else back(); });
+  // Leaving the page for another, and coming back to it with the browser's Back button.
+  window.addEventListener('pagehide', away);
+  window.addEventListener('pageshow', back);
 }

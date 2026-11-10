@@ -18,6 +18,7 @@ let list = [];
 const listening = [];
 let cancels = 0;
 let trouble = null; // an error for the next utterance to come back with, in place of being said
+let inFlight = false; // lines are begun and not ended, as while one is being said
 const voice = {
   // Each line is over as soon as it's begun, so the page's queue is always free for the next one. (Lines
   // that take time are further down, with a clock the tests turn by hand.)
@@ -25,7 +26,7 @@ const voice = {
     spoken.push(u);
     if (trouble) { const error = trouble; trouble = null; u.onerror?.({ error }); return; }
     u.onstart?.({});
-    u.onend?.({});
+    if (!inFlight) u.onend?.({});
   },
   cancel: () => { cancels++; },
   getVoices: () => list,
@@ -34,7 +35,18 @@ const voice = {
 const arrive = voices => { list = voices; for (const fn of listening) fn(); };
 let onLine = true;
 Object.defineProperty(globalThis, 'navigator', { value: { get onLine() { return onLine; } }, configurable: true });
-globalThis.window = { speechSynthesis: voice };
+// The page going out of sight and coming back, and a sound system that can be held and let go.
+const page = { hidden: false, on: {}, addEventListener(type, fn) { this.on[type] = fn; } };
+const show = seen => { page.hidden = !seen; page.on.visibilitychange(); };
+let sound = null;
+class Sound {
+  constructor() { sound = this; this.state = 'running'; this.destination = {}; }
+  createGain() { return { gain: { value: 1 }, connect() {} }; }
+  suspend() { this.state = 'suspended'; return Promise.resolve(); }
+  resume() { this.state = 'running'; return Promise.resolve(); }
+}
+globalThis.document = page;
+globalThis.window = { speechSynthesis: voice, AudioContext: Sound, addEventListener() {} };
 globalThis.speechSynthesis = voice;
 globalThis.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
 const audio = await import('../js/audio.js');
@@ -168,6 +180,51 @@ test('a voice that needs the internet and fails is dropped for the rest of the v
   assert.deepEqual(spoken.slice(from + 2).map(u => [u.text, u.voice.name]),
     [['Turning for home.', 'Google US English'], ['Turning for home.', 'Samantha'], ['A furlong to go.', 'Samantha']]);
   assert.equal(audio.voiceChoices().best.name, 'Samantha', '"Best here" in the menu still names the voice that failed');
+});
+
+test('the first tap that leads to speech says one silent word, so a phone lets the call be read', () => {
+  // A phone lets a page speak only once it has spoken inside a tap. The call's first line comes 2.6
+  // seconds after the tap that sends the horses to the gate, which is no longer inside it.
+  audio.setVoice(false);
+  const from = spoken.length;
+  audio.primeVoice();
+  assert.equal(spoken.length, from, 'a word is spoken with the call not read aloud');
+  audio.setVoice(true);
+  arrive(IPHONE);
+  audio.primeVoice();
+  audio.primeVoice();
+  audio.hearIt({ text: "Turning for home, it's Copper Detour by a length and a half!" }, { rate: 1.4 });
+  assert.deepEqual(spoken.slice(from).map(u => [u.volume, u.lang, u.voice.name, u.text.length > 3]), [[0, 'en-US', 'Samantha', false], [undefined, 'en-US', 'Samantha', true]]);
+});
+
+test('with the page out of sight the voice stops and the sound is held, and both come back with it', async () => {
+  // Another tab, or the phone locked: the race stops being drawn, and the line being read used to carry
+  // on, with the crowd and the hooves, over nothing.
+  audio.setSound(true);
+  audio.wake();
+  audio.setVoice(true);
+  inFlight = true;
+  let from = spoken.length, cancelled = cancels;
+  audio.say('Down the backstretch, Copper Detour leads by a length.');
+  audio.say('Velvet Hunch takes over!'); // waiting its turn
+  show(false);
+  assert.deepEqual([cancels - cancelled, sound.state], [1, 'suspended'], 'out of sight, the voice or the sound carries on');
+  inFlight = false;
+  cancelled = cancels;
+  show(true);
+  assert.deepEqual([cancels - cancelled, sound.state], [1, 'running'], 'back in sight: one cancel in case the voice was left stuck, and the sound back');
+  // Nothing is said until the next line is due: not the line that was waiting.
+  await new Promise(r => setTimeout(r, 300));
+  assert.deepEqual(spoken.slice(from).map(u => u.text), ['Down the backstretch, Copper Detour leads by a length.']);
+  from = spoken.length;
+  audio.say('Around the far turn.');
+  assert.deepEqual(spoken.slice(from).map(u => u.text), ['Around the far turn.']);
+  // Sound that wasn't playing (no tap yet, or held by the browser) isn't started by coming back.
+  sound.state = 'suspended';
+  show(false);
+  show(true);
+  assert.equal(sound.state, 'suspended');
+  sound.state = 'running';
 });
 
 // ---------------------------------------------------------------- the queue, with a clock turned by hand
@@ -320,6 +377,20 @@ test('stopping forgets the line that was waiting, and nothing is spoken within a
   r.queue.settle();
   r.advance(5000);
   assert.deepEqual(r.log.slice(-2).map(x => [x.ev, x.text]), [['speak', 'A furlong to go.'], ['end', 'A furlong to go.']]);
+});
+
+test('coming back to the page cancels once whatever the queue believes, and the next line follows', () => {
+  const r = rig();
+  r.queue.speak(LONG);
+  r.advance(500);
+  r.queue.speak({ text: 'Rusty Nickel is making a run!', late: 30 });
+  r.queue.stop();    // the page goes out of sight
+  r.advance(60000);
+  r.queue.unstick(); // and comes back
+  r.advance(100);
+  r.queue.speak({ text: 'A furlong to go.' });
+  r.advance(5000);
+  assert.deepEqual(r.log.map(x => [x.ev, x.t, x.ev === 'stop' ? x.cut : x.text]), [['speak', 0, LONG.text], ['stop', 500, LONG.text], ['stop', 60500, null], ['speak', 60750, 'A furlong to go.'], ['end', r.log[4].t, 'A furlong to go.']]);
 });
 
 test('a voice that goes quiet is cancelled and the call carries on', () => {

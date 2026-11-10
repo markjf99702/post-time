@@ -134,7 +134,7 @@ document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', 
 const optSound = document.getElementById('optSound');
 const optVoice = document.getElementById('optVoice');
 optSound.addEventListener('change', () => { game.player.settings.sound = optSound.checked; audio.setSound(optSound.checked); if (optSound.checked) audio.wake(); save(); });
-optVoice.addEventListener('change', () => { game.player.settings.voice = optVoice.checked; audio.setVoice(optVoice.checked); showVoices(); save(); });
+optVoice.addEventListener('change', () => { game.player.settings.voice = optVoice.checked; audio.setVoice(optVoice.checked); audio.primeVoice(); showVoices(); save(); });
 
 // Under "Read the race call aloud" while it's ticked: which voice reads it, and a button to hear it. The
 // row isn't there in a browser with no voice at all. "Best here" is the best voice this browser has just

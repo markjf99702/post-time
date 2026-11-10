@@ -68,7 +68,7 @@ export function renderRace(root, nav, params) {
       bets.length ? [h('b', {}, `${bets.length} ticket${bets.length > 1 ? 's' : ''}`), ` · ${money(spent)} on this race`] : h('span', { class: 'muted' }, isNext ? 'No tickets yet. You can watch without betting.' : race.status === 'official' ? 'This race is over.' : `Race ${race.no} goes after race ${nxt ? nxt.no : ''}.`),
     ));
     if (race.status === 'official') bar.append(h('button', { class: 'btn', type: 'button', onclick: () => nav.go('result', { no: race.no }) }, 'Results ▸'));
-    else if (isNext) bar.append(h('button', { class: 'btn brass', type: 'button', onclick: () => { audio.wake(); nav.go('watch', { no: race.no }); } }, 'To the gate ▸'));
+    else if (isNext) bar.append(h('button', { class: 'btn brass', type: 'button', onclick: () => { audio.wake(); audio.primeVoice(); nav.go('watch', { no: race.no }); } }, 'To the gate ▸'));
     else bar.append(h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('race', { no: nxt.no }) }, `Race ${nxt.no} first`));
   }
 

@@ -374,20 +374,31 @@ await page.addInitScript(voices => {
   window.__ended = [];  // the lines it got to the end of
   window.__wordMs = 80;
   let saying = null;
+  const waiting = [];
   const list = voices.map(([name, lang, local]) => ({ name, lang, localService: !!local }));
   window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+  // Like the real one, it says what it's given in turn, and a cancel empties it.
+  const next = () => {
+    const u = waiting.shift();
+    if (!u) return;
+    const me = saying = {};
+    setTimeout(() => { if (saying === me && u.onstart) u.onstart({}); }, 10);
+    setTimeout(() => { if (saying === me) { saying = null; window.__ended.push(u.text); if (u.onend) u.onend({}); next(); } }, Math.max(200, u.text.split(' ').length * window.__wordMs));
+  };
   Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
     getVoices: () => list,
     speak(u) {
-      const me = saying = {};
       window.__voice.push(u.text);
       window.__said.push({ text: u.text, voice: u.voice ? u.voice.name : null, lang: u.lang, rate: u.rate, pitch: u.pitch, volume: u.volume });
-      setTimeout(() => { if (saying === me && u.onstart) u.onstart({}); }, 10);
-      setTimeout(() => { if (saying === me) { saying = null; window.__ended.push(u.text); if (u.onend) u.onend({}); } }, Math.max(300, u.text.split(' ').length * window.__wordMs));
+      waiting.push(u);
+      if (!saying) next();
     },
-    cancel() { window.__voice.push('(cancel)'); saying = null; },
+    cancel() { window.__voice.push('(cancel)'); saying = null; waiting.length = 0; },
     addEventListener() {},
   } });
+  // The page's sound, kept where the tests can see whether it's running.
+  const Sound = window.AudioContext;
+  window.AudioContext = class extends Sound { constructor(...a) { super(...a); window.__sound = this; } };
 }, macVoices);
 await page.reload();
 await page.waitForSelector('.races');
@@ -400,6 +411,8 @@ const menuWidth = () => page.evaluate(() => document.getElementById('menu').getB
 const narrow = await menuWidth();
 assert.equal(await page.locator('#voiceRow').isVisible(), false, 'the voice row shows with the call not read aloud');
 await page.check('#optVoice');
+// That tap says one word at no volume: a phone lets a page speak only once it has spoken inside a tap.
+assert.deepEqual(await page.evaluate(() => window.__said.map(u => [u.volume, u.lang])), [[0, 'en-US']], 'ticking "Read the race call aloud" should say one silent word');
 assert.equal(await page.locator('#voiceRow').isVisible(), true, 'no voice row under "Read the race call aloud"');
 assert.equal(await menuWidth(), narrow, 'the voice row makes the menu wider');
 const offered = await page.locator('#optVoiceName option').allTextContents();
@@ -411,9 +424,9 @@ assert.ok(offered.includes('Samantha') && !offered.some(o => /^(Fred|Zarvox|Bell
 const hearIt = async () => {
   await page.evaluate(() => window.__said.splice(0));
   await page.click('#hearIt');
-  await page.waitForFunction(() => window.__said.length > 0);
+  await page.waitForFunction(() => window.__said.some(u => u.volume !== 0));
   await page.waitForTimeout(400);
-  return page.evaluate(() => window.__said.splice(0));
+  return (await page.evaluate(() => window.__said.splice(0))).filter(u => u.volume !== 0);
 };
 const sample = await hearIt();
 assert.deepEqual(sample.map(u => [u.text, u.voice, u.lang]), [["Turning for home, it's Copper Detour by a length and a half!", 'Google US English', 'en-US']], 'Hear it should say one line, in the best voice here');
@@ -425,6 +438,13 @@ await page.reload();
 await page.waitForSelector('.races');
 await page.click('#menuBtn');
 assert.deepEqual(await page.evaluate(() => [document.getElementById('voiceRow').hidden, document.getElementById('optVoiceName').value]), [false, 'Samantha'], 'the voice chosen is gone after a reload');
+// On a new visit with the call already ticked, Hear it is the first tap that speaks: the silent word goes
+// with it, once.
+await page.click('#hearIt');
+await page.waitForFunction(() => window.__said.length > 1);
+await page.click('#hearIt');
+await page.waitForTimeout(500);
+assert.deepEqual(await page.evaluate(() => window.__said.map(u => u.volume === 0)), [true, false, false], 'the silent word should be said once, with the first tap that speaks');
 // A voice this browser hasn't got (chosen on another device, or deleted since): the best here reads the
 // call meanwhile, and the choice is kept and shown.
 await page.evaluate(() => { const { game, save } = window.postTime; game.player.settings.voiceName = 'Ava (Premium)'; save(); });
@@ -516,12 +536,47 @@ await page.waitForFunction(text => window.__ended.includes(text), paced.read, { 
 await page.locator('.actions .btn', { hasText: /^Race 3/ }).click();
 await page.click('.post-bar .btn.brass');
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
+// The page goes out of sight in the middle of a race (another tab, the phone locked): the voice stops, the
+// line waiting behind it is forgotten, and the crowd and hooves are held. Back in sight, the voice is
+// cancelled once in case it was left stuck, the sound comes back, and nothing is said until the next line.
+const outOfSight = await page.evaluate(async () => {
+  const w = window.__watch, v = window.__voice, lines = w.call.lines;
+  const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const seen = yes => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => !yes });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (yes ? 'visible' : 'hidden') });
+    document.dispatchEvent(new Event('visibilitychange'));
+  };
+  [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === 'Sound').click(); // on
+  // Two lines close together with a quiet stretch after them, so nothing else comes up meanwhile.
+  const k = lines.findIndex((l, i) => i > 2 && i < lines.length - 3 && lines[i + 1].t - l.t > 5);
+  w.setT(w.t0 + lines[k - 1].t + 0.05); await frames();
+  w.setT(w.t0 + lines[k].t + 0.05); await frames();
+  await wait(100);
+  const before = { saying: v[v.length - 1] === lines[k - 1].say, sound: window.__sound.state };
+  seen(false);
+  await wait(100);
+  const away = { cut: v[v.length - 1] === '(cancel)', sound: window.__sound.state };
+  const from = v.length;
+  await wait(500);
+  seen(true);
+  await wait(500);
+  const back = { said: v.slice(from), sound: window.__sound.state };
+  w.setT(w.t0 + lines[k + 1].t + 0.05); await frames();
+  await wait(100);
+  return { k, before, away, back, next: v[v.length - 1] === lines[k + 1].say };
+});
+assert.ok(outOfSight.k > 2, 'no quiet stretch in this race to check with');
+assert.deepEqual(outOfSight.before, { saying: true, sound: 'running' });
+assert.deepEqual(outOfSight.away, { cut: true, sound: 'suspended' }, 'out of sight, the voice or the sound carries on');
+assert.deepEqual(outOfSight.back, { said: ['(cancel)'], sound: 'running' }, 'back in sight: one cancel, the sound back, and nothing said until the next line');
+assert.ok(outOfSight.next, "the next line wasn't read after the page came back");
 const leftEarly = await page.evaluate(async () => {
-  const w = window.__watch, v = window.__voice, line = w.call.lines[2];
-  w.setT(w.t0 + line.t + 0.05);
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const v = window.__voice;
+  const read = v[v.length - 1] !== '(cancel)';
   window.postTime.nav.go('card');
-  return { read: v.includes(line.say), cut: v[v.length - 1] === '(cancel)' };
+  return { read, cut: v[v.length - 1] === '(cancel)' };
 });
 assert.deepEqual(leftEarly, { read: true, cut: true }, 'leaving a race for the card leaves the caller talking');
 await page.waitForSelector('.races');
