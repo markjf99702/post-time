@@ -113,14 +113,22 @@ function inRace(race, sel) {
   return Array.isArray(sel) && sel.length > 0 && sel.every(i => Number.isInteger(i) && i >= 0 && i < race.entries.length);
 }
 
+// True from when the browser refuses a save (its storage is blocked, or full) until one goes in again.
+// The game carries on in memory meanwhile, and the page says the meet isn't being kept.
+let refused = false;
+export const notSaved = () => refused;
+
+// Returns whether the meet and the player both went into storage.
 export function save() {
   // Until the first meet is built there's nothing to keep; a setting changed meanwhile is kept with it.
-  if (!game.world) return;
-  window.dispatchEvent(new Event('post-time:saved'));
+  if (!game.world) return true;
   try {
     localStorage.setItem(KEY_WORLD, JSON.stringify(game.world, (k, v) => (k === 'path' ? undefined : v)));
     localStorage.setItem(KEY_PLAYER, JSON.stringify(game.player));
-  } catch { /* private mode or full: carry on in memory */ }
+    refused = false;
+  } catch { refused = true; }
+  window.dispatchEvent(new Event('post-time:saved'));
+  return !refused;
 }
 
 // Builds a new meet a step at a time; call step() until it returns true.

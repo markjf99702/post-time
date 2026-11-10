@@ -1,7 +1,7 @@
 // Post Time: a day at the races. This file starts things up and moves between screens.
 
 import { h, clear, money } from './ui/dom.js';
-import { game, load, save, newMeet, card, nextRace } from './game.js';
+import { game, load, save, notSaved, newMeet, card, nextRace } from './game.js';
 import { renderCard } from './ui/card.js';
 import { renderRace } from './ui/race.js';
 import { renderWatch } from './ui/watch.js';
@@ -190,7 +190,13 @@ function applySettings() {
   audio.setVoice(s.voice);
 }
 
+// One line under the header while the browser is refusing to save (its storage is blocked, or full), so a
+// day's play doesn't vanish on the next visit without a word. It goes when a save works again.
+const unsaved = h('p', { class: 'unsaved', role: 'status', hidden: true }, "This browser isn't keeping your meet, so it will be gone when you close the page.");
+app.before(unsaved);
+
 window.addEventListener('post-time:saved', () => {
+  unsaved.hidden = !notSaved();
   if (game.player && game.world) updateBank();
   // The race has a Sound button of its own: keep the menu in step with it.
   if (game.player?.settings) { optSound.checked = !!game.player.settings.sound; optVoice.checked = !!game.player.settings.voice; }

@@ -10,7 +10,7 @@ globalThis.localStorage = {
   removeItem: k => { store.delete(k); },
 };
 globalThis.window = new EventTarget();
-const { game, newMeet, load, save, card, toteFor, placeBet, goToGate, mtpState, currentBoard, advanceDay, callFor, horseOf, runnersFor, photoRecord } = await import('../js/game.js');
+const { game, newMeet, load, save, notSaved, card, toteFor, placeBet, goToGate, mtpState, currentBoard, advanceDay, callFor, horseOf, runnersFor, photoRecord } = await import('../js/game.js');
 const { stateAt, RAIL } = await import('../js/sim.js');
 const { LENGTH } = await import('../js/track.js');
 const { marginShort } = await import('../js/chart.js');
@@ -416,6 +416,34 @@ test('a horse claimed out of a race it wins ran it, and is photographed, for the
   const old = structuredClone(mine);
   for (const p of old.pps) delete p.tr;
   assert.deepEqual(meetStats({ horses: [old] }).trainers.map(t => t.starts), tally, "a line with no trainer on it isn't worked back from the claim");
+});
+
+test("when the browser won't keep the meet the game knows it, until a save goes in again", () => {
+  // Storage that's blocked or full threw away every save without a word: a day's play was gone on the
+  // next visit, and nothing on any screen had said so.
+  build('refused');
+  assert.equal(save(), true);
+  assert.equal(notSaved(), false);
+  const kept = store.get('post-time/player'), setItem = localStorage.setItem;
+  const heard = [];
+  const listen = () => heard.push(notSaved());
+  window.addEventListener('post-time:saved', listen);
+  try {
+    localStorage.setItem = () => { throw new Error('QuotaExceededError'); };
+    game.player.bank += 5;
+    assert.equal(save(), false);
+    assert.equal(notSaved(), true);
+    assert.equal(store.get('post-time/player'), kept);
+    // The meet goes in and the player doesn't: that isn't kept either.
+    localStorage.setItem = (k, v) => { if (k === 'post-time/player') throw new Error('QuotaExceededError'); setItem(k, v); };
+    assert.equal(save(), false);
+    assert.equal(notSaved(), true);
+  } finally { localStorage.setItem = setItem; }
+  assert.equal(save(), true);
+  assert.equal(notSaved(), false);
+  window.removeEventListener('post-time:saved', listen);
+  assert.deepEqual(heard, [true, true, false], 'the page is told before the save is tried, or not at all');
+  assert.equal(JSON.parse(store.get('post-time/player')).bank, game.player.bank);
 });
 
 test("a save that isn't a meet is left alone until a new meet is started", () => {

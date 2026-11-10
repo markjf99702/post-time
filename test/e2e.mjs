@@ -225,6 +225,22 @@ assert.equal(await page.evaluate(() => window.postTime.game.player.bank), bank +
 await other.close();
 await page.evaluate(b => { window.postTime.game.player.bank = b; window.postTime.save(); }, bank);
 
+// When the browser refuses a save (storage blocked or full), a line under the header says the meet isn't
+// being kept, and it goes when a save works again.
+const unsaved = page.locator('.unsaved');
+assert.equal(await unsaved.isVisible(), false, 'the line about saving shows when saving works');
+await page.evaluate(() => {
+  window.realSetItem = Storage.prototype.setItem;
+  Storage.prototype.setItem = () => { throw new DOMException('full', 'QuotaExceededError'); };
+  window.postTime.save();
+});
+assert.equal(await unsaved.isVisible(), true, "nothing says the browser isn't keeping the meet");
+assert.equal(await unsaved.textContent(), "This browser isn't keeping your meet, so it will be gone when you close the page.");
+const unsavedBox = await unsaved.boundingBox(), headerBox = await page.locator('#top').boundingBox();
+assert.ok(unsavedBox.y >= headerBox.y + headerBox.height - 1 && unsavedBox.x >= 0 && unsavedBox.x + unsavedBox.width <= 390, 'the line about saving is under the header or off the side');
+await page.evaluate(() => { Storage.prototype.setItem = window.realSetItem; window.postTime.save(); });
+assert.equal(await unsaved.isVisible(), false, 'the line about saving stays after a save has worked');
+
 // Fits a phone: nothing scrolls sideways.
 assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the page scrolls sideways on a phone');
 
