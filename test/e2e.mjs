@@ -444,7 +444,7 @@ const photoCall = await page.evaluate(() => new Promise(resolve => {
   w.call.official = line;
   w.setT(w.endT);
   let early = false, held = null;
-  const strip = () => [...document.querySelector('.order').children].map(x => (x.matches('.pair') ? `[${[...x.children].map(b => b.getAttribute('aria-label').replace(/, .*/, '')).join(' | ')}]` : x.matches('.gap') ? 'gap' : x.getAttribute('aria-label').replace(/, .*/, ''))).slice(0, 3);
+  const strip = () => [...document.querySelector('.order').children].map(x => (x.matches('.pair') ? `[${[...x.children].map(b => b.getAttribute('aria-label').replace(/, .*/, '')).join(' | ')}]` : x.querySelector('button').getAttribute('aria-label').replace(/, .*/, ''))).slice(0, 3);
   const look = () => {
     const sign = document.querySelector('.w-photo .w-flash'), box = document.querySelector('.call');
     const up = !!sign && sign.classList.contains('up');
@@ -460,7 +460,7 @@ assert.deepEqual({ early: photoCall.early, said: photoCall.said }, { early: fals
 assert.ok(photoCall.spill <= 1, `the winner's line spills ${photoCall.spill}px out of its box on a small phone`);
 const [lower, higher] = photoCall.first2.slice().sort((a, b) => a - b);
 assert.equal(photoCall.held[0], `[In the photo: number ${lower} | In the photo: number ${higher}]`, 'the running order gives a photo away before the official sign');
-assert.deepEqual(photoCall.after.filter(x => x !== 'gap').slice(0, 2), photoCall.first2.map((n, k) => `${k + 1}: number ${n}`), "the running order isn't the official one once the sign is up");
+assert.deepEqual(photoCall.after.slice(0, 2), photoCall.first2.map((n, k) => `${k + 1}: number ${n}`), "the running order isn't the official one once the sign is up");
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 const photoSign = await page.evaluate(() => {
   const box = s => document.querySelector(s).getBoundingClientRect();
@@ -951,6 +951,61 @@ await page.waitForSelector('.races');
   await first.goBack();
   assert.match(first.url(), /manifest\.webmanifest$/, 'Back on the card stays in the game');
   await ctx2.close();
+}
+
+// The running order on a phone, with the day's biggest field: every number is on the screen, at the gate
+// and in the middle of the race, 320 wide and 390 wide (with nine or more runners the row used to run off
+// the right edge). A field too big for one row has two, and the picture is the same size at the gate as in
+// the race. There are no margins for the first four seconds. Following a horse names it under the buttons.
+{
+  const ctx3 = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
+  const phone = await ctx3.newPage();
+  phone.on('pageerror', e => problems.push(e.message));
+  phone.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
+  await phone.goto(base, { waitUntil: 'domcontentloaded' });
+  await phone.waitForSelector('.races', { timeout: 60000 });
+  await phone.evaluate(() => document.fonts.ready);
+  const biggest = await phone.evaluate(() => { const { game, card, save } = window.postTime; game.player.settings.sound = false; save(); return card().races.reduce((a, r) => (r.entries.length > a.entries.length ? r : a)).no; });
+  for (const width of [390, 320]) {
+    await phone.setViewportSize({ width, height: width === 390 ? 844 : 568 });
+    await phone.evaluate(no => window.postTime.nav.go('watch', { no }), biggest);
+    await phone.waitForSelector('.watch:not([hidden]) canvas.scene');
+    const strip = await phone.evaluate(async () => {
+      const w = window.__watch, out = { field: w.run.n, off: [], stage: new Set(), rows: new Set(), margins: {} };
+      const frames = async n => { for (let i = 0; i < n; i++) await new Promise(r => requestAnimationFrame(r)); };
+      w.pause();
+      for (const t of [-3, 2.5, 6, 20, w.winT - 14, w.winT - 6, w.winT - 1]) {
+        w.setT(t);
+        await frames(3);
+        const buttons = [...document.querySelectorAll('.order button')];
+        out.off.push(...buttons.filter(b => { const r = b.getBoundingClientRect(); return r.left < 0 || r.right > innerWidth; }).map(b => `${b.getAttribute('aria-label')} at ${t.toFixed(0)} s`));
+        if (buttons.length !== w.run.n) out.off.push(`${buttons.length} numbers at ${t.toFixed(0)} s`);
+        out.stage.add(Math.round(document.querySelector('.w-stage').getBoundingClientRect().height));
+        out.rows.add(new Set(buttons.map(b => Math.round(b.getBoundingClientRect().top))).size);
+        out.margins[Math.round(t)] = document.querySelectorAll('.order .gap').length;
+      }
+      // Follow the last horse in the order, and stop following it.
+      const last = [...document.querySelectorAll('.order button')].pop(), hint = document.querySelector('.w-ctl .hint');
+      const name = last.getAttribute('aria-label').replace(/^\d+: number (\d+), /, '#$1 ');
+      last.click();
+      out.following = hint.textContent === `Following ${name}. Tap again for the leaders.`;
+      await frames(3);
+      out.ring = getComputedStyle(document.querySelector('.order button.follow .cloth')).boxShadow.includes('245, 179, 61');
+      document.querySelector('.order button.follow').click();
+      out.leaders = /^Tap a number in the running order/.test(hint.textContent);
+      await frames(3);
+      out.stage.add(Math.round(document.querySelector('.w-stage').getBoundingClientRect().height));
+      return { ...out, stage: [...out.stage], rows: [...out.rows], two: document.querySelector('.order').classList.contains('two'), sideways: document.getElementById('watch').scrollWidth > innerWidth };
+    });
+    assert.deepEqual(strip.off, [], `${width} wide, ${strip.field} runners: running-order numbers off the screen`);
+    assert.equal(strip.stage.length, 1, `${width} wide: the picture changes size as the running order does: ${strip.stage}`);
+    assert.ok(Math.max(...strip.rows) <= (strip.two ? 2 : 1) && !strip.sideways, `${width} wide, ${strip.field} runners: the running order takes ${strip.rows} rows`);
+    assert.deepEqual([strip.margins[-3], strip.margins[3], strip.margins[6], strip.margins[20]], [0, 0, strip.field - 1, strip.field - 1], `${width} wide: margins in the first four seconds, or none after`);
+    assert.deepEqual([strip.following, strip.ring, strip.leaders], [true, true, true], "following a horse isn't shown under the buttons or with an amber ring");
+    await phone.evaluate(() => window.postTime.nav.go('card'));
+    await phone.waitForSelector('.races');
+  }
+  await ctx3.close();
 }
 
 assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems while using it');

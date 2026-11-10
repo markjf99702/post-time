@@ -383,15 +383,23 @@ a { color: var(--green-2); }
 .w-photo .w-flash.under { position: static; transform: none; font-size: 24px; padding: 6px 14px; visibility: hidden; animation: none; }
 .w-photo .w-flash.under.up { visibility: visible; animation: popin .35s ease-out; }
 @keyframes popin { from { transform: scale(.6); opacity: 0; } }
+/* The running order: each number with the margin to the one in front before it. A field too big for one row
+   on this screen has two (the race screen marks it at the gate), with the room for both kept from then on. */
 .order {
-  display: flex; gap: 4px; padding: 8px 10px; overflow-x: auto; scrollbar-width: none; background: #161c17; align-items: center;
+  display: flex; flex-wrap: wrap; gap: 6px 3px; padding: 8px 10px; background: #161c17; align-items: center; align-content: center;
   min-height: 52px;
 }
-.order::-webkit-scrollbar { display: none; }
+.order.two { min-height: 78px; }
+.order .slot { display: flex; align-items: center; gap: 3px; flex: none; }
 .order button { background: none; border: 0; padding: 2px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; flex: none; border-radius: 6px; }
-.order button.me .cloth { box-shadow: 0 0 0 2px #fff; }
-.order button.follow { background: rgba(245,179,61,.25); }
-.order .gap { font: 500 11px/1 var(--display); color: #a9a28c; min-width: 16px; text-align: center; }
+/* A thin light edge, so the black 6 shows on the dark strip. Yours has a white ring; the one the camera is
+   following has an amber one, outside the white if it's both. */
+.order .cloth { box-shadow: inset 0 0 0 1px rgba(255,255,255,.3); }
+.order button.me .cloth { box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), 0 0 0 2px #fff; }
+.order button.follow .cloth { box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), 0 0 0 2px var(--amber); }
+.order button.me.follow .cloth { box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), 0 0 0 2px #fff, 0 0 0 4px var(--amber); }
+/* Margins are small, dim and raised, like the ones in a chart, so a 2 or a 1 isn't read as a horse's number. */
+.order .gap { font: 500 10px/1 var(--display); color: #8f8a78; min-width: 13px; text-align: center; align-self: flex-start; }
 /* The two in a photo, side by side until the official sign says which of them was in front. */
 .order .pair { position: relative; display: flex; gap: 2px; flex: none; padding: 1px 3px; border: 1px solid var(--amber); border-radius: 7px; }
 .order .pair::before {

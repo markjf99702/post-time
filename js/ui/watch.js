@@ -57,7 +57,8 @@ export function renderWatch(el, nav, params) {
   } }, 'Sound');
   const skipBtn = h('button', { type: 'button', onclick: skip }, 'Skip ▸▸');
   const doneBtn = h('button', { class: 'btn brass', type: 'button', hidden: true, onclick: () => leave('result') }, 'Results ▸');
-  const hint = h('div', { class: 'hint' }, 'Tap a number in the running order to follow that horse. Tap it again to follow the leaders.');
+  const HINT = 'Tap a number in the running order to follow that horse. Tap it again to follow the leaders.';
+  const hint = h('div', { class: 'hint' }, HINT);
   const ctl = h('div', { class: 'w-ctl' }, ...speedBtns, soundBtn, skipBtn, h('span', { class: 'spacer' }), doneBtn, hint);
   el.append(
     h('div', { class: 'w-top' },
@@ -83,7 +84,7 @@ export function renderWatch(el, nav, params) {
   let orderAt = -1;
   let following = null;
   // The picture follows the size of its box (the screen turning, the buttons changing at the finish).
-  const onResize = () => { scene.resize(); scene.draw(Math.max(0, T)); fitCall(); };
+  const onResize = () => { fitOrder(); scene.resize(); scene.draw(Math.max(0, T)); fitCall(); };
   const resizer = typeof ResizeObserver === 'function' ? new ResizeObserver(onResize) : null;
   if (resizer) resizer.observe(stage); else window.addEventListener('resize', onResize);
   const stopResizing = () => { if (resizer) resizer.disconnect(); else window.removeEventListener('resize', onResize); };
@@ -188,6 +189,28 @@ export function renderWatch(el, nav, params) {
     }
   }
 
+  // A field too big for one row of the running order on this screen gets two (it used to run off the
+  // right edge, three horses of eleven on a phone, with nothing to say so). Whether it will is worked out
+  // at the gate from the widest the row gets, a margin before every number, and the room for two rows is
+  // kept from then on, so the picture above never changes size as the margins come and go. The line under
+  // the buttons keeps the room its longest wording needs, for the same reason.
+  function fitOrder() {
+    const probe = h('div', { class: 'order', 'aria-hidden': 'true', style: { position: 'absolute', left: '0', right: '0', visibility: 'hidden', flexWrap: 'nowrap' } },
+      runners.map((r, k) => h('span', { class: 'slot' }, k ? h('span', { class: 'gap' }, '2¼') : null, h('button', { type: 'button', tabindex: '-1' }, cloth(r.number, 'sm')))));
+    el.append(probe);
+    order.classList.toggle('two', probe.scrollWidth > order.clientWidth + 0.5);
+    probe.remove();
+    hint.style.minHeight = '';
+    hint.textContent = HINT;
+    hint.style.minHeight = `${hint.offsetHeight}px`;
+    showHint();
+  }
+  // Under the buttons: how to follow a horse or, while one is followed, which.
+  function showHint() {
+    const r = following === null ? null : runners[following];
+    hint.textContent = r ? `Following #${r.number} ${r.name}. Tap again for the leaders.` : HINT;
+  }
+
   let orderShown = '';
   let signUp = false; // after a photo, the official sign is up
   function drawOrder(t) {
@@ -200,7 +223,8 @@ export function renderWatch(el, nav, params) {
       const two = [run.results[0].h, run.results[1].h].sort((a, b) => runners[a].number - runners[b].number);
       o = [...two.map(i => ({ i, gap: 0, photo: true })), ...o.filter(x => !two.includes(x.i))];
     }
-    const gaps = o.map((x, k) => (k > 0 && t > 1 && !x.photo ? marginShort(x.gap) : ''));
+    // No margins for the first four seconds, while the field sorts itself out ("no" eleven times over).
+    const gaps = o.map((x, k) => (k > 0 && t > 4 && !x.photo ? marginShort(x.gap) : ''));
     // Rebuilt only when something on it changes, since a rebuilt button loses the keyboard's place;
     // the horse that had it gets it back.
     const shows = `${following}|${o.map((x, k) => `${x.i} ${x.photo ? 'photo' : gaps[k]}`).join(',')}`;
@@ -210,16 +234,15 @@ export function renderWatch(el, nav, params) {
     clear(order);
     let pair = null;
     o.forEach((x, k) => {
-      if (gaps[k]) order.append(h('span', { class: 'gap' }, gaps[k]));
       const r = runners[x.i];
       const b = h('button', {
         type: 'button', class: `${r.mine ? 'me' : ''}${following === x.i ? ' follow' : ''}`, 'aria-label': `${x.photo ? 'In the photo' : k + 1}: number ${r.number}, ${r.name}`, data: { i: x.i },
-        onclick: () => { following = following === x.i ? null : x.i; scene.setFocus(following); orderAt = -1; },
+        onclick: () => { following = following === x.i ? null : x.i; scene.setFocus(following); orderAt = -1; showHint(); },
       }, cloth(r.number, 'sm'));
       if (x.photo) {
         if (!pair) order.append(pair = h('span', { class: 'pair' }));
         pair.append(b);
-      } else order.append(b);
+      } else order.append(h('span', { class: 'slot' }, gaps[k] ? h('span', { class: 'gap' }, gaps[k]) : null, b)); // a number goes to the next row with its margin
       if (had === String(x.i)) b.focus({ preventScroll: true });
     });
   }
@@ -288,6 +311,7 @@ export function renderWatch(el, nav, params) {
     nav.go(where, { no: race.no, fresh: true });
   }
 
+  fitOrder();
   raf = requestAnimationFrame(frame);
   el.tabIndex = -1;
   el.focus({ preventScroll: true });
