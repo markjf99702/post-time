@@ -57,7 +57,7 @@ globalThis.window = { speechSynthesis: voice, AudioContext: Sound, addEventListe
 globalThis.speechSynthesis = voice;
 globalThis.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
 const audio = await import('../js/audio.js');
-const { pickVoice, offeredVoices, callQueue, sayTime } = audio;
+const { pickVoice, offeredVoices, callQueue, sayTime, lineTime, gauge, engineOf, engineRate, engineSpeed } = audio;
 const { raceCall, pace, officialLine } = await import('../js/call.js');
 const { createWorld, simulateRace, applyResult, nextDay } = await import('../js/world.js');
 const { STAKES, BIG_STAKES } = await import('../js/data.js');
@@ -292,7 +292,8 @@ test('the roar at the wire is not taken back by the next frame, and the crowd se
 
 // A voice that takes time over a line: about what the queue's own model says at 4.3 syllables a second,
 // or slower or quicker than it expects. It says when it starts and ends (while `events` is true), and
-// notes everything it's asked to do. `stamp` is filled in by a test that wants the race's clock noted.
+// notes everything it's asked to do. `stamp` is filled in by a test that wants the race's clock noted,
+// and `heard` by one that wants to know how long each line really took.
 function rig({ syllablesASecond = 4.3, startAfter = 20, events = true } = {}) {
   let t = 0, id = 0, saying = null;
   const timers = new Map(), log = [];
@@ -302,7 +303,7 @@ function rig({ syllablesASecond = 4.3, startAfter = 20, events = true } = {}) {
     never: i => { timers.delete(i); },
   };
   const r = {
-    log, stamp: () => null, events, startAfter,
+    log, stamp: () => null, heard: null, events, startAfter,
     now: () => t,
     advance(ms) {
       const end = t + ms;
@@ -328,7 +329,7 @@ function rig({ syllablesASecond = 4.3, startAfter = 20, events = true } = {}) {
     },
     stop(why) { log.push({ ev: 'stop', t, T: r.stamp(), why: why || null, cut: saying ? saying.text : null }); saying = null; },
   };
-  r.queue = callQueue(voice, clock);
+  r.queue = callQueue(voice, { ...clock, heard: (line, seconds, rate) => { if (r.heard) r.heard(line, seconds, rate); } });
   return r;
 }
 const texts = (log, ev = 'speak') => log.filter(x => x.ev === ev).map(x => x.text);
@@ -548,6 +549,107 @@ test("the voice is never asked to go faster than 1.2 times its own speed, or hig
   }
   assert.deepEqual([pace({ kind: 'call' }, 60), pace({ kind: 'call' }, 18), pace({ kind: 'finish', wire: true }, 0), pace({ kind: 'finish' }, -3)],
     [{ rate: 1.15, pitch: 1 }, { rate: 1.175, pitch: 1 }, { rate: 1.2, pitch: 1 }, { rate: 1.15, pitch: 1 }]);
+});
+
+const UA = {
+  iphone: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+  iphoneChrome: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/126.0.6478.153 Mobile/15E148 Safari/604.1',
+  ipad: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+  macSafari: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+  macFirefox: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:127.0) Gecko/20100101 Firefox/127.0',
+  macChrome: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  winChrome: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  winEdge: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0',
+  winFirefox: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0',
+  android: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
+  chromebook: 'Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+};
+// What each engine makes of the number it's given, from its own source (see engineOf in js/audio.js).
+// WebKit's curve between Apple's default and its maximum isn't published: a straight line is the quickest
+// it could be, and an even ratio the slowest.
+const DELIVERS = {
+  'an Apple voice, on a straight line': r => (r <= 1 ? r : 1 + 3 * Math.min(1, r - 1)),
+  'an Apple voice, on an even ratio': r => (r <= 1 ? r : Math.pow(4, Math.min(1, r - 1))),
+  'a Microsoft voice in Chrome on Windows': r => Math.pow(3, Math.trunc(10 * Math.log10(r)) / 10),
+  'a plain multiple': r => r,
+};
+
+test("the pace asked for is the pace a device gives: an iPhone isn't sent to half as fast again, and Windows is known to stay put", async () => {
+  // A rate of 1.15 was taken to mean 1.15 times a voice's own speed everywhere. On an iPhone (and in Safari
+  // or Firefox on a Mac) it's somewhere between 1.23 and 1.45 times, and 1.2 up to 1.6; in Chrome on
+  // Windows a Microsoft voice doesn't change speed at all below a rate of 1.26.
+  const david = { name: 'Microsoft David - English (United States)', lang: 'en-US', localService: true };
+  const aria = { name: 'Microsoft Aria Online (Natural) - English (United States)', lang: 'en-US', localService: false };
+  const samantha = { name: 'Samantha', lang: 'en-US', localService: true };
+  assert.deepEqual([engineOf(samantha, UA.iphone), engineOf(samantha, UA.iphoneChrome), engineOf(samantha, UA.ipad, 5), engineOf(samantha, UA.macSafari), engineOf(samantha, UA.macFirefox)], ['apple', 'apple', 'apple', 'apple', 'apple']);
+  assert.deepEqual([engineOf(samantha, UA.macChrome), engineOf(null, UA.android), engineOf({ name: 'Chrome OS US English 4' }, UA.chromebook), engineOf(david, UA.winFirefox), engineOf(aria, UA.winEdge), engineOf(samantha, '')], ['plain', 'plain', 'plain', 'plain', 'plain', 'plain']);
+  assert.deepEqual([engineOf(david, UA.winChrome), engineOf(david, UA.winEdge), engineOf(null, UA.winChrome)], ['sapi', 'sapi', 'sapi']);
+  // Asked for 1.15 to 1.2 times its own speed, no engine is handed more than 1.2, an Apple voice is handed
+  // 1.05 to 1.07, and what comes out is never past 1.25 times, whichever way Apple's curve goes.
+  for (let p = 1; p <= 1.2001; p += 0.005) {
+    for (const kind of ['apple', 'sapi', 'plain']) assert.ok(engineRate(p, kind) <= 1.2 && engineRate(p, kind) >= 1, `${kind} at ${p.toFixed(3)}: ${engineRate(p, kind)}`);
+    const r = engineRate(p, 'apple');
+    assert.ok(DELIVERS['an Apple voice, on a straight line'](r) <= p + 1e-3 && DELIVERS['an Apple voice, on an even ratio'](r) <= p, `an Apple voice asked for ${p.toFixed(3)} is given ${r}`);
+    // The speed the plan takes the voice to be going at lies between the two curves.
+    const taken = engineSpeed(r, 'apple');
+    assert.ok(taken <= DELIVERS['an Apple voice, on a straight line'](r) + 1e-9 && taken >= DELIVERS['an Apple voice, on an even ratio'](r) - 1e-9, `taken to be ${taken} at ${r}`);
+    assert.equal(engineSpeed(engineRate(p, 'sapi'), 'sapi'), DELIVERS['a Microsoft voice in Chrome on Windows'](p));
+    assert.equal(engineSpeed(engineRate(p, 'plain'), 'plain'), p);
+  }
+  assert.deepEqual([engineRate(1.15, 'apple'), engineRate(1.2, 'apple'), engineRate(1.15, 'sapi'), engineSpeed(1.15, 'sapi'), engineSpeed(1.2, 'sapi'), engineSpeed(1.3, 'sapi')], [1.05, 1.0667, 1.15, 1, 1, Math.pow(3, 0.1)]);
+  // Through the page's own voice on an iPhone: whatever pace is asked of it, the number the phone gets
+  // comes out at no more than 1.25 times the voice's own speed.
+  const nav = globalThis.navigator;
+  Object.defineProperty(globalThis, 'navigator', { value: { get onLine() { return onLine; }, userAgent: UA.iphone, maxTouchPoints: 5 }, configurable: true });
+  try {
+    audio.setVoice(true);
+    arrive([]);
+    arrive(IPHONE);
+    for (const asked of [1, 1.15, 1.2, 1.4, 1.6, 2]) {
+      await new Promise(done => setTimeout(done, 300)); // clear of the last cancel
+      const from = spoken.length;
+      audio.hearIt({ text: 'They turn for home! Copper Detour by a length and a half!' }, { rate: asked, pitch: 1 });
+      const said = spoken.slice(from).filter(u => u.volume !== 0);
+      assert.equal(said.length, 1);
+      const delivered = DELIVERS['an Apple voice, on a straight line'](said[0].rate);
+      assert.ok(delivered <= 1.25 && said[0].rate >= 1 && said[0].pitch === 1, `asked for ${asked}, the phone is given ${said[0].rate}, which is up to ${delivered.toFixed(2)} times`);
+    }
+    // A line asked for at 1.2 is taken to last about as long as one at 1.15 would on a plain engine.
+    assert.ok(Math.abs(audio.voiceSeconds('They turn for home! Copper Detour by a length and a half!', 1.2) - lineTime('They turn for home! Copper Detour by a length and a half!', 1.148)) < 0.01);
+  } finally {
+    Object.defineProperty(globalThis, 'navigator', { value: nav, configurable: true });
+    arrive([]);
+    arrive(IPHONE);
+  }
+});
+
+test("a voice's lines are timed, and after three of them the call is planned to its pace", () => {
+  // The middle one of the ratios, once there are three, held between 0.7 and 1.4.
+  const g = gauge();
+  assert.equal(g.factor(), 1);
+  g.heard(2.4, 2); g.heard(3.6, 3);
+  assert.equal(g.factor(), 1, 'two lines are not enough to go by');
+  g.heard(1.1, 1);
+  assert.ok(Math.abs(g.factor() - 1.2) < 1e-9, `${g.factor()}`);
+  g.heard(0.2, 0.3); // too short a line to tell anything by
+  assert.equal(g.lines(), 3);
+  for (let k = 0; k < 5; k++) g.heard(9, 3);
+  assert.equal(g.factor(), 1.4, 'no voice is taken to be more than 1.4 times slower than the model');
+  const quick = gauge();
+  for (let k = 0; k < 3; k++) quick.heard(1, 3);
+  assert.equal(quick.factor(), 0.7);
+  // The queue reports each line from the voice's word that it started to its word that it ended, and
+  // says nothing of a line when the voice gave no word that it started.
+  const r = rig({ startAfter: 120 });
+  const times = [];
+  r.heard = (line, seconds, rate) => times.push([line.text, +seconds.toFixed(3), rate]);
+  r.queue.speak({ text: 'The quarter in twenty-two and three.' }, { rate: 1.15 });
+  r.advance(10000);
+  assert.deepEqual(times, [['The quarter in twenty-two and three.', +(sayTime('The quarter in twenty-two and three.', 1.15) - 0.12).toFixed(3), 1.15]]);
+  r.events = false;
+  r.queue.speak({ text: 'The half in forty-six flat.' });
+  r.advance(30000);
+  assert.equal(times.length, 1, 'a line the voice never said it had started was timed');
 });
 
 test('over a race at normal speed no line is cut off before the wire, the wire call is always made, and the pace climbs', () => {

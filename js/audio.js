@@ -280,6 +280,7 @@ let voiceName = null; // the voice chosen in the menu, by name; null is the best
 let voices = [];      // the browser's list, as last read
 let picked = null;    // the voice in use: worked out when the list or the choice changes, not on every line
 let pickedOnline = true;
+let engine = 'plain'; // how this browser's speech engine takes a rate, for that voice (see engineOf)
 let voicesChanged = null;
 let netDown = false;  // a voice that needs the internet has failed: not again this visit
 const online = () => !netDown && (typeof navigator === 'undefined' || navigator.onLine !== false);
@@ -287,6 +288,8 @@ const online = () => !netDown && (typeof navigator === 'undefined' || navigator.
 function pick() {
   pickedOnline = online();
   picked = pickVoice(voices, { saved: voiceName, online: pickedOnline });
+  const nav = typeof navigator === 'undefined' ? {} : navigator;
+  engine = engineOf(picked, nav.userAgent || '', nav.maxTouchPoints || 0);
 }
 
 // Reads the browser's list again. Chrome's is empty until it has loaded (asking for it starts that), and
@@ -324,8 +327,9 @@ export function onVoicesChanged(fn) { voicesChanged = fn; }
 
 // About how long a voice takes over a line, in seconds: 4.3 syllables a second at its own speed (175 words
 // a minute), a pause at each comma and between sentences, and a moment to get going. It's a model, not a
-// measurement, and the queue below only leans on it to tell "nearly done" from "barely started" and to
-// know when a voice has gone quiet for far too long.
+// measurement. The call is planned with it (call.js sizes each line to be over before the next thing
+// happens), so once a voice has read three lines it's checked against them: see gauge() below.
+const START = 0.12; // seconds before a voice makes a sound
 function syllables(word) {
   let w = word.toLowerCase().replace(/[^a-z]/g, '');
   if (!w) return 0;
@@ -337,7 +341,68 @@ export function sayTime(text, rate = 1) {
   const words = text.replace(/\d/g, ' seven ').split(/\s+/);
   const syl = words.reduce((n, w) => n + syllables(w), 0);
   const stops = (text.match(/[.!?](\s|$)/g) || []).length, commas = (text.match(/,/g) || []).length;
-  return 0.12 + (syl / 4.3 + Math.max(0, stops - 1) * 0.3 + commas * 0.15) / rate;
+  return START + (syl / 4.3 + Math.max(0, stops - 1) * 0.3 + commas * 0.15) / rate;
+}
+
+// The pace wanted of a voice is a multiple of its own speed: 1.15 to 1.2 (pace() in call.js). The number a
+// browser's speech engine has to be given for that isn't always the same number. Read from each browser's
+// own source, not heard:
+// - An Apple voice in Safari, in any browser on an iPhone or iPad, or in Firefox on a Mac ("apple"). WebKit
+//   and Firefox lay a rate of 1 to 2 in a straight line along Apple's own scale, from its default to its
+//   maximum, and the maximum is about four times the default. So a rate of 1.15 to 1.2 comes out somewhere
+//   between 1.23 and 1.6 times the voice's own speed (the curve in between isn't published). The rate asked
+//   for is the one that gives the pace wanted if the curve is a straight line, 1.05 to 1.07, so the voice is
+//   never quicker than was meant, and its speed is taken as halfway between the two curves.
+// - A Microsoft voice on the device in Chrome or Edge on Windows ("sapi"). The rate becomes a whole number
+//   of steps, each the tenth root of three, with the part of a step dropped: 1.15 and 1.2 are no steps at
+//   all. The rate is left as it is and the voice is taken to be at its own speed.
+// - Anything else ("plain"): the rate is the multiple, near enough (Chrome on a Mac and Android in the
+//   source; the rest unread).
+export function engineOf(voice, userAgent = '', touchPoints = 0) {
+  const chrome = /Chrome\/|Chromium\/|CriOS\/|Edg\//.test(userAgent);
+  if (/iPhone|iPad|iPod/.test(userAgent) || (/Macintosh/.test(userAgent) && (touchPoints > 1 || !chrome))) return 'apple';
+  if (/Windows/.test(userAgent) && chrome && (!voice || (/^Microsoft /.test(voice.name || '') && !needsNet(voice)))) return 'sapi';
+  return 'plain';
+}
+const APPLE_TOP = 4; // Apple's fastest, in times a voice's own speed
+// The number to give the engine for a pace of `pace` times the voice's own speed.
+export function engineRate(pace, kind = 'plain') {
+  return kind === 'apple' && pace > 1 ? +(1 + (pace - 1) / (APPLE_TOP - 1)).toFixed(4) : pace;
+}
+// And the other way: about how fast a voice goes, in times its own speed, when the engine is given `rate`.
+export function engineSpeed(rate, kind = 'plain') {
+  if (kind === 'apple' && rate > 1) {
+    const x = Math.min(1, rate - 1);
+    return (1 + (APPLE_TOP - 1) * x + Math.pow(APPLE_TOP, x)) / 2;
+  }
+  if (kind === 'sapi' && rate > 0) return Math.pow(3, Math.trunc(10 * Math.log10(rate)) / 10);
+  return rate;
+}
+// About how long a voice takes over a line asked for at `pace`: the model, at the speed its engine really
+// gives it, times how the voice has measured up against the model so far (`factor`).
+export function lineTime(text, pace, { engine: kind = 'plain', factor = 1 } = {}) {
+  return START + (sayTime(text, engineSpeed(engineRate(pace, kind), kind)) - START) * factor;
+}
+
+// How a voice measures up against the model: each line it reads is timed from the moment it says it has
+// started to the moment it says it has ended, and set against what the model gave it. After three lines,
+// the middle one of those ratios (held between 0.7 and 1.4) is the voice's factor: the call is planned
+// with it from then on. Nothing is kept from one visit to the next.
+export function gauge() {
+  const ratios = [];
+  return {
+    heard(seconds, modelled) {
+      if (!(modelled > 0.4) || !(seconds > 0.1)) return; // too short a line to tell anything by
+      ratios.push(seconds / modelled);
+      if (ratios.length > 25) ratios.shift();
+    },
+    factor() {
+      if (ratios.length < 3) return 1;
+      const s = ratios.slice().sort((a, b) => a - b), mid = s.length >> 1;
+      return Math.min(1.4, Math.max(0.7, s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2));
+    },
+    lines: () => ratios.length,
+  };
 }
 
 const GAP = 250;       // ms between a cancel and the next line: Safari drops a line spoken sooner than that
@@ -354,22 +419,30 @@ const FASTEST = 1.2;
 // otherwise. The call at the wire is the one line that can't wait: it lets a line that's nearly done
 // finish, and cuts off one that isn't.
 //
+// The call is planned so that a line is over before the next comes up (call.js), so with a voice as
+// quick as it was taken to be nothing here waits long and nothing is left out: the holding and the
+// leaving out are for a voice that turns out slower. stats() counts what happened to the lines.
+//
 // `voice` is anything with { prepare(lines), speak(line, opts), stop() }: the browser's voice below is
 // one, and another source of sound could stand in for it. speak() says line.say (or line.text) and calls
 // opts.onstart, then opts.onend or opts.onerror. Nothing here trusts those calls to come: a voice that
 // goes quiet is cancelled and the call carries on. A voice with a `fastest` is never asked to go faster.
-export function callQueue(voice, { now = () => performance.now(), later = (fn, ms) => setTimeout(fn, ms), never = id => clearTimeout(id) } = {}) {
+// `heard(line, seconds, rate)` is told how long each line really took, from the voice's word that it had
+// started to its word that it had ended.
+export function callQueue(voice, { now = () => performance.now(), later = (fn, ms) => setTimeout(fn, ms), never = id => clearTimeout(id), heard = null } = {}) {
   let cur = null;       // the line being said
   let held = null;      // the one line waiting for it to end
   let quietUntil = 0;   // no line before this, after a cancel
   let gapTimer = null;
   let proven = false;   // this voice has said when a line started, so silence from it means it's stuck
+  const count = { said: 0, dropped: 0, cut: 0 }; // lines begun, lines left out as too old or for a newer one, lines cut off
 
   // The call at the wire is never too old: it's said as soon as the voice is free.
   const inTime = h => !!h.line.wire || h.clock() - h.due <= (h.line.late ?? 1.5);
 
   function hold(item) {
-    if (held && inTime(held) && (held.line.rank || 0) > (item.line.rank || 0)) return;
+    if (held && inTime(held) && (held.line.rank || 0) > (item.line.rank || 0)) { count.dropped++; return; }
+    if (held) count.dropped++;
     held = item;
   }
 
@@ -382,13 +455,15 @@ export function callQueue(voice, { now = () => performance.now(), later = (fn, m
     }
     const h = held;
     held = null;
-    if (inTime(h)) begin(h);
+    if (inTime(h)) begin(h); else count.dropped++;
   }
 
   function begin(item) {
     const text = item.line.say || item.line.text;
     const rate = Math.min(voice.fastest || 1.7, Math.max(0.9, item.rate));
-    const me = cur = { item, at: now(), started: null, est: sayTime(text, rate), timer: null };
+    // The plan's own figure for the line when it has one (line.d), which knows this voice's pace.
+    const me = cur = { item, at: now(), started: null, real: false, est: item.line.d || sayTime(text, rate), timer: null };
+    if (!item.tried) count.said++;
     const patience = (2 * me.est + 2) * 1000; // no line takes twice its time and two seconds more
     me.timer = later(() => {
       // No word that it started. From a voice that has sent word before, that's a voice that's stuck.
@@ -404,11 +479,18 @@ export function callQueue(voice, { now = () => performance.now(), later = (fn, m
         if (cur !== me || me.started !== null) return;
         proven = true;
         me.started = now();
+        me.real = true;
         never(me.timer);
         // Chrome's voices that need the internet can stop partway with no word: don't wait for ever.
         me.timer = later(() => fail(me, 'stalled'), patience);
       },
-      onend() { if (cur === me) { never(me.timer); cur = null; next(); } },
+      onend() {
+        if (cur !== me) return;
+        never(me.timer);
+        cur = null;
+        if (me.real && heard) heard(item.line, (now() - me.started) / 1000, rate);
+        next();
+      },
       onerror() { if (cur === me) { never(me.timer); cur = null; again(me); next(); } },
     };
     try { voice.speak(item.line, opts); } catch { opts.onerror(); }
@@ -433,6 +515,7 @@ export function callQueue(voice, { now = () => performance.now(), later = (fn, m
   function cut() {
     never(cur.timer);
     cur = null;
+    count.cut++;
     voice.stop();
     quietUntil = now() + GAP;
   }
@@ -465,6 +548,7 @@ export function callQueue(voice, { now = () => performance.now(), later = (fn, m
     // The line being said, if any, is let finish; the one waiting is forgotten.
     settle() { held = null; },
     speaking: () => !!cur,
+    stats: () => ({ ...count }),
   };
 }
 
@@ -479,7 +563,8 @@ const browserVoice = {
     // The language is always set: Android speaks by language, not by a named voice.
     u.lang = 'en-US';
     if (picked) u.voice = picked;
-    u.rate = rate; u.pitch = Math.min(1, pitch); // never higher than the voice's own pitch: see FASTEST
+    u.rate = engineRate(rate, engine); // the number this engine needs for that pace
+    u.pitch = Math.min(1, pitch); // never higher than the voice's own pitch: see FASTEST
     if (volume !== undefined) u.volume = volume;
     u.onstart = onstart;
     u.onend = onend;
@@ -505,7 +590,22 @@ function localOnly(v) {
   pick();
 }
 
-const caller = callQueue(browserVoice);
+// Each voice's measure against the model, by name, for this visit.
+const gauges = new Map();
+function gaugeNow() {
+  const name = picked ? picked.name : '';
+  if (!gauges.has(name)) gauges.set(name, gauge());
+  return gauges.get(name);
+}
+const caller = callQueue(browserVoice, {
+  heard(line, seconds, rate) { gaugeNow().heard(seconds, lineTime(line.say || line.text, rate, { engine }) - START); },
+});
+// How the voice in use has measured up against the model (1 until it has read three lines), and about how
+// long it takes over a line asked for at `pace`. The race call is planned with these.
+export function voiceFactor() { return voiceEnabled() ? gaugeNow().factor() : 1; }
+export function voiceSeconds(text, pace) { return lineTime(text, pace, { engine, factor: voiceFactor() }); }
+// What has happened to the lines of the call so far this visit: { said, dropped, cut }.
+export function callStats() { return caller.stats(); }
 // A race's lines, at the gate: the browser's voice only looks at its list of voices again.
 export function prepareCall(lines) { if (voiceEnabled()) caller.prepare(lines); }
 // Says a line of the call ({ text, say, late, rank, wire }, or just the words), when the voice is free.
@@ -534,7 +634,7 @@ export function primeVoice() {
   try {
     const u = new SpeechSynthesisUtterance('a');
     u.volume = 0;
-    u.rate = FASTEST;
+    u.rate = engineRate(FASTEST, engine);
     u.lang = 'en-US';
     if (picked) u.voice = picked;
     synth().speak(u);
