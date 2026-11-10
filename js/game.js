@@ -18,6 +18,8 @@ const MTP_SECONDS = 13; // real seconds per minute-to-post
 
 export const game = { world: null, player: null };
 
+// settings: `sound` and `voice` are the menu's two ticks. `voiceName` is there only when a voice has been
+// chosen by name; without it the call is read by the best voice the browser has.
 function freshPlayer() {
   return {
     v: 1, bank: START_BANK, bets: {}, settled: {}, ledger: [], book: [], atm: 0, opened: {},

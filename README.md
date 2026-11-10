@@ -22,7 +22,7 @@
 - **The paddock.** How a horse looks before the race says something about how it feels today, and "washed out" is bad news.
 - **The forum.** Seven regulars, each with a system: speed figures, the favorite, pace, pedigree, longshots, the look of a horse in the paddock, and one who always bets the grey. Their records are kept, so you can see which of them to listen to. They have plenty to say after the race too.
 - **The tote.** Win, place, show, across the board, exacta and trifecta, straight or boxed. Money goes into pari-mutuel pools, the track takes its cut, and the odds move as minutes to post tick down. The late money knows a little more than the early money.
-- **Watching.** A camera beside the track follows the leaders, swinging round the turns so the grandstand and the hills sweep past. There's a running order with margins, fractions on the clock, a map of the oval, and the caller (the browser can read the call aloud if you ask it to). Tap a horse's number to follow it. Close finishes go to slow motion, then to a photo: a real slit-camera picture made from the recorded race, so the horses come out stretched and squashed the way finish photos do.
+- **Watching.** A camera beside the track follows the leaders, swinging round the turns so the grandstand and the hills sweep past. There's a running order with margins, fractions on the clock, a map of the oval, and the caller. The browser can read the call aloud if you ask it to (in the menu), in the best voice it has or one you pick there. Tap a horse's number to follow it. Close finishes go to slow motion, then to a photo: a real slit-camera picture made from the recorded race, so the horses come out stretched and squashed the way finish photos do.
 - **The winner's circle.** Back the winner and you're in the photograph, holding your ticket. It goes in your scrapbook.
 - No account and no server. The racing world, your bankroll and your scrapbook stay in your browser. It works offline and installs to a phone's home screen.
 
@@ -52,8 +52,8 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `js/call.js`, `js/chart.js`: the race caller, trip comments and running lines.
 - `js/draw/`: the horses and riders, the view from beside the track, the photo finish and the winner's circle.
 - `js/ui/`, `js/game.js`, `js/app.js`: the screens, your bankroll and tickets, and saving.
-- `js/audio.js`: the bugle, the starting bell, the crowd and the cash window, all synthesised.
+- `js/audio.js`: the bugle, the starting bell, the crowd and the cash window, all synthesised, and the browser's voice reading the call: which voice it uses.
 - `fonts/`: Oswald and IBM Plex Sans Condensed (SIL Open Font License), served from here so nothing loads from elsewhere.
 - `sw.js`: keeps a copy for playing offline. On a connection that isn't answering, a page opens from that copy after four seconds. `FILES` in it is a fingerprint of the files it keeps: change one and `npm test` says what to set it to, so a release never leaves the copy half old.
-- `test/sim.test.mjs`, `test/game.test.mjs`, `test/audio.test.mjs`, `test/e2e.mjs`: the tests.
+- `test/sim.test.mjs`, `test/game.test.mjs`, `test/audio.test.mjs`, `test/e2e.mjs`: the tests. `test/voices.fixture.json` is the lists of voices that fourteen browsers have, for checking which one gets picked.
 - `dev/`: pages that draw the horses, a race, the photo finish and the winner's circle on their own, for tuning by eye.

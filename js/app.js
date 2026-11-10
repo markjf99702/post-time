@@ -124,6 +124,8 @@ menuBtn.addEventListener('click', e => {
   e.stopPropagation();
   menu.hidden = !menu.hidden;
   menuBtn.setAttribute('aria-expanded', String(!menu.hidden));
+  // A voice downloaded since the page opened is in the list by now.
+  if (!menu.hidden) { audio.refreshVoices(); showVoices(); }
 });
 document.addEventListener('click', e => { if (!menu.hidden && !menu.contains(e.target)) closeMenu(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
@@ -131,7 +133,45 @@ document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', 
 const optSound = document.getElementById('optSound');
 const optVoice = document.getElementById('optVoice');
 optSound.addEventListener('change', () => { game.player.settings.sound = optSound.checked; audio.setSound(optSound.checked); if (optSound.checked) audio.wake(); save(); });
-optVoice.addEventListener('change', () => { game.player.settings.voice = optVoice.checked; audio.setVoice(optVoice.checked); save(); });
+optVoice.addEventListener('change', () => { game.player.settings.voice = optVoice.checked; audio.setVoice(optVoice.checked); showVoices(); save(); });
+
+// Under "Read the race call aloud" while it's ticked: which voice reads it, and a button to hear it. The
+// row isn't there in a browser with no voice at all. "Best here" is the best voice this browser has just
+// now; a voice chosen by name is kept by name (settings.voiceName), so it's still the choice after a
+// spell on a device that doesn't have it.
+const voiceRow = document.getElementById('voiceRow');
+const optVoiceName = document.getElementById('optVoiceName');
+let voicesShown = '';
+function showVoices() {
+  const on = optVoice.checked && audio.canSpeak();
+  voiceRow.hidden = !on;
+  if (!on) return;
+  const { best, offered } = audio.voiceChoices();
+  const saved = savedVoice();
+  const names = [...new Set(offered.map(v => v.name))];
+  const options = [
+    ['', best ? `Best here (${best.name})` : 'Best here'],
+    ...names.map(n => [n, `${n}${offered.find(v => v.name === n).localService === false ? ' (needs the internet)' : ''}`]),
+    ...(saved && !names.includes(saved) ? [[saved, `${saved} (not here now)`]] : []),
+  ];
+  // Built again only when the list has changed, so a list that arrives late doesn't shut one that's open.
+  const shows = JSON.stringify(options);
+  if (shows !== voicesShown) {
+    voicesShown = shows;
+    clear(optVoiceName);
+    for (const [value, text] of options) optVoiceName.append(h('option', { value }, text));
+  }
+  optVoiceName.value = saved || '';
+}
+const savedVoice = () => { const n = game.player?.settings?.voiceName; return typeof n === 'string' && n ? n : null; };
+optVoiceName.addEventListener('change', () => {
+  if (optVoiceName.value) game.player.settings.voiceName = optVoiceName.value;
+  else delete game.player.settings.voiceName;
+  audio.setVoiceName(savedVoice());
+  save();
+});
+document.getElementById('hearIt').addEventListener('click', () => audio.hearIt());
+audio.onVoicesChanged(showVoices);
 // Starting over takes two taps: the first says what it will do.
 const restart = document.getElementById('restart');
 let armed = null;
@@ -188,6 +228,9 @@ function applySettings() {
   optVoice.checked = s.voice;
   audio.setSound(s.sound);
   audio.setVoice(s.voice);
+  audio.setVoiceName(savedVoice());
+  audio.refreshVoices(); // Chrome's list is empty until it's asked for: ask now, so it's there by the first race
+  showVoices();
 }
 
 // One line under the header while the browser is refusing to save (its storage is blocked, or full), so a

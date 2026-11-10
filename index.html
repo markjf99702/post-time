@@ -38,6 +38,11 @@
     <button type="button" data-go="help">How to play</button>
     <label class="toggle"><input type="checkbox" id="optSound"> Sound</label>
     <label class="toggle"><input type="checkbox" id="optVoice"> Read the race call aloud</label>
+    <div class="voice-row" id="voiceRow" hidden>
+      <label for="optVoiceName">Voice</label>
+      <select id="optVoiceName"></select>
+      <button type="button" id="hearIt">Hear it</button>
+    </div>
     <button type="button" id="restart" class="quiet">Start a new meet</button>
   </nav>
   <main id="app" class="app"></main>

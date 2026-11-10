@@ -109,6 +109,15 @@ a { color: var(--green-2); }
 .menu button:hover, .menu .toggle:hover { background: var(--paper-2); }
 .menu .quiet { color: var(--red); border-top: 1px solid var(--line); border-radius: 0 0 6px 6px; margin-top: 4px; }
 .menu input { width: 18px; height: 18px; accent-color: var(--green-2); }
+/* Which voice reads the call, under its tick. The row takes the menu's width and never adds to it, however
+   long a voice's name is: the name is cut short in the box, and whole in the list. */
+.menu .voice-row { width: 0; min-width: 100%; padding: 0 12px 10px; display: grid; gap: 6px; justify-items: start; font-size: 16px; }
+.menu .voice-row label { color: var(--muted); font-size: 14px; }
+.menu .voice-row select {
+  width: 100%; min-width: 0; font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px;
+  padding: 7px 6px; text-overflow: ellipsis;
+}
+.menu .voice-row button { border: 1px solid var(--line); padding: 7px 14px; margin-top: 2px; }
 
 /* Said under the header while the browser is refusing to save. */
 .unsaved { margin: 0; padding: 8px max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left)); background: var(--paper-2); border-bottom: 2px solid var(--red); font-size: 14.5px; line-height: 1.3; text-align: center; }

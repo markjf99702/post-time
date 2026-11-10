@@ -363,15 +363,73 @@ await page.click('#app .setup .btn');
 await page.waitForSelector('.races', { timeout: 60000 });
 assert.equal(await page.locator('#bank').textContent(), '$200.00', 'the new meet starts with $200');
 
+// From here on a stand-in for the browser's voice notes what it's asked to read, and nothing is heard. Its
+// voices are the ones Chrome lists on a Mac: Apple's, novelty ones and all, then Chrome's own, which need
+// the internet.
+const macVoices = JSON.parse(await readFile(join(root, 'test/voices.fixture.json'), 'utf8')).lists['Chrome, Mac (nothing downloaded)'];
+await page.addInitScript(voices => {
+  window.__voice = [];
+  window.__said = [];
+  const list = voices.map(([name, lang, local]) => ({ name, lang, localService: !!local }));
+  window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+  Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
+    getVoices: () => list,
+    speak(u) { window.__voice.push(u.text); window.__said.push({ text: u.text, voice: u.voice ? u.voice.name : null, lang: u.lang }); },
+    cancel() { window.__voice.push('(cancel)'); },
+    addEventListener() {},
+  } });
+}, macVoices);
+await page.reload();
+await page.waitForSelector('.races');
+
+// The menu: which voice reads the call, under its tick while it's ticked. The best voice here comes first,
+// the novelty voices aren't offered, the menu is no wider for it, and Hear it says a line in the voice
+// that's chosen. The choice is kept.
+await page.click('#menuBtn');
+const menuWidth = () => page.evaluate(() => document.getElementById('menu').getBoundingClientRect().width);
+const narrow = await menuWidth();
+assert.equal(await page.locator('#voiceRow').isVisible(), false, 'the voice row shows with the call not read aloud');
+await page.check('#optVoice');
+assert.equal(await page.locator('#voiceRow').isVisible(), true, 'no voice row under "Read the race call aloud"');
+assert.equal(await menuWidth(), narrow, 'the voice row makes the menu wider');
+const offered = await page.locator('#optVoiceName option').allTextContents();
+assert.equal(offered[0], 'Best here (Google US English)');
+assert.equal(offered[1], 'Google US English (needs the internet)');
+assert.ok(offered.includes('Samantha') && !offered.some(o => /^(Fred|Zarvox|Bells|Eddy)/.test(o)), `the voices offered: ${offered.join(', ')}`);
+const heard = async () => (await page.evaluate(() => window.__said.splice(0))).filter(u => /Copper Detour/.test(u.text));
+await page.evaluate(() => window.__said.splice(0));
+await page.click('#hearIt');
+await page.waitForTimeout(400);
+assert.deepEqual((await heard()).map(u => [u.voice, u.lang]), [['Google US English', 'en-US']], 'Hear it should say one line, in the best voice here');
+await page.selectOption('#optVoiceName', 'Samantha');
+assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('post-time/player')).settings.voiceName), 'Samantha', "the voice chosen isn't saved");
+await page.click('#hearIt');
+await page.waitForTimeout(400);
+assert.deepEqual((await heard()).map(u => u.voice), ['Samantha'], 'Hear it should say one line, in the voice chosen');
+await page.reload();
+await page.waitForSelector('.races');
+await page.click('#menuBtn');
+assert.deepEqual(await page.evaluate(() => [document.getElementById('voiceRow').hidden, document.getElementById('optVoiceName').value]), [false, 'Samantha'], 'the voice chosen is gone after a reload');
+// A voice this browser hasn't got (chosen on another device, or deleted since): the best here reads the
+// call meanwhile, and the choice is kept and shown.
+await page.evaluate(() => { const { game, save } = window.postTime; game.player.settings.voiceName = 'Ava (Premium)'; save(); });
+await page.reload();
+await page.waitForSelector('.races');
+await page.click('#menuBtn');
+assert.equal(await page.locator('#optVoiceName option:checked').textContent(), 'Ava (Premium) (not here now)');
+await page.click('#hearIt');
+await page.waitForTimeout(400);
+assert.deepEqual((await heard()).map(u => u.voice), ['Google US English'], 'with the chosen voice missing, the best here should read');
+assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('post-time/player')).settings.voiceName), 'Ava (Premium)', 'a missing voice was forgotten');
+// Back to the best here: nothing is saved for it, as in a save from before there was a choice.
+await page.selectOption('#optVoiceName', '');
+assert.equal(await page.evaluate(() => 'voiceName' in JSON.parse(localStorage.getItem('post-time/player')).settings), false);
+await page.click('#menuBtn');
+
 // The race's Sound button quiets the caller too: turned off during a race, it cuts off the line being read
 // and the ones after it until it's turned back on. The next race is read again with Sound off, since
-// reading the call aloud has a tick of its own in the menu. A stand-in for the browser's voice notes what
-// it's asked to read, and nothing is heard.
-await page.evaluate(() => {
-  window.__voice = [];
-  speechSynthesis.speak = u => window.__voice.push(u.text);
-  speechSynthesis.cancel = () => window.__voice.push('(cancel)');
-});
+// reading the call aloud has a tick of its own in the menu.
+await page.evaluate(() => window.__voice.splice(0));
 await page.click('#menuBtn');
 await page.check('#optSound');
 await page.check('#optVoice');
@@ -437,6 +495,8 @@ await page.waitForSelector('.races');
     window.setTimeout = (fn, ms, ...a) => (performance.now() - t0 > 300 && !window.letGo ? (held.push(() => fn(...a)), 0) : later(fn, ms, ...a));
     window.finishBuilding = () => { window.letGo = true; held.splice(0).forEach(f => later(f, 0)); };
   });
+  // This browser has no voice at all (as inside an Artifact viewer): the menu has no voice row.
+  await first.addInitScript(() => Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: undefined }));
   await first.goto(`${base}manifest.webmanifest`); // somewhere to leave to, for Back on the card
   await first.goto(base, { waitUntil: 'domcontentloaded' });
   await first.waitForSelector('.setup');
@@ -457,6 +517,11 @@ await page.waitForSelector('.races');
   await first.evaluate(() => window.finishBuilding());
   await first.waitForSelector('.races', { timeout: 60000 });
   assert.equal(await first.locator('#bank').textContent(), '$200.00');
+  await first.click('#menuBtn');
+  await first.check('#optVoice');
+  assert.equal(await first.locator('#voiceRow').isVisible(), false, 'a voice is offered in a browser that has none');
+  await first.uncheck('#optVoice');
+  await first.click('#menuBtn');
 
   // The Back button goes back a screen, the way the page's own back buttons do: from a race to the card
   // (not to the tab before), from a race that's running to its result, from the winner's circle to the

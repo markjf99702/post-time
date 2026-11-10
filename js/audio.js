@@ -186,19 +186,130 @@ export function cash() {
   }
 }
 
+// ---------------------------------------------------------------- the caller's voice
+
 // The race call, read aloud by the browser's own voice, if there is one. It's a setting of its own, so it
 // reads the call with the sound effects off too.
-let voiceOn = false;
-export function setVoice(on) { voiceOn = on; if (!on) window.speechSynthesis?.cancel(); }
-export function voiceEnabled() { return voiceOn && 'speechSynthesis' in window; }
-export function say(text, rate = 1.15) {
-  if (!voiceEnabled()) return;
-  const u = new SpeechSynthesisUtterance(text);
-  u.rate = rate; u.pitch = 1.05;
-  const voices = speechSynthesis.getVoices();
-  const en = voices.find(v => /en-US/.test(v.lang) && /Male|David|Alex|Daniel|Fred/i.test(v.name)) || voices.find(v => /^en/.test(v.lang));
-  if (en) u.voice = en;
-  speechSynthesis.cancel();
-  speechSynthesis.speak(u);
+
+// Which voice. A browser lists every voice the device has, good and bad, in no useful order: an iPhone
+// lists about thirty for American English, most of them novelty voices (Bells, Zarvox, Whisper) or the
+// robotic ones kept for screen readers, and the first that matched used to be Fred. These are never
+// offered, by the name before any bracket.
+const NEVER = new Set(['albert', 'bad news', 'bahh', 'bells', 'boing', 'bubbles', 'cellos', 'good news', 'jester', 'organ',
+  'superstar', 'trinoids', 'whisper', 'wobble', 'zarvox', 'fred', 'junior', 'kathy', 'ralph',
+  'eddy', 'flo', 'grandma', 'grandpa', 'jacques', 'reed', 'rocko', 'sandy', 'shelley']);
+// Apple's standard voices, the ones a Mac or an iPhone has before anything is downloaded.
+const APPLE = /^(Samantha|Ava|Zoe|Allison|Evan|Nathan|Tom|Joelle|Karen|Daniel|Moira|Tessa|Rishi|Serena|Kate|Jamie|Oliver|Matilda|Lee)$/;
+
+// A voice's language the way the standard writes it. Android gives "en_US", and Firefox there "eng-US-f000".
+const langOf = v => String(v.lang || '').replace(/_/g, '-').toLowerCase().replace(/^eng(?=-|$)/, 'en');
+const needsNet = v => v.localService === false;
+
+// How good a voice is for the call, or -1 for one that can't be used. The better kinds first: the natural
+// voices in Edge and on a Chromebook, the ones downloaded in a Mac's or an iPhone's settings (Premium,
+// Siri, Enhanced), Alex, Chrome's Google voices, then what each system starts with. American English
+// ahead of other English, since the track is American, and of two alike the one that works offline.
+function grade(v, online) {
+  const lang = langOf(v), name = String(v.name || '');
+  if (!/^en(-|$)/.test(lang)) return -1;
+  if (NEVER.has(name.replace(/\s*\(.*$/, '').trim().toLowerCase()) || /^espeak/i.test(name)) return -1;
+  if (needsNet(v) && !online) return -1;
+  let g = 20;
+  if (/\b(Natural|Neural)\b/i.test(name)) g = 90;
+  else if (/\(Premium\)|\bSiri\b/i.test(name)) g = 88;
+  else if (/\(Enhanced\)/i.test(name)) g = 80;
+  else if (name === 'Alex') g = 78;
+  else if (name === 'Google US English') g = 70;
+  else if (/^Google UK English/.test(name)) g = 66;
+  else if (APPLE.test(name)) g = 60;
+  else if (/^Microsoft (David|Mark|Zira)\b/.test(name)) g = 55;
+  else if (/^Chrome OS |\(compact\)|^(Aaron|Nicky)$/i.test(name)) g = 50;
+  if (/^en-us(-|$)/.test(lang)) g += 8;
+  if (!needsNet(v)) g += 1;
+  return g;
 }
-export function hush() { window.speechSynthesis?.cancel(); }
+
+// The voices worth offering from a browser's list, best first.
+export function offeredVoices(voices) {
+  return Array.from(voices || [], (v, i) => ({ v, i, g: grade(v, true) }))
+    .filter(x => x.g >= 0).sort((a, b) => b.g - a.g || a.i - b.i).map(x => x.v);
+}
+
+// The voice to use: the one saved in the menu if it's in the list and can be used now, otherwise the
+// best there is. A voice that needs the internet is passed over while there isn't any. Null when the
+// list has nothing in English (or hasn't arrived yet): the browser then uses its own voice for en-US.
+export function pickVoice(voices, { saved = null, online = true } = {}) {
+  const list = Array.from(voices || []);
+  const kept = saved && list.find(v => v.name === saved);
+  if (kept && grade(kept, online) >= 0) return kept;
+  let best = null, top = -1;
+  for (const v of list) {
+    const g = grade(v, online);
+    if (g > top) { best = v; top = g; }
+  }
+  return best;
+}
+
+const synth = () => (typeof window !== 'undefined' && window.speechSynthesis) || null;
+let voiceOn = false;
+let voiceName = null; // the voice chosen in the menu, by name; null is the best one here
+let voices = [];      // the browser's list, as last read
+let picked = null;    // the voice in use: worked out when the list or the choice changes, not on every line
+let pickedOnline = true;
+let voicesChanged = null;
+const online = () => typeof navigator === 'undefined' || navigator.onLine !== false;
+
+function pick() {
+  pickedOnline = online();
+  picked = pickVoice(voices, { saved: voiceName, online: pickedOnline });
+}
+
+// Reads the browser's list again. Chrome's is empty until it has loaded (asking for it starts that), and
+// tells us when it has; a voice downloaded in the system's settings turns up the same way.
+let listening = false;
+export function refreshVoices() {
+  const s = synth();
+  if (!s) return;
+  if (!listening) {
+    listening = true;
+    if (typeof s.addEventListener === 'function') s.addEventListener('voiceschanged', refreshVoices);
+    else s.onvoiceschanged = refreshVoices;
+  }
+  let list = [];
+  try { list = Array.from(s.getVoices() || []); } catch { /* a browser that can't say: its own voice is used */ }
+  const was = voices.map(v => v.name).join('|');
+  voices = list;
+  pick();
+  if (voicesChanged && was !== voices.map(v => v.name).join('|')) voicesChanged();
+}
+
+export function canSpeak() { return !!synth() && typeof SpeechSynthesisUtterance === 'function'; }
+export function setVoice(on) { voiceOn = on; if (on) refreshVoices(); else hush(); }
+export function voiceEnabled() { return voiceOn && canSpeak(); }
+// The voice chosen in the menu. A name that isn't in the list now is kept: the best voice here is used
+// meanwhile, and the chosen one comes back when it does.
+export function setVoiceName(name) { voiceName = name || null; pick(); }
+// For the menu: the voice "Best here" means now, and the ones to choose from, best first.
+export function voiceChoices() {
+  return { best: pickVoice(voices, { online: online() }), offered: offeredVoices(voices) };
+}
+export function onVoicesChanged(fn) { voicesChanged = fn; }
+
+function utter(text, rate, pitch) {
+  const u = new SpeechSynthesisUtterance(text);
+  if (pickedOnline !== online()) pick(); // gone offline, or back: a voice that needs the internet comes and goes with it
+  // The language is always set: Android speaks by language, not by a named voice.
+  u.lang = 'en-US';
+  if (picked) u.voice = picked;
+  u.rate = rate; u.pitch = pitch;
+  synth().cancel();
+  synth().speak(u);
+}
+export function say(text, rate = 1.15) {
+  if (voiceEnabled()) utter(text, rate, 1.05);
+}
+// One line of a race call in the chosen voice, for the menu's Hear it.
+export function hearIt() {
+  if (canSpeak()) utter("Turning for home, it's Copper Detour by a length and a half!", 1.15, 1.05);
+}
+export function hush() { synth()?.cancel(); }
