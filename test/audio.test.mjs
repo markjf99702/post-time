@@ -58,7 +58,7 @@ globalThis.speechSynthesis = voice;
 globalThis.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
 const audio = await import('../js/audio.js');
 const { pickVoice, offeredVoices, callQueue, sayTime, lineTime, gauge, engineOf, engineRate, engineSpeed } = audio;
-const { raceCall, pace, officialLine } = await import('../js/call.js');
+const { raceCall, liveCall, pace, officialLine, SLOW } = await import('../js/call.js');
 const { createWorld, simulateRace, applyResult, nextDay } = await import('../js/world.js');
 const { STAKES, BIG_STAKES } = await import('../js/data.js');
 const last = () => spoken[spoken.length - 1];
@@ -503,27 +503,60 @@ test('a voice that never says when it starts or ends still reads the call, a lin
   });
 });
 
-// The watch screen's loop (js/ui/watch.js frame()) at normal speed, in plain Node: each line is handed to
-// the queue when it comes up, with the pace for that moment and the race's own clock, slow motion and all.
-function replay(r, race) {
-  let T = -5.2, shown = -1, ended = false, endedAt = 0;
+// The watch screen's loop (js/ui/watch.js frame()) in plain Node: the call is planned at the gate, each
+// line is handed to the queue when it comes up, with the pace for that moment and the race's own clock,
+// slow motion and all. `timed` is a gauge (see gauge() in js/audio.js) for a voice whose lines are timed
+// and the call planned to its pace, as the page does; `each(frame)` is called every frame, to change the
+// speed or skip. Returns the call, when each line came up, and what the queue made of them.
+function replay(r, race, { timed = null, each = null } = {}) {
+  const factor = () => (timed ? timed.factor() : 1);
+  const live = liveCall(race.race, race.run, race.names, { lineSeconds: (line, toWire) => lineTime(line.say, pace(line, toWire).rate, { factor: factor() }), factor });
+  let T = -5.2, ended = false, endedAt = 0, speed = 1, signed = false;
   const clock = () => (ended ? race.endT + (r.now() - endedAt) / 1000 : T);
   const cameUp = new Map();
-  const say = line => { cameUp.set(line, clock()); r.queue.speak(line, { ...pace(line, race.winT - T), clock }); };
+  const say = line => { cameUp.set(line, { clock: clock(), now: r.now() }); r.queue.speak(line, { ...pace(line, race.winT - T), clock }); };
+  const before = r.queue.stats();
   r.stamp = clock;
-  r.queue.prepare(race.lines);
-  while (!ended) {
+  r.heard = timed ? (line, seconds, rate) => timed.heard(seconds, lineTime(line.say || line.text, rate) - 0.12) : null;
+  r.queue.prepare(live.lines);
+  const frame = {
+    get T() { return T; }, get clock() { return clock() - race.t0; },
+    setSpeed(to) { if (to !== speed) live.setSpeed(to, clock() - race.t0, r.now() / 1000); speed = to; },
+    skip() { r.queue.stop(); T = Math.max(T, race.winT - 12); live.skip(T - race.t0, r.now() / 1000); },
+  };
+  for (;;) {
     r.advance(1000 / 30);
-    const slow = race.close && T > race.winT - 2.2 && T < race.winT + 0.6 ? 0.4 : 1;
-    T = Math.min(race.endT, T + slow / 30);
-    let idx = -1;
-    for (let i = 0; i < race.lines.length; i++) if (race.lines[i].t <= T - race.t0) idx = i;
-    if (idx !== shown && idx >= 0) { shown = idx; say(race.lines[idx]); }
-    if (T >= race.endT - 0.01) { ended = true; endedAt = r.now(); }
+    if (!ended) {
+      const slow = race.close && speed === 1 && T > race.winT - SLOW.before && T < race.winT + SLOW.after ? SLOW.by : 1;
+      T = Math.min(race.endT, T + speed * slow / 30);
+    }
+    if (each) each(frame);
+    const line = live.next(clock() - race.t0, r.now() / 1000);
+    if (line) say(line);
+    if (!ended && T >= race.endT - 0.01) { ended = true; endedAt = r.now(); }
+    // After a photo the official sign goes up 3.2 seconds after the recording ends, or when the caller's
+    // last line is over (by the time it was planned to take) if that's later, and the winner's line with it.
+    const last = live.lines[live.lines.length - 1];
+    if (ended && live.official && !signed && r.now() - endedAt >= 3200 && cameUp.has(last) && r.now() >= cameUp.get(last).now + last.d * 1000) { signed = true; say(officialLine(live.official)); }
+    if (ended && r.now() - endedAt > 16000) break;
   }
-  if (race.official) { r.advance(3200); say(officialLine(race.official)); }
-  r.advance(15000);
-  return cameUp;
+  const after = r.queue.stats();
+  return { live, cameUp, dropped: after.dropped - before.dropped, cut: after.cut - before.cut };
+}
+
+// Race days of a meet, recorded, for the replays below.
+function recorded(seed, days) {
+  const w = createWorld(seed, '2026-09-26');
+  const races = [];
+  for (let d = 0; d < days; d++) {
+    for (const race of w.cards[w.day].races) {
+      const run = simulateRace(race, w, { record: true });
+      races.push({ no: `race day ${d + 1}, race ${race.no}`, race, run, names: race.entries.map(e => w.horses[e.hid].name), t0: run.t0, winT: run.t0 + run.results[0].time, endT: run.frames.length * run.dt, close: !!(run.results[1] && run.results[1].toPrev < SLOW.margin) });
+      applyResult(w, race, run, race.entries.map(() => 3));
+    }
+    nextDay(w);
+  }
+  return races;
 }
 
 test("the voice is never asked to go faster than 1.2 times its own speed, or higher than its own pitch", async () => {
@@ -652,30 +685,27 @@ test("a voice's lines are timed, and after three of them the call is planned to 
   assert.equal(times.length, 1, 'a line the voice never said it had started was timed');
 });
 
-test('over a race at normal speed no line is cut off before the wire, the wire call is always made, and the pace climbs', () => {
+test('with a voice 15% slower or quicker than it was taken to be, no lead change is left out and hardly a line', () => {
   // Every line used to cancel the one before it: by a model of how long a voice takes, about one line in
-  // seven was cut off mid-sentence, in most races, all at one pace. Two race days here, with a voice as
-  // quick as the queue expects, one slower and one quicker.
-  const w = createWorld('test-voice', '2026-09-26');
-  const races = [];
-  for (let d = 0; d < 2; d++) {
-    for (const race of w.cards[w.day].races) {
-      const run = simulateRace(race, w, { record: true });
-      const call = raceCall(race, run, race.entries.map(e => w.horses[e.hid].name));
-      races.push({ no: `race day ${d + 1}, race ${race.no}`, lines: call.lines, official: call.official, t0: run.t0, winT: run.t0 + run.results[0].time, endT: run.frames.length * run.dt, close: !!(run.results[1] && run.results[1].toPrev < 0.6) });
-      applyResult(w, race, run, race.entries.map(() => 3));
-    }
-    nextDay(w);
-  }
-  for (const syllablesASecond of [3.7, 4.3, 4.9]) {
-    let lines = 0, spoken = 0;
+  // seven was cut off mid-sentence. Then lines waited their turn, and about one lead change in nine was
+  // left out as too old by the time the voice was free. Now the call is planned to the voice: ten race
+  // days here, with a voice as quick as the plan takes it to be, one 15% slower and one 15% quicker, each
+  // timed as it goes the way the page times it.
+  const races = recorded('test-voice', 10);
+  for (const [name, syllablesASecond] of [['as planned', 4.3], ['15% slower', 4.3 / 1.15], ['15% quicker', 4.3 * 1.15]]) {
+    const timed = gauge();
+    let lines = 0, spoken = 0, dropped = 0, plans = 0;
+    const left = [];
     for (const race of races) {
-      const r = rig({ syllablesASecond });
-      const cameUp = replay(r, race);
-      const at = `${race.no}, ${syllablesASecond} syllables a second`;
+      const r = rig({ syllablesASecond, startAfter: 120 });
+      const { live, cameUp, dropped: d } = replay(r, race, { timed });
+      const at = `${race.no}, a voice ${name}`;
       const said = r.log.filter(x => x.ev === 'speak'), stops = r.log.filter(x => x.ev === 'stop');
-      lines += race.lines.length; spoken += said.length;
-      // Nothing is cancelled from the off to the wire. After it, only the call at the wire may cut in.
+      lines += cameUp.size; spoken += said.length; dropped += d; plans += live.plans;
+      for (const line of cameUp.keys()) if (!said.some(x => x.line === line)) left.push(`${at}: "${line.text}"${line.change ? ' (a lead change)' : ''}`);
+      // Every line of the plan came up, and nothing is cancelled from the off to the wire. After it, only
+      // the call at the wire may cut in.
+      assert.equal(cameUp.size, live.lines.length + (live.official ? 1 : 0), `${at}: lines of the plan never came up`);
       assert.deepEqual(stops.filter(x => x.T >= 0 && x.T <= race.winT).map(x => x.cut), [], `${at}: cancelled during the running`);
       for (const stop of stops) {
         const then = said.find(x => x.t > stop.t);
@@ -685,11 +715,12 @@ test('over a race at normal speed no line is cut off before the wire, the wire c
         const stop = stops.filter(y => y.t <= x.t).pop();
         assert.ok(!stop || x.t - stop.t >= 250, `${at}: "${x.text}" came ${stop && x.t - stop.t} ms after a cancel`);
       }
-      // The call at the wire is made, promptly; any other line is said within the time it's allowed.
+      // The call at the wire is made, within three tenths of a second; any other line is said within the
+      // time it's allowed.
       const wire = said.filter(x => x.line.wire);
       assert.equal(wire.length, 1, `${at}: the call at the wire was made ${wire.length} times`);
-      assert.ok(wire[0].T - cameUp.get(wire[0].line) <= 0.8, `${at}: the call at the wire came ${(wire[0].T - cameUp.get(wire[0].line)).toFixed(2)} s late`);
-      for (const x of said) if (!x.line.wire) assert.ok(x.T - cameUp.get(x.line) <= x.line.late + 0.05, `${at}: "${x.text}" was said ${(x.T - cameUp.get(x.line)).toFixed(2)} s late`);
+      assert.ok(wire[0].T - cameUp.get(wire[0].line).clock <= 0.3 && wire[0].T - race.winT <= 0.3 + 0.06, `${at}: the call at the wire came ${(wire[0].T - race.winT).toFixed(2)} s after it`);
+      for (const x of said) if (!x.line.wire) assert.ok(x.T - cameUp.get(x.line).clock <= x.line.late + 0.05, `${at}: "${x.text}" was said ${(x.T - cameUp.get(x.line).clock).toFixed(2)} s late`);
       // The pace: steady early, never falling back before the wire, quickest at the wire (and never past
       // 1.2 times the voice's own speed, or off its own pitch), and back to steady for the placings.
       const running = said.filter(x => x.T >= 0 && x.T <= race.winT + 1 && x.line.kind !== 'pre');
@@ -704,8 +735,15 @@ test('over a race at normal speed no line is cut off before the wire, the wire c
         if (x.line.kind === 'finish' && !x.line.wire) assert.deepEqual([x.rate, x.pitch], [1.15, 1], `${at}: the pace of "${x.text}"`);
       }
     }
-    // Lines are left out when the voice is still on the one before (more with a slow voice), but not many.
-    assert.ok(spoken / lines > 0.9, `${syllablesASecond} syllables a second: ${spoken} of ${lines} lines were said`);
+    assert.deepEqual(left.filter(x => / \(a lead change\)$/.test(x)), [], `a voice ${name}: lead changes left out`);
+    if (process.env.NUMBERS) console.log(`a voice ${name}: ${lines} lines in ${races.length} races, ${left.length} left out, the call planned ${plans} times, the voice timed at ${timed.factor().toFixed(3)} of the model`);
+    assert.ok(left.length <= lines / 200, `a voice ${name}: ${left.length} of ${lines} lines were left out: ${left.slice(0, 5).join(' / ')}`);
+    assert.equal(dropped, left.length, 'the queue counts the lines it leaves out');
+    assert.ok(lines > 2000, `only ${lines} lines`);
+    // A voice as quick as planned is never planned for again; one that isn't, once: in its first race,
+    // when it has read three lines. From then on the call is planned to its pace at the gate.
+    assert.equal(plans, races.length + (syllablesASecond === 4.3 ? 0 : 1), `a voice ${name}: the call was planned ${plans} times for ${races.length} races`);
+    assert.ok(Math.abs(timed.factor() - 4.3 / syllablesASecond) < 0.005, `a voice ${name} was timed at ${timed.factor().toFixed(3)} of the model`);
   }
 });
 
@@ -713,19 +751,67 @@ test('"And they\'re off!" is said in a race with a name, even by a slow voice', 
   // "The field is in the gate for the Odds and Ends Handicap." takes a voice about three seconds, and it
   // came up 2.6 seconds before the off: in a card's feature race the line was still being said at the
   // off, which was cut off by it once and left out for it since. A named race's line now comes up sooner.
-  const w = createWorld('test-voice', '2026-09-26');
-  const race = w.cards[w.day].races[0];
-  const run = simulateRace(race, w, { record: true });
+  const [first] = recorded('test-voice', 1);
   for (const { name } of [...STAKES, BIG_STAKES, { name: '' }]) {
-    const call = raceCall({ ...race, name }, run, race.entries.map(e => w.horses[e.hid].name));
-    const named = { lines: call.lines, official: call.official, t0: run.t0, winT: run.t0 + run.results[0].time, endT: run.frames.length * run.dt, close: false };
-    assert.ok(run.t0 + call.lines[0].t > -5.2, `${name}: the first line is due before the race screen opens`);
+    const named = { ...first, race: { ...first.race, name, seed: `${first.race.seed}:${name}` }, close: false };
     for (const syllablesASecond of [3.7, 4.3, 4.9]) {
       const r = rig({ syllablesASecond });
-      replay(r, named);
+      const { live } = replay(r, named);
+      const [pre, off] = live.lines;
+      assert.deepEqual([pre.kind, off.kind], ['pre', 'off']);
+      assert.ok(named.t0 + pre.t > -5.2 && (name ? pre.text.endsWith(` for the ${name}.`) : !/ for the /.test(pre.text)), `${name}: the first line is "${pre.text}", due ${(named.t0 + pre.t).toFixed(2)}`);
       const start = r.log.filter(x => x.ev !== 'stop' && x.T < 3).map(x => `${x.ev} ${x.text}`);
-      assert.deepEqual(start.slice(0, 4), [`speak ${call.lines[0].say}`, `end ${call.lines[0].say}`, "speak And they're off!", "end And they're off!"], `${name || 'no name'}, ${syllablesASecond} syllables a second`);
+      assert.deepEqual(start.slice(0, 4), [`speak ${pre.say}`, `end ${pre.say}`, `speak ${off.say}`, `end ${off.say}`], `${name || 'no name'}, ${syllablesASecond} syllables a second`);
       assert.equal(r.log.filter(x => x.ev === 'stop' && x.T < 3).length, 0, `${name}: a line was cut off at the start`);
     }
   }
+});
+
+test('the call is read at 2x and 4x: no line is cut off for a change of speed, and none is said late', () => {
+  // The voice was hushed at any speed but 1x: nothing at all was said at 2x or 4x. Now a change of speed
+  // lets the line being said finish and plans the rest of the race for the new speed: the shorter
+  // wordings at 2x, only the headlines at 4x. Skip cancels the line and plans from where the race lands.
+  const races = recorded('test-voice', 3);
+  const headlines = new Set(['pre', 'off', 'run', 'fill', 'change', 'turn', 'eighth', 'wire', 'placings', 'official']);
+  let checked = 0, photos = 0;
+  for (const [k, race] of races.entries()) {
+    for (const speed of [2, 4]) {
+      // To the new speed in the middle of the first long line after the off; every third race from the
+      // gate instead, and every fourth is skipped ahead half a minute in.
+      const fromGate = k % 3 === 0, skips = k % 4 === 1;
+      let changedAt = null, during = null, skipped = false;
+      const r = rig({ startAfter: 120 });
+      const { live, cameUp } = replay(r, race, { each(frame) {
+        const saying = r.log.filter(x => x.ev === 'speak').pop(), over = saying && r.log.some(x => x.ev === 'end' && x.text === saying.text && x.t >= saying.t);
+        if (changedAt === null && (fromGate ? frame.T > -4 : frame.clock > 4 && saying && !over && saying.line.d > 2.5 && r.now() - saying.t > 800)) { changedAt = r.now(); during = fromGate || over ? null : saying; frame.setSpeed(speed); }
+        if (skips && !skipped && frame.clock > 30) { skipped = true; frame.skip(); }
+      } });
+      const at = `${race.no} at ${speed}x${fromGate ? ' from the gate' : ''}${skips ? ', skipped' : ''}`;
+      const said = r.log.filter(x => x.ev === 'speak'), stops = r.log.filter(x => x.ev === 'stop');
+      assert.ok(changedAt !== null, `${at}: the speed was never changed`);
+      // The line being said when the speed changed was let finish.
+      if (during) { checked++; assert.ok(r.log.some(x => x.ev === 'end' && x.text === during.text && x.t > changedAt) && !stops.some(x => x.cut === during.text), `${at}: "${during.text}" was cut off by the change of speed`); }
+      // Nothing is cancelled but by Skip and by the call at the wire.
+      for (const stop of stops) { const then = said.find(x => x.t > stop.t); assert.ok(skips || (then && then.line.wire), `${at}: "${stop.cut}" was cut off`); }
+      assert.ok(stops.length <= (skips ? 2 : 1), `${at}: ${stops.length} lines cut off`);
+      // The off, a line that says who leads, and the winner's line are all spoken, and after the change
+      // every line spoken is one of the new plan's, started within a second and a half of coming up.
+      const after = said.filter(x => x.t > changedAt + 100 && x.line !== (during && during.line));
+      assert.ok(said.some(x => x.line.kind === 'off') && said.some(x => x.line.wire), `${at}: the off or the winner's line was never said`);
+      assert.ok(after.some(x => x.line.lead !== undefined || x.line.pair), `${at}: nobody was said to lead after the change`);
+      for (const x of said) assert.ok(x.t - cameUp.get(x.line).now <= (x.line.placings || x.line.slot === 'official' ? 6000 : 1500), `${at}: "${x.text}" was said ${x.t - cameUp.get(x.line).now} ms after it came up`);
+      if (speed === 4) assert.deepEqual(after.filter(x => !headlines.has(x.line.slot)).map(x => `${x.line.slot}: ${x.text}`), [], `${at}: more than the headlines`);
+      // The winner's line and the placings are at the pace they have at any speed.
+      const wire = said.find(x => x.line.wire), placings = said.find(x => x.line.placings);
+      assert.deepEqual([wire.rate, placings && placings.rate], [1.2, 1.15], at);
+      // Hardly a line is left out: the plan fits the lines to the speed. After a photo the official sign
+      // waits for the caller's last line, so the winner's line is never the one left out.
+      const left = [...cameUp.keys()].filter(line => !said.some(x => x.line === line));
+      assert.ok(left.length <= 1, `${at}: left out ${left.map(l => `"${l.text}"`).join(', ')}`);
+      if (live.official) { photos++; assert.ok(said.some(x => x.line.slot === 'official' && x.text === live.official), `${at}: after the photo, who won was never said`); }
+      assert.ok(live.plans >= 2 && said.length >= (speed === 4 ? 6 : 10), `${at}: ${said.length} lines said, ${live.plans} plans`);
+    }
+  }
+  assert.ok(checked >= 20, `only ${checked} changes of speed came in the middle of a line`);
+  assert.ok(photos >= 2, `only ${photos} photo finishes to check the winner's line with`);
 });

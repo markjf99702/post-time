@@ -6,7 +6,7 @@ import { buildWorld, simulateRace, applyResult, nextDay as worldNextDay, ownerSi
 import { makeTote, board, settle, ticketReturn, cost as betCost, legs } from './tote.js';
 import { forumPosts, reactions, scoreTipsters } from './forum.js';
 import { oddsText } from './handicap.js';
-import { raceCall } from './call.js';
+import { liveCall } from './call.js';
 import { JOCKEYS, TRAINERS, OWNERS } from './data.js';
 import { distanceName } from './track.js';
 
@@ -275,9 +275,10 @@ export function photoRecord(race, winIdx, won) {
   };
 }
 
-export function callFor(race, run) {
+// The race call, planned at the gate (see liveCall in call.js for what `opts` may say about the voice).
+export function callFor(race, run, opts) {
   const names = race.entries.map(e => horseOf(e).name);
-  return raceCall(race, run, names);
+  return liveCall(race, run, names, opts);
 }
 
 export function atm() {

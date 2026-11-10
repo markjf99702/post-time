@@ -548,33 +548,40 @@ assert.equal(await page.locator('#bank').textContent(), '$200.00', 'the new meet
 // voices are the ones Chrome lists on a Mac: Apple's, novelty ones and all, then Chrome's own, which need
 // the internet.
 const macVoices = JSON.parse(await readFile(join(root, 'test/voices.fixture.json'), 'utf8')).lists['Chrome, Mac (nothing downloaded)'];
-// It says when a line starts and ends, as a real one does, and takes __wordMs for each word of it.
+// It says when a line starts and ends, as a real one does, and takes as long over a line as the page's own
+// model of a voice says one does (js/audio.js, sayTime) times __slow, so the call is planned for a voice
+// like this one. Everything it's asked to do is noted with the time.
 await page.addInitScript(voices => {
   window.__voice = [];  // what it was asked to read, and '(cancel)'
-  window.__said = [];   // the same lines, with the voice, pace and pitch asked for
+  window.__said = [];   // the same lines, with the voice, pace and pitch asked for, and when
   window.__ended = [];  // the lines it got to the end of
-  window.__wordMs = 80;
-  let saying = null;
+  window.__heard = [];  // everything, in order: { ev: 'speak' | 'end' | 'cancel', text, at }
+  window.__slow = 1;
+  window.__quiet = () => !saying && !waiting.length;
+  let saying = null, model = null;
   const waiting = [];
   const list = voices.map(([name, lang, local]) => ({ name, lang, localService: !!local }));
   window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+  const takes = u => (model ? model(u.text, u.rate) * 1000 * window.__slow : Math.max(200, u.text.split(' ').length * 290));
   // Like the real one, it says what it's given in turn, and a cancel empties it.
   const next = () => {
     const u = waiting.shift();
     if (!u) return;
-    const me = saying = {};
-    setTimeout(() => { if (saying === me && u.onstart) u.onstart({}); }, 10);
-    setTimeout(() => { if (saying === me) { saying = null; window.__ended.push(u.text); if (u.onend) u.onend({}); next(); } }, Math.max(200, u.text.split(' ').length * window.__wordMs));
+    const me = saying = { text: u.text };
+    setTimeout(() => { if (saying === me && u.onstart) u.onstart({}); }, 120);
+    setTimeout(() => { if (saying === me) { saying = null; window.__ended.push(u.text); window.__heard.push({ ev: 'end', text: u.text, at: performance.now() }); if (u.onend) u.onend({}); next(); } }, takes(u));
   };
   Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
     getVoices: () => list,
     speak(u) {
+      if (!model) import(new URL('js/audio.js', document.baseURI).href).then(m => { model = m.sayTime; });
       window.__voice.push(u.text);
-      window.__said.push({ text: u.text, voice: u.voice ? u.voice.name : null, lang: u.lang, rate: u.rate, pitch: u.pitch, volume: u.volume });
+      window.__said.push({ text: u.text, voice: u.voice ? u.voice.name : null, lang: u.lang, rate: u.rate, pitch: u.pitch, volume: u.volume, at: performance.now() });
+      window.__heard.push({ ev: 'speak', text: u.text, silent: u.volume === 0, rate: u.rate, at: performance.now() });
       waiting.push(u);
       if (!saying) next();
     },
-    cancel() { window.__voice.push('(cancel)'); saying = null; waiting.length = 0; },
+    cancel() { window.__voice.push('(cancel)'); window.__heard.push({ ev: 'cancel', text: saying ? saying.text : null, at: performance.now() }); saying = null; waiting.length = 0; },
     addEventListener() {},
   } });
   // The page's sound, kept where the tests can see whether it's running. Everything on its way to the
@@ -589,7 +596,7 @@ await page.addInitScript(voices => {
       if (!this.tap) { this.tap = this.createAnalyser(); this.tap.fftSize = 2048; this.tap.connect(super.destination); }
       return this.tap;
     }
-    createOscillator() { const o = super.createOscillator(); window.__oscillators.push(o); return o; }
+    createOscillator() { const o = super.createOscillator(); o.madeAt = performance.now(); window.__oscillators.push(o); return o; }
   };
   const connect = AudioNode.prototype.connect;
   AudioNode.prototype.connect = function (to, ...a) {
@@ -626,7 +633,7 @@ const hearIt = async () => {
   return (await page.evaluate(() => window.__said.splice(0))).filter(u => u.volume !== 0);
 };
 const sample = await hearIt();
-assert.deepEqual(sample.map(u => [u.text, u.voice, u.lang]), [["Turning for home, it's Copper Detour by a length and a half!", 'Google US English', 'en-US']], 'Hear it should say one line, in the best voice here');
+assert.deepEqual(sample.map(u => [u.text, u.voice, u.lang]), [['They turn for home! Copper Detour by a length and a half!', 'Google US English', 'en-US']], 'Hear it should say one line, in the best voice here');
 // At the pace of a race: a little quicker than the steady 1.15, never past 1.2, at the voice's own pitch.
 assert.ok(sample[0].rate > 1.15 && sample[0].rate <= 1.2 && sample[0].pitch === 1, `Hear it isn't at the pace of a race: ${sample[0].rate}, ${sample[0].pitch}`);
 await page.selectOption('#optVoiceName', 'Samantha');
@@ -660,7 +667,7 @@ await page.click('#menuBtn');
 // The race's Sound button quiets the caller too: turned off during a race, it cuts off the line being read
 // and the ones after it until it's turned back on. The next race is read again with Sound off, since
 // reading the call aloud has a tick of its own in the menu.
-await page.waitForTimeout(1200); // the line Hear it said is over
+await page.waitForFunction(() => window.__quiet()); // the line Hear it said is over
 await page.evaluate(() => window.__voice.splice(0));
 await page.click('#menuBtn');
 await page.check('#optSound');
@@ -694,6 +701,7 @@ await page.evaluate(() => window.__watch.setT(window.__watch.endT - 0.05));
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 await page.click('.w-ctl .btn');
 await page.waitForSelector('.official');
+await page.waitForFunction(() => window.__quiet());
 await page.locator('.actions .btn', { hasText: /^Race 2/ }).click();
 await page.click('.post-bar .btn.brass');
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
@@ -712,15 +720,16 @@ assert.deepEqual({ ...nextRace, read: nextRace.read.length }, { menu: [false, tr
 // than that, a device's voice is a chipmunk.
 const paced = await page.evaluate(async () => {
   const w = window.__watch, lines = w.call.lines, said = window.__said;
-  const until = async f => { while (!f()) await new Promise(r => setTimeout(r, 30)); };
+  const until = async f => { for (const end = performance.now() + 30000; !f();) { if (performance.now() > end) throw new Error(`still waiting: ${f}`); await new Promise(r => setTimeout(r, 30)); } };
   const wire = lines.find(l => l.wire), last = lines[lines.length - 1];
   w.setT(w.t0 + wire.t + 0.02);
   await until(() => said.some(u => u.text === wire.say));
-  window.__wordMs = 400; // the last line takes a few seconds, as a real voice would
-  w.setT(w.endT - 0.05);
+  // The last line follows the winner's line directly.
   await until(() => said.some(u => u.text === last.say));
+  const shown = document.querySelector('.call .now').textContent;
+  w.setT(w.endT - 0.05);
   const pace = text => { const u = said.find(x => x.text === text); return [u.rate, u.pitch]; };
-  return { early: pace(lines[2].say), wire: pace(wire.say), last: pace(last.say), read: last.say, shown: document.querySelector('.call .now').textContent, most: [Math.max(...said.map(u => u.rate)), Math.max(...said.filter(u => u.volume !== 0).map(u => u.pitch))] };
+  return { early: pace(lines[2].say), wire: pace(wire.say), last: pace(last.say), read: last.say, shown, most: [Math.max(...said.map(u => u.rate)), Math.max(...said.filter(u => u.volume !== 0).map(u => u.pitch))] };
 });
 assert.deepEqual([paced.early, paced.wire, paced.last], [[1.15, 1], [1.2, 1], [1.15, 1]], "the caller's pace doesn't build to the wire and settle after it");
 assert.deepEqual(paced.most, [1.2, 1], 'a line was asked for faster than 1.2, or at a raised pitch');
@@ -733,12 +742,14 @@ await page.waitForSelector('.official');
 const toResults = await page.evaluate(text => { const v = window.__voice; return { cut: v.slice(v.lastIndexOf(text)).includes('(cancel)'), over: window.__ended.includes(text) }; }, paced.read);
 assert.deepEqual(toResults, { cut: false, over: false }, 'the caller was cut off on the way to the results (or had already finished, and this checked nothing)');
 await page.waitForFunction(text => window.__ended.includes(text), paced.read, { timeout: 15000 });
+await page.waitForFunction(() => window.__quiet());
 await page.locator('.actions .btn', { hasText: /^Race 3/ }).click();
 await page.click('.post-bar .btn.brass');
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 // The page goes out of sight in the middle of a race (another tab, the phone locked): the voice stops, the
 // line waiting behind it is forgotten, and the crowd and hooves are held. Back in sight, the voice is
 // cancelled once in case it was left stuck, the sound comes back, and nothing is said until the next line.
+// (The race is stopped where it is for this, so no line comes up but the ones it's moved to.)
 const outOfSight = await page.evaluate(async () => {
   const w = window.__watch, v = window.__voice, lines = w.call.lines;
   const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -749,9 +760,11 @@ const outOfSight = await page.evaluate(async () => {
     document.dispatchEvent(new Event('visibilitychange'));
   };
   [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === 'Sound').click(); // on
-  // Two lines close together with a quiet stretch after them, so nothing else comes up meanwhile.
-  const k = lines.findIndex((l, i) => i > 2 && i < lines.length - 3 && lines[i + 1].t - l.t > 5);
+  // A line that takes a few seconds to say, and the one after it brought up while it's still being said.
+  const k = lines.findIndex((l, i) => i > 3 && i < lines.length - 3 && lines[i - 1].t > 1 && lines[i - 1].d > 3);
   w.setT(w.t0 + lines[k - 1].t + 0.05); await frames();
+  w.pause();
+  await wait(300); // clear of the cancel that Sound made
   w.setT(w.t0 + lines[k].t + 0.05); await frames();
   await wait(100);
   const before = { saying: v[v.length - 1] === lines[k - 1].say, sound: window.__sound.state };
@@ -767,7 +780,7 @@ const outOfSight = await page.evaluate(async () => {
   await wait(100);
   return { k, before, away, back, next: v[v.length - 1] === lines[k + 1].say };
 });
-assert.ok(outOfSight.k > 2, 'no quiet stretch in this race to check with');
+assert.ok(outOfSight.k > 3, 'no line of three seconds in this race to check with');
 assert.deepEqual(outOfSight.before, { saying: true, sound: 'running' });
 assert.deepEqual(outOfSight.away, { cut: true, sound: 'suspended' }, 'out of sight, the voice or the sound carries on');
 assert.deepEqual(outOfSight.back, { said: ['(cancel)'], sound: 'running' }, 'back in sight: one cancel, the sound back, and nothing said until the next line');
@@ -862,6 +875,105 @@ await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 const atFinish = await page.evaluate(() => ({ stage: document.querySelector('.w-stage').getBoundingClientRect().height, row: document.querySelector('.w-ctl').getBoundingClientRect().height }));
 assert.deepEqual(atFinish, steady.racing, 'the picture or the row of buttons changes height when Results appears');
 await page.setViewportSize({ width: 390, height: 844 });
+await page.evaluate(() => window.postTime.nav.go('card'));
+await page.waitForSelector('.races');
+
+await page.click('#menuBtn');
+await page.check('#optSound');
+await page.check('#optVoice');
+await page.click('#menuBtn');
+await page.waitForFunction(() => window.__quiet());
+await page.click('.race-row.next');
+await page.evaluate(() => {
+  window.__from = window.__heard.length;
+  document.querySelector('.post-bar .btn.brass').click();
+  // Every line as it comes up in the call box, with the time.
+  const shown = window.__shown = [], box = document.querySelector('.call .now');
+  new MutationObserver(() => shown.push({ text: box.textContent, at: performance.now() })).observe(box, { childList: true, characterData: true, subtree: true });
+});
+
+// The call is read at 4x and at 2x (it used to be hushed at both). A change of speed doesn't cut off the line
+// being said; the rest of the race is called for the new speed, each line said as it comes up. Here: to 4x
+// in the middle of a line, and on to the end of the race.
+// (What was read since __from, each line with its kind, how long after it came up in the call box it was
+// begun, and the pace asked for.)
+await page.evaluate(() => {
+  window.__read = () => {
+    const w = window.__watch, heard = window.__heard, shown = window.__shown;
+    const out = [];
+    for (const x of heard.slice(window.__from)) {
+      if (x.ev !== 'speak' || x.silent) continue;
+      const line = w.call.lines.find(l => l.say === x.text) || null, up = line && shown.filter(y => y.text === line.text && y.at <= x.at + 20).pop();
+      out.push({ text: x.text, at: x.at, slot: line ? line.slot : 'not in the call', leader: !!line && (line.lead !== undefined || !!line.pair), age: up ? (x.at - up.at) / 1000 : 99, rate: x.rate, ended: heard.some(y => y.ev === 'end' && y.text === x.text && y.at > x.at) });
+    }
+    return out;
+  };
+});
+const at4 = await page.evaluate(async () => {
+  const w = window.__watch, heard = window.__heard;
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const until = (what, ms) => { const end = performance.now() + ms; return () => { if (performance.now() > end) throw new Error(`still waiting for ${what}`); return true; }; };
+  // A line of three seconds or more, half a second into it.
+  let long = null;
+  for (const going = until('a long line', 40000); !long && going();) {
+    await wait(30);
+    const last = heard.filter(x => x.ev === 'speak').pop(), line = w.call.lines.find(l => l.say === last.text);
+    if (w.T > 3 && line && line.d >= 3 && performance.now() - last.at > 500 && performance.now() - last.at < 1500 && !heard.some(x => x.ev === 'end' && x.at > last.at)) long = last;
+  }
+  const changed = performance.now(), plans = w.call.plans;
+  [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === '4×').click();
+  for (const going = until('the end of the call at 4x', 90000); going() && !w.call.lines.some(l => l.placings && heard.some(x => x.ev === 'end' && x.text === l.say));) await wait(50);
+  const lines = window.__read();
+  const cancels = heard.slice(window.__from).filter(x => x.ev === 'cancel');
+  return {
+    lines, changed, plans: w.call.plans - plans, long: long.text,
+    cutAtChange: cancels.some(x => x.at >= changed && x.at < changed + 3000 && x.text === long.text),
+    cancels: cancels.map(x => { const then = lines.find(l => l.at > x.at); return then ? then.slot : 'nothing after it'; }),
+  };
+});
+const after4 = at4.lines.filter(l => l.at > at4.changed);
+assert.ok(at4.plans >= 1, 'the call was not planned again for the new speed');
+assert.ok(!at4.cutAtChange && at4.lines.find(l => l.text === at4.long).ended, `"${at4.long}" was cut off by the change to 4x`);
+assert.deepEqual(at4.cancels.filter(slot => slot !== 'wire'), [], 'a line was cancelled, and not for the call at the wire');
+assert.ok(at4.lines.some(l => l.slot === 'off') && after4.some(l => l.leader) && after4.some(l => l.slot === 'wire'), `at 4x the off, a line that says who leads, or the winner's line was not read: ${after4.map(l => l.text).join(' / ')}`);
+assert.deepEqual(at4.lines.filter(l => l.age > (l.slot === 'placings' ? 6 : 1.5)).map(l => `${l.text}: ${l.age.toFixed(2)} s after it came up`), [], 'a line was read long after it came up');
+const headlines = ['run', 'fill', 'change', 'turn', 'eighth', 'wire', 'placings'];
+assert.deepEqual(after4.slice(1).filter(l => !headlines.includes(l.slot)).map(l => `${l.slot}: ${l.text}`), [], 'more than the headlines at 4x');
+assert.deepEqual([after4.find(l => l.slot === 'wire').rate, after4.find(l => l.slot === 'placings').rate], [1.2, 1.15], "the winner's line and the placings aren't at their own pace at 4x");
+assert.ok(after4.length >= 5, `only ${after4.length} lines read at 4x`);
+await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
+await page.click('.w-ctl .btn');
+await page.waitForSelector('.official');
+await page.waitForFunction(() => window.__quiet());
+// The next race at 2x from the gate, then skipped ahead once a line has said who leads: Skip cancels the
+// line being said, and the caller picks the race up twelve seconds from the wire.
+await page.locator('.actions .btn', { hasText: /^Race \d/ }).click();
+const at2 = await page.evaluate(async () => {
+  const heard = window.__heard;
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  window.__from = heard.length;
+  document.querySelector('.post-bar .btn.brass').click();
+  const w = window.__watch, button = text => [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent.startsWith(text));
+  const shown = window.__shown = [], box = document.querySelector('.call .now');
+  new MutationObserver(() => shown.push({ text: box.textContent, at: performance.now() })).observe(box, { childList: true, characterData: true, subtree: true });
+  button('2×').click();
+  const spoke = f => heard.slice(window.__from).some(x => x.ev === 'end' && w.call.lines.some(l => l.say === x.text && f(l)));
+  const until = (what, ms) => { const end = performance.now() + ms; return () => { if (performance.now() > end) throw new Error(`still waiting for ${what}`); return true; }; };
+  for (const going = until('a line that says who leads', 40000); going() && !spoke(l => l.t > 0 && (l.lead !== undefined || l.pair));) await wait(30);
+  const skipped = performance.now(), T = w.T;
+  button('Skip').click();
+  for (const going = until('the end of the call at 2x', 60000); going() && !spoke(l => l.placings);) await wait(50);
+  const lines = window.__read();
+  return { lines, skipped, jumped: w.winT - 12 > T, cancels: heard.slice(window.__from).filter(x => x.ev === 'cancel').map(x => (Math.abs(x.at - skipped) < 100 ? 'skip' : (lines.find(l => l.at > x.at) || {}).slot)) };
+});
+const after2 = at2.lines.filter(l => l.at > at2.skipped);
+assert.ok(at2.jumped, 'the race was nearly over before Skip, and this checked nothing');
+assert.ok(at2.lines.some(l => l.slot === 'off') && at2.lines.some(l => l.leader && l.at < at2.skipped) && after2.some(l => l.slot === 'wire'), `at 2x the off, a line that says who leads, or the winner's line was not read: ${at2.lines.map(l => l.text).join(' / ')}`);
+assert.deepEqual(at2.cancels.filter(why => why !== 'skip' && why !== 'wire'), [], 'at 2x a line was cancelled, and not by Skip or for the call at the wire');
+assert.deepEqual(at2.lines.filter(l => l.age > (l.slot === 'placings' ? 6 : 1.5)).map(l => `${l.text}: ${l.age.toFixed(2)} s after it came up`), [], 'at 2x a line was read long after it came up');
+assert.ok(after2.length >= 3 && after2.some(l => l.leader), `after Skip the caller said ${after2.map(l => l.text).join(' / ') || 'nothing'}`);
+assert.deepEqual([after2.find(l => l.slot === 'wire').rate, after2.find(l => l.slot === 'placings').rate], [1.2, 1.15], "the winner's line and the placings aren't at their own pace at 2x");
+await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 await page.evaluate(() => window.postTime.nav.go('card'));
 await page.waitForSelector('.races');
 

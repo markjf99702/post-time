@@ -12,7 +12,8 @@ globalThis.localStorage = {
 globalThis.window = new EventTarget();
 const { game, newMeet, load, save, notSaved, card, toteFor, placeBet, goToGate, mtpState, currentBoard, advanceDay, callFor, horseOf, runnersFor, photoRecord } = await import('../js/game.js');
 const { stateAt, RAIL } = await import('../js/sim.js');
-const { LENGTH } = await import('../js/track.js');
+const { LENGTH, FURLONG, segmentAt } = await import('../js/track.js');
+const { raceCall, raceClock } = await import('../js/call.js');
 const { marginShort } = await import('../js/chart.js');
 const { buildWorld, meetStats, ownerSilks } = await import('../js/world.js');
 const { TRAINERS, OWNERS } = await import('../js/data.js');
@@ -32,7 +33,9 @@ function buildOn(seed, start) {
 }
 
 // A long meet played the way the page plays it: every race sent to the gate and called. What each race
-// came to is kept for the tests below, so the meet is played once.
+// came to is kept for the tests below, so the meet is played once. The call is the one made at the gate
+// for watching at normal speed, by a voice as quick as the model in js/audio.js takes one to be. Every
+// fourth race is called again for watching at 2x and at 4x, and those calls are kept too.
 let longMeet = null;
 function playLongMeet(days = 60) {
   if (longMeet) return longMeet;
@@ -43,11 +46,13 @@ function playLongMeet(days = 60) {
       const { run } = goToGate(race);
       const call = callFor(race, run);
       const names = race.entries.map(e => horseOf(e).name);
+      const at = { day: d + 1, no: race.no };
       races.push({
-        day: d + 1, no: race.no, field: race.entries.length, lines: call.lines.map(l => l.text), photo: call.photo,
+        ...at, field: race.entries.length, lines: call.lines.map(l => l.text), photo: call.photo, f: race.f,
         winner: horseOf(race.entries[run.results[0].h]).name, reactions: (race.forumAfter || []).map(p => p.text),
         second: run.results[1] ? horseOf(race.entries[run.results[1].h]).name : null, official: call.official,
         ...callAgainstRace(race, run, call, names),
+        fast: races.length % 4 ? null : [2, 4].map(speed => ({ speed, ...at, ...callAgainstRace(race, run, raceCall(race, run, names, { speed }), names, speed) })),
       });
     }
     advanceDay();
@@ -55,77 +60,252 @@ function playLongMeet(days = 60) {
   return (longMeet = races);
 }
 
+// A line with the horses' names, the margins and the times taken out, so two lines made the same way read
+// the same: "N leads by G, N second, N third."
+const GAPS = /\b(a nose|a head|a neck|a half length|three quarters of a length|a length and a quarter|a length and a half|a length and three quarters|a length|[a-z]+(-[a-z]+)? lengths)\b/g;
+const PLACES = /\b(second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth)\b/g;
+function shapeOf(text, names) {
+  let x = text;
+  for (const n of names.slice().sort((a, b) => b.length - a.length)) x = x.split(n).join('N');
+  return x.replace(/the eighth pole/, 'the 8 pole').replace(GAPS, 'G').replace(/\b\d+(:\d\d)?( and \d| flat)|\d*:?\d\d\.\d\d/g, 'T').replace(PLACES, 'Kth');
+}
+// The wordings that put a horse in front, as they read once the names are taken out.
+const LEADS = [/N leads\b/, /[Ii]t's N( by|[.!]| in front)/, /N shows the way/, /N is in front/, /N sets the pace/, /N has the lead/,
+  /N (breaks on top|is quickest away|goes right to the front|shoots to the lead|is first to show|takes them along)/,
+  /N takes over/, /takes the lead!/, /N strikes the front/, /N goes to the lead/, /N is the new leader/, /Now it's N/,
+  /N is back in front/, /N fights back to lead/, /N comes again/, /N takes it back/, /N by G/, /N continues to lead/, /Still N/,
+  /N on the lead/, /N still shows the way/, /N keeps the lead/, /N (is )?still in front/, /Up front it's N/, /N has G on N/,
+  /N out in front/, /N in front/, /N opens up/, /N is (G )?clear/, /N widens/, /N kicks away/, /N goes on/, /N holds (N off|on!)/,
+  /drawing away/, /won't catch N/, /It's all N/, /Nobody is catching N/, /N is home free/, /N is long gone/, /No catching N/,
+  /N has them all beaten/, /closing on N/, /after N!/, /into N's lead/, /gaining on N/, /but N still/, /chases N/];
+const CHANGES = /takes over|takes the lead!|strikes the front|goes to the lead|is the new leader|leads now|[Nn]ow it's N|back in front|fights back to lead|comes again|takes it back/;
+const AGAIN = /back in front|fights back to lead|comes again|takes it back/;
+const SURE = /drawing away|won't catch|It's all N|Nobody is catching|home free|long gone|No catching|all beaten/;
+const SIDES = /on the outside|widest of all|\b[a-z]+ wide\b|on the rail|on the inside|along the rail|up the rail/g;
+const WHERE = {
+  backstretch: /^(Down|Along|On|Into|Midway down) the backstretch, /, 'far turn': /^(Around|On|Into) the (far )?turn, |^Midway on the turn, /,
+  'clubhouse turn': /^(Around|On|Into) the (clubhouse|first) turn, /, stretch: /^(Past|By) the stands( the first time)?, /,
+};
+
 // The race call held against the recorded race, line by line, each at the moment it comes up. `wrong`
-// lists what the caller said that the race doesn't show, by kind; `said` counts what he said.
+// lists what the caller said that the race doesn't show, by kind; `said` counts what he said; the rest
+// is how the call fills the race (how much of it is silence, who gets named, how soon a new leader is
+// called), for the tests on the whole meet. `speed` is the speed the call was made for watching at.
 const SAY = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+const NTH = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth'];
 const CHART_SAYS = { nk: 'a neck', '¼': 'a neck', '½': 'a half length', '¾': 'three quarters of a length', 1: 'a length', '1¼': 'a length and a quarter', '1½': 'a length and a half', '1¾': 'a length and three quarters' };
-function callAgainstRace(race, run, call, names) {
+const lengthsSaid = n => `${n < 21 ? SAY[n] : `${['', '', 'twenty', 'thirty', 'forty', 'fifty'][Math.floor(n / 10)]}${n % 10 ? `-${SAY[n % 10]}` : ''}`} lengths`;
+function callAgainstRace(race, run, call, names, speed = 1) {
   const wrong = {}, said = {};
   const bad = (kind, l, why = '') => (wrong[kind] || (wrong[kind] = [])).push(`${l.text}${why && ` (${why})`}`);
   const count = kind => { said[kind] = (said[kind] || 0) + 1; };
-  const front = st => st.reduce((a, s, i) => (s.p > st[a].p ? i : a), 0);
+  const fin = run.finalTime, D = run.distance, top = run.path[run.path.length - 1].start;
+  const { wall, clock } = raceClock(run, speed);
+  const order = t => stateAt(run, run.t0 + t, []).map((x, i) => ({ ...x, i })).sort((a, b) => b.p - a.p);
+  const front = st => st.reduce((a, x, i) => (x.p > st[a].p ? i : a), 0);
   const [w, s] = run.results;
-  let lastNamed = null, pace = null;
+  // What happens in the race, to the tenth of a second: the leader reaching the stretch and the furlong
+  // pole, and each time a new horse gets a quarter of a length in front. A change of leader counts from
+  // eight seconds in, when the first call has been made: before that the field is sorting itself out.
+  let tS = fin, tE = fin, cur = null;
+  const changes = [];
+  for (let t = 0; t < fin; t += 0.1) {
+    const o = order(t);
+    if (tS === fin && o[0].p >= top) tS = t;
+    if (tE === fin && D - o[0].p <= FURLONG) tE = t;
+    if (t < 4) continue;
+    if (cur === null) cur = o[0].i;
+    else if (o[0].i !== cur && (o[0].p - o[1].p) / LENGTH >= 0.25) { cur = o[0].i; if (t >= 8) changes.push({ t, to: cur }); }
+  }
+  const troubles = run.events.filter(e => e.type === 'checked');
+  const texts = new Set(), led = new Set(), movers = new Set(), drives = [];
+  const shapes = [];
+  let lastNamed = null, pace = null, firstRun = null, threeQuarters = false;
   call.lines.forEach((l, k) => {
     const st = stateAt(run, run.t0 + l.t);
-    const x = l.text, before = call.lines[k - 1];
-    // In order, and no line (but the finish) on the heels of the one before.
-    if (before && (l.t < before.t || (l.kind !== 'finish' && l.t < before.t + 1.8 - 1e-9))) bad('crowded', l, `${(l.t - before.t).toFixed(2)} s after "${before.text}"`);
-    // A horse named as the leader is in front, and a lead change is news.
-    const namesLeader = /^Turning for home|leads by|all alone\.|still in front|takes over!|takes the lead!|in front!|head and head|battle to the wire|drawing away|won't catch|home free|vie for the early lead|to the front|to the lead|takes them along/.test(x);
-    if (namesLeader !== (l.lead !== undefined)) bad('leader', l, 'names a leader and does not say which, or the other way round');
+    const o = order(l.t);
+    const x = l.text, before = call.lines[k - 1], shape = shapeOf(x, names);
+    const running = l.t > 0 && l.t < fin;
+    shapes.push([l.slot, shape]);
+    const gap = (a, b) => (st[a].p - st[b].p) / LENGTH;
+    // In order, each when the one before is over (by the estimate it was planned with), and none too long.
+    if (before && wall(l.t) < wall(before.t) + before.d - 1e-6) bad('crowded', l, `${(wall(l.t) - wall(before.t)).toFixed(2)} s after "${before.text}", which takes ${before.d.toFixed(2)}`);
+    if (!(l.d > 0.3 && l.d <= 8)) bad('long', l, `${l.d.toFixed(2)} s`);
+    if (texts.has(x)) bad('twice', l);
+    texts.add(x);
+    // A horse named as the leader is in front, clear by a quarter of a length (anything less is a pair,
+    // with no word on which of them leads), and a lead change is news.
+    const finish = l.kind === 'finish';
+    if (!finish && LEADS.some(re => re.test(shape)) !== (l.lead !== undefined)) bad('leader', l, 'names a leader and does not say which, or the other way round');
     if (l.lead !== undefined) {
       count('leader');
       if (!x.includes(names[l.lead])) bad('leader', l, `means ${names[l.lead]}`);
       if (front(st) !== l.lead) bad('leader', l, `${names[front(st)]} is in front`);
-      if (/takes over!|takes the lead!|^And now it's /.test(x) !== !!l.change) bad('change', l, 'a lead change not marked as one, or the other way round');
-      if (l.change) { count('change'); if (lastNamed === l.lead) bad('change', l, 'already named as the leader'); }
+      else if (o[1] && gap(o[0].i, o[1].i) < 0.25 - 1e-9) bad('pair', l, `only ${gap(o[0].i, o[1].i).toFixed(2)} in front`);
+      if (CHANGES.test(shape) !== !!l.change || !!l.change !== (l.slot === 'change')) bad('change', l, 'a lead change not marked as one, or the other way round');
+      if (l.change) {
+        count('change');
+        if (lastNamed === l.lead) bad('change', l, 'already named as the leader');
+        if (AGAIN.test(shape) !== led.has(l.lead)) bad('change', l, led.has(l.lead) ? 'led before, and is called as new to the lead' : 'has not led before');
+      }
       lastNamed = l.lead;
+      led.add(l.lead);
     }
-    // Where a horse is said to be running.
-    const place = / wide!$/.test(x) ? 'wide' : /on the outside/.test(x) ? 'outside' : /up the rail|on the inside/.test(x) ? 'inside' : /is making a run!$|is flying!$/.test(x) ? 'between' : null;
-    if (place) {
-      count(place);
-      const paths = st[l.who] ? st[l.who].o - RAIL : NaN; // off the rail, as the chart measures it
-      const ok = place === 'wide' ? paths >= 2.5 && x.endsWith(` ${SAY[Math.round(paths) + 1]} wide!`) : place === 'outside' ? paths >= 2.5 : place === 'inside' ? paths < 0.8 : paths >= 0.8 && paths < 2.5;
-      if (!ok || !x.includes(names[l.who])) bad('place', l, `${paths.toFixed(2)} paths off the rail`);
+    if (l.pair && running) {
+      count('pair');
+      const two = [o[0].i, o[1].i];
+      if (!l.pair.every(i => two.includes(i) && x.includes(names[i])) || gap(o[0].i, o[1].i) >= (l.slot === 'run' && !firstRun ? 0.5 : 0.25)) bad('pair', l, `${names[o[0].i]} leads ${names[o[1].i]} by ${gap(o[0].i, o[1].i).toFixed(2)}`);
     }
-    // Closing fast: gaining on the leader, from within three lengths.
+    if (/stride for stride/.test(x) && !(l.pair && gap(o[0].i, o[1].i) < 0.25)) bad('pair', l, 'not inside a quarter of a length');
+    // The first call: "right there" is within a length, three across is three within a quarter of a length each.
+    if (/right there|close up|just behind/.test(x) !== (l.near !== undefined)) bad('near', l, 'not marked');
+    if (l.near !== undefined) { count('near'); if (o[2].i !== l.near || gap(o[1].i, o[2].i) >= 1) bad('near', l, `${gap(o[1].i, o[2].i).toFixed(2)} lengths behind the pair`); }
+    if (/three across|all go for the lead|break in a line|, N and N are away together/.test(shape) !== (l.across !== undefined)) bad('near', l, 'three together, not marked');
+    if (l.across !== undefined) { count('three across'); if (gap(o[0].i, o[1].i) >= 0.25 || gap(o[1].i, o[2].i) >= 0.25) bad('near', l, 'not three across'); }
+    if (l.slot === 'run' && !firstRun) { firstRun = l; if (l.lead === undefined && !(gap(o[0].i, o[1].i) < 0.5)) bad('near', l, 'vying for the lead from more than half a length apart'); }
+    // Where a horse is said to be running: on the rail, on the outside, so many wide. A horse making a
+    // move, or flying, with no word on where, is between horses.
+    const sides = l.sides || [];
+    if ((x.match(SIDES) || []).length !== sides.length) bad('place', l, 'says where a horse is and is not marked so, or the other way round');
+    for (const { i, side } of sides) {
+      count(side);
+      const paths = st[i].o - RAIL; // off the rail, as the chart measures it
+      const ok = side === 'wide' ? paths >= 2.5 && x.endsWith(` ${SAY[Math.round(paths) + 1]} wide.`) : side === 'outside' ? paths >= 2.5 : paths < 0.8;
+      if (!ok || !x.includes(names[i]) || (/widest of all/.test(x) && st.some(z => z.o > st[i].o))) bad('place', l, `${names[i]} is ${paths.toFixed(2)} paths off the rail`);
+    }
+    if ((l.slot === 'mover' || (l.drive === 'fly' && l.from === undefined)) && !sides.length) {
+      count('between');
+      const paths = st[l.who].o - RAIL;
+      if (!(paths >= 0.8 && paths < 2.5)) bad('place', l, `${paths.toFixed(2)} paths off the rail, and not said to be`);
+    }
+    // A horse making a move: after the first twenty seconds, before the stretch, in the first five or
+    // within five lengths of the lead, and gaining on the leader. Each horse once.
+    if (/is on the move|picking them off|starts to roll|making a run|is moving up|making up ground/.test(x) !== (l.slot === 'mover')) bad('mover', l, 'not marked');
+    if (l.slot === 'mover') {
+      count('mover');
+      const k2 = o.findIndex(z => z.i === l.who), back = gap(o[0].i, l.who);
+      if (!(l.t > 20) || !(l.t < tS) || !(k2 < 5 || back <= 5) || !(st[l.who].v > o[0].v) || movers.has(l.who) || !x.startsWith(names[l.who])) bad('mover', l, `${l.t.toFixed(1)} s in, ${NTH[k2 + 1]}, ${back.toFixed(1)} lengths back`);
+      movers.add(l.who);
+    }
+    // A horse flying in the stretch is within three lengths of the leader, or is given its place; it's
+    // the fastest horse in the race just then, and isn't stopped in the next two seconds.
+    if (l.drive === 'fly') {
+      count('flying');
+      const k2 = o.findIndex(z => z.i === l.who), back = gap(o[0].i, l.who);
+      if (l.from === undefined ? back >= 3 : (l.from !== k2 + 1 || !x.includes(`from ${NTH[k2 + 1]}`) && !x.startsWith(`From ${NTH[k2 + 1]}`))) bad('flying', l, `${NTH[k2 + 1]}, ${back.toFixed(1)} lengths back`);
+      if (st.some(z => z.v > st[l.who].v) || troubles.some(e => e.h === l.who && e.t > run.t0 + l.t && e.t < run.t0 + l.t + 2)) bad('flying', l, 'not the fastest, or about to be stopped');
+    }
+    if (l.slot === 'trouble') { count('trouble'); if (!troubles.some(e => e.h === l.who && e.t <= run.t0 + l.t && run.t0 + l.t - e.t < 1.2) || !x.includes(names[l.who])) bad('trouble', l, 'nobody was stopped'); }
+    // Closing: gaining on the leader, from within three lengths; closing fast, a quarter of a length a second.
+    if (l.closing) {
+      count('gaining');
+      const a = st[o[0].i], b = st[l.who];
+      const gapNow = (a.p - b.p) / LENGTH;
+      if (o[1].i !== l.who || !(gapNow < 3) || !(b.v > a.v) || !x.includes(names[l.who])) bad('closing', l, `${gapNow.toFixed(1)} lengths back, ${(b.v - a.v).toFixed(2)} m/s faster`);
+    }
     if (/closing fast/.test(x)) {
       count('closing');
-      const [a, b] = [st[l.lead], st[l.who]]; // the leader and the closer, if the line says who they are
-      const gap = a && b ? (a.p - b.p) / LENGTH : NaN;
-      if (!(gap < 3) || !(b.v > a.v) || !x.startsWith(`${names[l.who]} closing fast`)) bad('closing', l, a && b ? `${gap.toFixed(1)} lengths back, ${(b.v - a.v).toFixed(2)} m/s faster` : 'does not say who');
+      const ago = stateAt(run, run.t0 + l.t - 1);
+      const was = l.closing ? (ago[o[0].i].p - ago[l.who].p) / LENGTH - gap(o[0].i, l.who) : NaN;
+      if (!(was > 0.25) || !x.startsWith(`${names[l.who]} closing fast`)) bad('closing', l, `gained ${was.toFixed(2)} lengths in the last second`);
     }
     // Sure of the winner: it wins, and not in a photo.
-    if (/drawing away|won't catch|home free/.test(x) !== (l.sure !== undefined)) bad('sure', l, 'sounds sure and is not marked so, or the other way round');
+    if (!finish && SURE.test(shape) !== (l.sure !== undefined)) bad('sure', l, 'sounds sure and is not marked so, or the other way round');
     if (l.sure !== undefined) {
-      count(/home free/.test(x) ? 'home free' : 'sure');
+      count(/home free|long gone|No catching|all beaten/.test(x) ? 'home free' : 'sure');
       if (call.photo || l.sure !== w.h || !x.includes(names[w.h])) bad('sure', l, `${names[w.h]} won${call.photo ? ' in a photo' : ` by ${s.toPrev.toFixed(2)}`}`);
     }
     if (/still in front by/.test(x)) count('still in front');
-    if (/A clean break/.test(x)) { count('clean break'); if (run.results.some(r => r.bumped || r.slow || r.stumble)) bad('break', l, 'somebody bumped, stumbled or broke slowly'); }
+    // The second and third horses, the last one and how far it is off the lead, and how far the field is spread.
+    if (l.second !== undefined && (o[1].i !== l.second || !x.includes(names[l.second]))) bad('places', l, `${names[o[1].i]} is second`);
+    if (l.third !== undefined && (o[2].i !== l.third || !x.includes(names[l.third]))) bad('places', l, `${names[o[2].i]} is third`);
+    if (/ trails| is last| brings up the rear| is at the back/.test(x) !== (l.last !== undefined)) bad('places', l, 'the last horse, not marked');
+    if (l.last !== undefined) {
+      count('last');
+      const off = Math.round(gap(o[0].i, l.last));
+      if (o[o.length - 1].i !== l.last || (l.off !== undefined) !== / off the lead| off the pace| from the leader| behind the leader/.test(x) || (l.off !== undefined && (l.off !== off || !x.includes(lengthsSaid(off))))) bad('places', l, `${names[o[o.length - 1].i]} is last, ${off} lengths back`);
+    }
+    if (l.spread !== undefined) { count('spread'); const all = Math.round(gap(o[0].i, o[o.length - 1].i)); if (l.spread !== all || !x.toLowerCase().includes(lengthsSaid(all))) bad('places', l, `${all} lengths from first to last`); }
+    // The horses a run through the field names are named, and the part of the track is the one the leader is on.
+    for (const i of l.named || []) if (!x.includes(names[i])) bad('places', l, `${names[i]} is not in it`);
+    if (Object.values(WHERE).some(re => re.test(x)) !== !!l.whereSaid) bad('where', l, 'not marked');
+    if (l.whereSaid) {
+      count('where');
+      const seg = segmentAt(run.path, o[0].p), into = o[0].p - seg.start, part = into / Math.max(1, seg.len);
+      if (seg.name !== l.where || !WHERE[l.where].test(x) || (/^Into /.test(x) && into >= 90) || (/^Midway /.test(x) && !(part > 0.38 && part < 0.62))) bad('where', l, `the leader is ${Math.round(into)} m into the ${seg.name}`);
+    }
+    // The break. It's a clean one only if nobody stumbled, broke slowly or was bumped.
+    if (/clean (break|start)|break cleanly/.test(x) !== !!l.clean) bad('break', l, 'not marked');
+    if (l.clean) { count('clean break'); if (run.results.some(r => r.bumped || r.slow || r.stumble)) bad('break', l, 'somebody bumped, stumbled or broke slowly'); }
+    if (l.slot === 'break' && !l.clean) {
+      count('break');
+      const r = i => run.results.find(z => z.h === i);
+      const ok = /stumble/.test(x) ? r(l.who).stumble && x.includes(names[l.who]) : /slow/.test(x) ? r(l.who).slow && x.includes(names[l.who])
+        : /bump|come together/.test(x) && run.results.filter(z => z.bumped).every(z => x.includes(names[z.h]));
+      if (!ok) bad('break', l, 'not what happened at the start');
+    }
     if (/whisker/.test(x) || /\b(1?\d|20) lengths?\b/.test(x)) bad('words', l);
-    if (/^The quarter in /.test(x)) pace = { f: race.f, remark: /a fast pace/.test(x) ? 'fast' : /nice and easy/.test(x) ? 'easy' : '' };
+    // The fractions: the quarter is fast or slow for the distance, and the three quarters is called in a route.
+    if (l.kind === 'frac') {
+      count('fraction');
+      if (l.frac === 0) pace = { f: race.f, remark: l.remark };
+      if (l.frac === 2) threeQuarters = true;
+      const f = run.fractions[l.frac];
+      const remark = /fast pace|that's quick|flying early|sharp pace/.test(x) ? 'fast' : /nice and easy|easy pace|no hurry|soft pace/.test(x) ? 'easy' : '';
+      if (remark !== l.remark || !/quarter|half|furlongs/i.test(x) || !(l.t >= f.t && l.t - f.t < 4.5) || !(f.t < tS)) bad('fraction', l, `${(l.t - f.t).toFixed(1)} s after it`);
+    }
+    // Turning for home, a furlong out and the sixteenth pole are said as the leader gets there.
+    if (/turn for home|[Ii]nto the stretch|straighten for home|Turning for home/.test(x) !== (l.slot === 'turn')) bad('poles', l, 'not marked');
+    if (l.slot === 'turn' && !(l.t >= tS - 1e-6 && l.t - tS <= 2)) bad('poles', l, `${(l.t - tS).toFixed(2)} s after the leader reached the stretch`);
+    if (l.t > tS - 2.5 + 1e-6 && l.t < tS - 1e-6 && speed === 1) bad('poles', l, `starts ${(tS - l.t).toFixed(2)} s before the turn for home, which is kept clear`);
+    if (l.slot === 'eighth') { const toGo = D - o[0].p; if (!(toGo <= FURLONG + 5) || (/A furlong (to go|out)|At the eighth pole|One furlong left/.test(x) && l.t - tE > 1.05)) bad('poles', l, `${Math.round(toGo)} m to go`); }
+    if (l.slot === 'sixteenth') { const toGo = D - o[0].p; if (!(toGo <= FURLONG / 2 + 5 && toGo > FURLONG / 2 - 25)) bad('poles', l, `${Math.round(toGo)} m to go`); }
+    // The stretch: never the same kind of line twice running.
+    if (l.slot === 'drive') { if (drives.length && drives[drives.length - 1] === l.drive) bad('stretch', l, `${l.drive} twice running`); drives.push(l.drive); if (!(l.t >= tS)) bad('stretch', l, 'before the stretch'); }
     // The finish line of a race that isn't a photo: the margin the chart gives, going away only for a winner
     // not being caught, and a winner who got up in the last second said to have.
-    if (!call.photo && l.kind === 'finish' && / wins? it | win it /.test(x)) {
+    if (l.wire && !(wall(l.t) - wall(fin) >= 0 && wall(l.t) - wall(fin) <= 0.3)) bad('finish', l, `${(wall(l.t) - wall(fin)).toFixed(2)} s after the wire`);
+    if (!call.photo && l.wire) {
       count('finish');
       const ledLate = front(stateAt(run, run.t0 + run.finalTime - 1)) === w.h;
-      if (/gets up to win it/.test(x)) count('gets up');
-      if (x.startsWith(`${names[w.h]} gets up to win it `) === ledLate || !x.startsWith(names[w.h])) bad('finish', l, ledLate ? 'led a second out' : 'did not lead a second out');
+      if (l.up) count('gets up');
+      if (/gets up|is up in time|gets there/.test(x) !== !!l.up || !!l.up === ledLate || !(x.startsWith(names[w.h]) || x.startsWith(`And ${names[w.h]}`))) bad('finish', l, ledLate ? 'led a second out' : 'did not lead a second out');
       if (s) {
         const chart = marginShort(s.toPrev);
-        const m = / by (.+?)(, going away)?!$/.exec(x);
-        const word = m ? m[1].replace(/ lengths$/, '') : '';
-        const whole = SAY.includes(word) ? SAY.indexOf(word) : +word;
-        const agrees = m && (CHART_SAYS[chart] ? m[1] === CHART_SAYS[chart] : / lengths$/.test(m[1]) && whole >= 2 && Math.abs(whole - s.toPrev) <= 0.5 + 1e-9);
-        if (!agrees) bad('finish', l, `the chart says ${chart}`);
-        if (/going away/.test(x)) { count('going away'); if (w.finishSpeed < s.finishSpeed || s.toPrev <= 2.5) bad('finish', l, 'the runner-up was finishing faster, or close'); }
+        const whole = Math.round(s.toPrev);
+        const margin = CHART_SAYS[chart] || lengthsSaid(whole);
+        if (!x.includes(`by ${margin}`) || (!CHART_SAYS[chart] && !(whole >= 2 && Math.abs(whole - s.toPrev) <= 0.5 + 1e-9))) bad('finish', l, `the chart says ${chart}`);
+        if (/going away|draws off|pulls clear/.test(x) !== !!l.away) bad('finish', l, 'going away, not marked');
+        if (l.away) { count('going away'); if (w.finishSpeed < s.finishSpeed || s.toPrev <= 2.5) bad('finish', l, 'the runner-up was finishing faster, or close'); }
+        if (/holds on|lasts|hangs on|holds,/.test(x) !== !!l.holds) bad('finish', l, 'holding on, not marked');
+        if (l.holds) { count('holds on'); if (!ledLate || !(s.finishSpeed > w.finishSpeed) || s.toPrev >= 1) bad('finish', l, 'was not being caught'); }
       }
     }
   });
-  return { wrong, said, pace };
+  // How the call fills the race: the silences from the off to the wire (and the longest once the first
+  // run through the field has begun), who was named before the wire, and how soon each new leader was
+  // called. A lead change here is one that lasts two seconds and comes two seconds or more before the wire
+  // (two horses trading the lead stride for stride can't each be called, and the last strides are the
+  // winner's line); it's called when a line naming the new leader in front ends within three seconds.
+  const off = wall(0), wire = wall(fin);
+  let free = off, quiet = 0, longest = 0;
+  const pause = (from, to, after) => { if (to > from) { quiet += to - from; if (after) longest = Math.max(longest, to - from); } };
+  for (const l of call.lines) {
+    const from = wall(l.t), to = from + l.d;
+    if (from >= wire || to <= off) continue;
+    pause(free, Math.min(from, wire), firstRun && l.t > firstRun.t);
+    free = Math.max(free, Math.min(to, wire));
+  }
+  pause(free, wire, true);
+  const lasting = changes.filter((e, k) => e.t < fin - 2 && (!changes[k + 1] || changes[k + 1].t - e.t >= 2));
+  const called = lasting.filter(e => call.lines.some(l => l.lead === e.to && l.t >= e.t - 0.3 && wall(l.t) + l.d <= wall(e.t) + 3 + 1e-6));
+  const namedBy = names.filter(n => call.lines.some(l => l.t < fin && l.text.includes(n))).length;
+  const slots = new Set(call.lines.map(l => l.slot));
+  return {
+    wrong, said, pace, shapes, slots: [...slots], threeQuarters, quiet, secs: wire - off, longest, named: namedBy, changes: lasting.length, called: called.length,
+    words: call.lines.filter(l => l.t >= 0 && l.t < fin).reduce((n, l) => n + l.say.split(/\s+/).length, 0), count: call.lines.length,
+    turn: call.lines.some(l => l.slot === 'turn'), firstShape: firstRun ? shapeOf(firstRun.text, names) : '',
+  };
 }
 
 test("a setting changed while the first meet is being built doesn't save an empty meet", () => {
@@ -271,38 +451,128 @@ test("two regulars don't post the same reaction after a race", () => {
   assert.ok(races.reduce((n, r) => n + r.reactions.length, 0) > races.length * 3, 'the regulars have gone quiet');
 });
 
-// What the long meet's race calls got wrong, of one kind, and how often he said a thing.
-const told = (races, kind) => races.flatMap(r => (r.wrong[kind] || []).map(x => `race day ${r.day}, race ${r.no}: ${x}`));
+// What the long meet's race calls got wrong, of one kind, and how often he said a thing. With NUMBERS=1 in
+// the environment the tests below also print what they measured.
+const note = (...what) => { if (process.env.NUMBERS) console.log(...what); };
+const told = (races, kind) => races.flatMap(r => (r.wrong[kind] || []).map(x => `race day ${r.day}, race ${r.no}${r.speed ? ` at ${r.speed}x` : ''}: ${x}`));
 const total = (races, kind) => races.reduce((n, r) => n + (r.said[kind] || 0), 0);
+const sum = (races, key) => races.reduce((n, r) => n + r[key], 0);
 
 test("the caller doesn't sound sure of a leader who then gets caught or goes to a photo", () => {
   const races = playLongMeet();
   assert.deepEqual(told(races, 'sure'), []);
-  assert.ok(total(races, 'sure') > races.length / 10, `the caller is sure of a winner in only ${total(races, 'sure')} races`);
+  assert.ok(total(races, 'sure') + total(races, 'home free') > races.length / 10, `the caller is sure of a winner in only ${total(races, 'sure')} races`);
+  assert.ok(total(races, 'home free') > 0, 'nobody is ever home free');
 });
 
-test('the caller says a horse is closing fast only when it is gaining on the leader from within three lengths', () => {
+test('the caller says a horse is closing only when it is gaining on the leader from within three lengths', () => {
   // "X closing fast, but Y still in front!" was said of horses five lengths behind a runaway winner.
+  // "Closing fast" is a quarter of a length gained in the last second.
   const races = playLongMeet();
   assert.deepEqual(told(races, 'closing'), []);
-  assert.ok(total(races, 'closing') > 0, 'nobody is ever called closing');
+  assert.ok(total(races, 'gaining') > races.length / 4, `a horse is called closing in only ${total(races, 'gaining')} races`);
+  assert.ok(total(races, 'closing') > 0, 'nobody is ever called closing fast');
   assert.ok(total(races, 'still in front') > 0, "the caller never just says who's still in front");
 });
 
-test('a horse named as the leader is in front when the line comes up, and no line crowds the one before', () => {
+test('a horse named as the leader is in front when the line comes up, and no line starts before the last is over', () => {
   // Lines were moved up to 1.8 seconds later, after they were worded, to keep them apart: every line that
-  // named the wrong leader was a moved one. Now a line is worded for the moment it's given.
+  // named the wrong leader was a moved one. Now a line is worded for the moment it's given, and given when
+  // the voice is free. A lead of less than a quarter of a length is nobody's: the two are called together.
   const races = playLongMeet();
   assert.deepEqual(told(races, 'leader'), []);
+  assert.deepEqual(told(races, 'pair'), [], 'a leader named from inside a quarter of a length, or two called together who are not');
   assert.deepEqual(told(races, 'crowded'), []);
-  assert.ok(total(races, 'leader') > races.length * 3, `only ${total(races, 'leader')} lines name a leader`);
+  assert.deepEqual(told(races, 'long'), [], 'a line longer than eight seconds');
+  assert.ok(total(races, 'leader') > races.length * 6, `only ${total(races, 'leader')} lines name a leader`);
+  assert.ok(total(races, 'pair') > races.length / 4, `only ${total(races, 'pair')} lines call two together`);
 });
 
 test('a lead change is never called for the horse just named as the leader', () => {
   // "Around the far turn, Crimson Detour leads by a head." and then "Crimson Detour goes by and takes the lead!"
+  // A horse that led before is "back in front"; one that hasn't "takes over".
   const races = playLongMeet();
   assert.deepEqual(told(races, 'change'), []);
-  assert.ok(total(races, 'change') > races.length / 2, `only ${total(races, 'change')} lead changes called`);
+  assert.ok(total(races, 'change') > races.length, `only ${total(races, 'change')} lead changes called`);
+});
+
+test('a new leader is called within three seconds, nine times in ten', () => {
+  // About one lead change in nine was never said (the voice was on another line), and one that was said
+  // ended a median 1.9 seconds after the change.
+  const races = playLongMeet();
+  const changes = sum(races, 'changes'), called = sum(races, 'called');
+  assert.ok(changes > races.length, `only ${changes} lead changes in ${races.length} races`);
+  assert.ok(called / changes >= 0.9, `${called} of ${changes} lead changes were called within three seconds`);
+  note(`lead changes called within three seconds: ${called} of ${changes}`);
+});
+
+test('the call fills the race: under a quarter of it silent, no silence over six seconds, and nearly every runner named', () => {
+  // The caller said nothing for more than half of each race (3.6 silences of five seconds or more a
+  // race), and one runner in four was never named. Now the field is run down between the things that
+  // happen, a few horses at a time, and the stretch is called stride by stride.
+  const races = playLongMeet();
+  const quiet = sum(races, 'quiet') / sum(races, 'secs');
+  assert.ok(quiet < 0.25, `silent for ${(quiet * 100).toFixed(1)}% of the time between the off and the wire`);
+  const longest = races.filter(r => r.longest > 6).map(r => `race day ${r.day}, race ${r.no}: ${r.longest.toFixed(1)} s`);
+  assert.deepEqual(longest, [], 'a silence of more than six seconds once the field has been run down the first time');
+  const upTo12 = races.filter(r => r.field <= 12);
+  const named = sum(upTo12, 'named') / sum(upTo12, 'field');
+  assert.ok(named >= 0.99, `${(named * 100).toFixed(1)}% of runners are named before the wire`);
+  const words = sum(races, 'words') / (sum(races, 'secs') / 60);
+  assert.ok(words > 140 && words < 260, `${Math.round(words)} words for each minute of race`);
+  note(`${races.length} races at 1x: ${(sum(races, 'count') / races.length).toFixed(1)} lines a race, ${Math.round(words)} words for each minute of race, silent ${(quiet * 100).toFixed(1)}% of the time from the off to the wire, longest silence after the first run through the field ${Math.max(...races.map(r => r.longest)).toFixed(1)} s, ${sum(upTo12, 'named')} of ${sum(upTo12, 'field')} runners named`);
+});
+
+test('no sentence is said twice in a race, and no wording is more than a third of its kind', () => {
+  // Every race was called in the same sentences: 195 of 200 first calls were "A and B vie for the early
+  // lead, C right there.", and the same line could come three and four times in one race.
+  const races = playLongMeet();
+  assert.deepEqual(told(races, 'twice'), []);
+  const by = {};
+  for (const r of races) for (const [slot, shape] of r.shapes) { const m = by[slot] || (by[slot] = new Map()); m.set(shape, (m.get(shape) || 0) + 1); }
+  const kinds = ['pre', 'off', 'break', 'run', 'more', 'fill', 'frac', 'change', 'turn', 'eighth', 'sixteenth', 'drive', 'wire', 'placings'];
+  for (const slot of kinds) {
+    assert.ok(by[slot], `no lines of the kind "${slot}"`);
+    const n = [...by[slot].values()].reduce((a, b) => a + b, 0);
+    const [shape, most] = [...by[slot]].sort((a, b) => b[1] - a[1])[0];
+    assert.ok(by[slot].size >= 4, `only ${by[slot].size} wordings of the kind "${slot}"`);
+    assert.ok(most / n <= 1 / 3, `"${shape}" is ${most} of the ${n} lines of the kind "${slot}"`);
+  }
+  const first = new Map();
+  for (const r of races) first.set(r.firstShape, (first.get(r.firstShape) || 0) + 1);
+  const [shape, most] = [...first].sort((a, b) => b[1] - a[1])[0];
+  assert.ok(most / races.length <= 0.5, `the first call is "${shape}" in ${most} of ${races.length} races`);
+  assert.ok(first.size >= 12, `only ${first.size} first calls`);
+  note(`wordings: ${kinds.map(k => `${k} ${by[k].size}`).join(', ')}; the commonest first call is ${most} of ${races.length} ("${shape}")`);
+});
+
+test('turning for home, the poles and the fractions are called as the leader gets there, or not at all', () => {
+  // "Turning for home" waited for the caller to be free: it came up to ten seconds late, inside the last
+  // furlong and a half. Now the two and a half seconds before the leader reaches the stretch are kept
+  // clear for it, and it's said within two seconds or left out. The three-quarter time was never called.
+  const races = playLongMeet();
+  assert.deepEqual(told(races, 'poles'), []);
+  assert.deepEqual(told(races, 'fraction'), []);
+  assert.deepEqual(told(races, 'stretch'), [], 'the same kind of line twice running in the stretch');
+  const turned = races.filter(r => r.turn).length;
+  assert.ok(turned >= races.length * 0.97, `the turn for home is called in ${turned} of ${races.length} races`);
+  note(`the turn for home called in ${turned} of ${races.length} races, never more than two seconds after the leader got there`);
+  // (At a mile the three quarters comes up as they turn for home, where that call belongs.)
+  const routes = races.filter(r => r.f > 8);
+  const called = routes.filter(r => r.threeQuarters).length;
+  assert.ok(routes.length > 100 && called > routes.length * 0.8, `the three quarters is called in ${called} of ${routes.length} races of more than a mile`);
+  note(`the three quarters called in ${called} of ${routes.length} races of more than a mile; ${total(races, 'fraction')} fractions called in all`);
+  assert.ok(total(races, 'fraction') > races.length * 1.6, `only ${total(races, 'fraction')} fractions called`);
+});
+
+test("what's said of a horse in the running is what it's doing: moving, flying, right there, third, last", () => {
+  // "X is making a run" was said of any horse that gained three places in four seconds: of horses tenth
+  // and seven lengths back, in the first twenty seconds, inside the last furlong. "C right there" was a
+  // length and a half behind. The horse "charging" at the turn was six lengths back, or checked next line.
+  const races = playLongMeet();
+  for (const kind of ['mover', 'flying', 'near', 'places', 'where', 'trouble']) assert.deepEqual(told(races, kind), [], kind);
+  for (const kind of ['mover', 'flying', 'near', 'three across', 'last', 'spread', 'where', 'trouble']) assert.ok(total(races, kind) > 10, `"${kind}" said ${total(races, kind)} times`);
+  note(`said: ${['leader', 'pair', 'change', 'mover', 'flying', 'gaining', 'closing', 'sure', 'home free', 'near', 'three across', 'last', 'spread', 'where', 'trouble', 'clean break', 'gets up', 'going away', 'holds on'].map(k => `${k} ${total(races, k)}`).join(', ')}`);
 });
 
 test('the caller puts a horse on the outside, on the inside or four wide only where it is running', () => {
@@ -310,22 +580,25 @@ test('the caller puts a horse on the outside, on the inside or four wide only wh
   // rail; "four wide" was the chart's third path.
   const races = playLongMeet();
   assert.deepEqual(told(races, 'place'), []);
-  for (const kind of ['wide', 'inside', 'between']) assert.ok(total(races, kind) > 0, `never says a horse is ${kind}`);
+  for (const kind of ['wide', 'inside', 'outside', 'between']) assert.ok(total(races, kind) > 0, `never says a horse is ${kind}`);
 });
 
 test('a clean break is one where nobody bumped, stumbled or broke slowly', () => {
   const races = playLongMeet();
   assert.deepEqual(told(races, 'break'), []);
   assert.ok(total(races, 'clean break') > 10, `a clean break called ${total(races, 'clean break')} times`);
+  assert.ok(total(races, 'break') > 10, `a stumble, a slow break or a bump called ${total(races, 'break')} times`);
 });
 
-test("the finish is called by the chart's margin, and 'going away' only for a winner not being caught", () => {
+test("the finish is called by the chart's margin, on the wire, and 'going away' only for a winner not being caught", () => {
   // "By a whisker!" covered margins up to six tenths of a length, with "1/2" in the running order above it.
+  // The winner's line starts within three tenths of a second of the wire, in every race.
   const races = playLongMeet();
   assert.deepEqual(told(races, 'finish'), []);
   assert.deepEqual(told(races, 'words'), [], 'a whisker, or a number of lengths in figures');
   assert.ok(total(races, 'finish') > races.length / 2);
   assert.ok(total(races, 'going away') > 10, `going away called ${total(races, 'going away')} times`);
+  assert.ok(total(races, 'holds on') > 10, `holding on called ${total(races, 'holds on')} times`);
 });
 
 test('the opening quarter is called fast or slow for its own distance', () => {
@@ -349,22 +622,50 @@ test("in a photo finish the caller doesn't say who won until the official sign",
   const photos = races.filter(r => r.photo);
   assert.ok(photos.length > 20, `only ${photos.length} photo finishes in ${races.length} races`);
   let winnerFirst = 0;
+  const won = /\bwins?\b|\bwon\b|winner|gets up|gets there|is up in time|gets the nod|got there|goes to|takes it by|holds|lasts|hangs on|romp|draws off|pulls clear|^It's .+, by /;
   for (const r of photos) {
     const where = `race day ${r.day}, race ${r.no}: ${r.lines.slice(-2).join(' / ')}`;
     const [wire, placings] = r.lines.slice(-2);
-    const two = [`${r.winner} and ${r.second}`, `${r.second} and ${r.winner}`];
-    const order = two.findIndex(x => wire === `${x} hit the wire together. It's a photo!`);
-    assert.ok(order >= 0, where);
-    assert.ok(placings.startsWith(`They'll need the photo for ${two[order]}.`) && / The time, [\d:.]+\.$/.test(placings), where);
+    const order = wire.indexOf(r.winner) < wire.indexOf(r.second) ? 0 : 1;
+    const two = [[r.winner, r.second], [r.second, r.winner]][order];
+    assert.ok(wire.includes(r.winner) && wire.includes(r.second) && /photo/i.test(wire), where);
+    assert.ok(placings.indexOf(two[0]) >= 0 && placings.indexOf(two[0]) < placings.indexOf(two[1]) && /photo|camera/.test(placings) && / The time, [\d:.]+\.$/.test(placings), where);
     if (order === 0) winnerFirst++;
-    assert.deepEqual(r.lines.filter(l => /\bwins?\b|\bwon\b|gets up|gets the nod|^It's .+, by /.test(l)), [], where);
+    assert.deepEqual(r.lines.slice(-2).filter(l => won.test(l)), [], where);
     assert.ok(!/by a (nose|head|neck)/.test(wire + placings), where);
-    assert.match(r.official, /^It's .+, by a (nose|head|neck)!$/);
-    assert.ok(r.official.startsWith(`It's ${r.winner}, by a `), `${where} / ${r.official}`);
+    assert.match(r.official, /, by a (nose|head|neck)!$/);
+    assert.ok(r.official.includes(r.winner) && !r.official.includes(r.second) && won.test(r.official), `${where} / ${r.official}`);
   }
   const share = winnerFirst / photos.length;
   assert.ok(share > 0.3 && share < 0.7, `the winner is named first in ${winnerFirst} of ${photos.length} photo finishes`);
   assert.deepEqual(races.filter(r => !r.photo && r.official !== null).map(r => `race day ${r.day}, race ${r.no}`), [], 'a race that is not a photo has a line for the sign');
+  // The line for the sign isn't always the same one.
+  const signs = new Map();
+  for (const r of photos) { const k = r.official.replace(r.winner, 'N'); signs.set(k, (signs.get(k) || 0) + 1); }
+  assert.ok(signs.size >= 4 && Math.max(...signs.values()) <= photos.length / 2, `the official line: ${[...signs].map(([k, n]) => `${n} x ${k}`).join(' / ')}`);
+});
+
+test('watched at 2x the call is its shorter lines, and at 4x only the headlines, and both are as true as at 1x', () => {
+  // At 2x and 4x the caller said nothing at all. A second of speech covers two or four seconds of race, so
+  // at 2x each line is in its shortest wording, and at 4x there's the off, the leader on each part of the
+  // track, lead changes, the turn for home, a furlong out and the winner.
+  const fast = playLongMeet().flatMap(r => r.fast || []);
+  for (const kind of ['leader', 'pair', 'crowded', 'long', 'twice', 'change', 'sure', 'closing', 'place', 'mover', 'flying', 'near', 'places', 'where', 'trouble', 'break', 'poles', 'fraction', 'stretch', 'finish', 'words']) assert.deepEqual(told(fast, kind), [], kind);
+  const [twice, four] = [2, 4].map(speed => fast.filter(r => r.speed === speed));
+  assert.equal(twice.length, 120);
+  for (const r of fast) {
+    for (const kind of ['off', 'wire', 'placings']) assert.ok(r.slots.includes(kind), `race day ${r.day}, race ${r.no} at ${r.speed}x: no "${kind}" line`);
+    assert.ok((r.said.leader || 0) + (r.said.pair || 0) >= 1, `race day ${r.day}, race ${r.no} at ${r.speed}x: nobody is ever said to lead`);
+  }
+  const headlines = new Set(['pre', 'off', 'run', 'fill', 'change', 'turn', 'eighth', 'wire', 'placings']);
+  assert.deepEqual(four.flatMap(r => r.slots.filter(k => !headlines.has(k)).map(k => `race day ${r.day}, race ${r.no}: a "${k}" line`)), [], 'more than the headlines at 4x');
+  // Real seconds of silence, and lines: fewer and shorter as the race goes by faster.
+  const [q2, q4] = [twice, four].map(rs => sum(rs, 'quiet') / sum(rs, 'secs'));
+  assert.ok(q2 < 0.35 && q4 < 0.5, `silent ${(q2 * 100).toFixed(0)}% of the race at 2x and ${(q4 * 100).toFixed(0)}% at 4x`);
+  const [n2, n4] = [twice, four].map(rs => sum(rs, 'count') / rs.length);
+  assert.ok(n2 > 15 && n2 < 30 && n4 > 7 && n4 < 14, `${n2.toFixed(1)} lines a race at 2x and ${n4.toFixed(1)} at 4x`);
+  assert.ok(sum(twice, 'called') / sum(twice, 'changes') > 0.75 && sum(four, 'called') / sum(four, 'changes') > 0.5, `lead changes called: ${sum(twice, 'called')} of ${sum(twice, 'changes')} at 2x, ${sum(four, 'called')} of ${sum(four, 'changes')} at 4x`);
+  note(`${twice.length} races at 2x: ${n2.toFixed(1)} lines a race, silent ${(q2 * 100).toFixed(1)}%, ${sum(twice, 'called')} of ${sum(twice, 'changes')} lead changes called; at 4x: ${n4.toFixed(1)} lines a race, silent ${(q4 * 100).toFixed(1)}%, ${sum(four, 'called')} of ${sum(four, 'changes')} lead changes called`);
 });
 
 test('a horse claimed out of a race it wins ran it, and is photographed, for the people who entered it', () => {

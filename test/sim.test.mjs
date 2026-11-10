@@ -381,8 +381,8 @@ test('the voice is given times and numbers in words', () => {
       for (const l of call.lines) {
         assert.equal(typeof l.say, 'string', `"${l.text}" has no spoken form`);
         assert.ok(!/[\d#:½¼¾&<>]|Dr\./.test(l.say), `the voice is given "${l.say}"`);
-        const shown = l.kind === 'frac' && l.text.match(/ in \d+ (flat|and (\d))/);
-        if (shown) { fractions++; assert.ok(l.say.includes(` ${fifth[+shown[2] || 0]}`), `"${l.text}" is said as "${l.say}"`); }
+        const shown = l.kind === 'frac' && l.text.match(/\d (flat|and (\d))/);
+        if (l.kind === 'frac') { fractions++; assert.ok(shown && l.say.includes(` ${fifth[+shown[2] || 0]}`), `"${l.text}" is said as "${l.say}"`); }
       }
       const last = call.lines[call.lines.length - 1];
       assert.match(last.text, /The time, (\d:)?\d\d\.\d\d\.$/, 'the call box lost the time in digits');

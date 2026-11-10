@@ -10,7 +10,7 @@ import { marginShort, fmtTime, fmtClock } from '../chart.js';
 import { game, save, goToGate, callFor, runnersFor, raceLabel, horseOf, myBets } from '../game.js';
 import { BET_NAMES } from '../tote.js';
 import { clockText } from '../world.js';
-import { pace, officialLine } from '../call.js';
+import { pace, officialLine, SLOW } from '../call.js';
 import * as audio from '../audio.js';
 
 export function renderWatch(el, nav, params) {
@@ -18,11 +18,10 @@ export function renderWatch(el, nav, params) {
   const result = goToGate(race);
   const run = result.run;
   const runners = runnersFor(race);
-  const call = callFor(race, run);
   const t0 = run.t0;
   const endT = run.frames.length * run.dt;
   const winT = t0 + run.results[0].time;
-  const close = run.results[1] && run.results[1].toPrev < 0.6;
+  const close = run.results[1] && run.results[1].toPrev < SLOW.margin;
 
   clear(el);
   el.hidden = false;
@@ -75,11 +74,17 @@ export function renderWatch(el, nav, params) {
   );
 
   const scene = new RaceScene(canvas, { race, run, runners, wx: game.world.cards[game.world.day].wx });
+  // The call is planned here, at the gate, for the voice that will read it: how long this voice takes over
+  // a line decides which lines fit where. (With the voice off it's planned the same way, so the call box
+  // shows the same lines either way.)
+  const call = callFor(race, run, {
+    lineSeconds: (line, toWire) => audio.voiceSeconds(line.say, pace(line, toWire).rate),
+    factor: audio.voiceFactor,
+  });
   let T = -5.2;            // sim time; negative is the wait in the gate
   let speed = 1;
   let last = performance.now();
   let raf = 0;
-  let shown = -1;
   let rung = false, cheered = false, ended = false, photoShown = false;
   let orderAt = -1;
   let following = null;
@@ -91,8 +96,17 @@ export function renderWatch(el, nav, params) {
   if (game.player.settings.sound) audio.bugle();
   audio.prepareCall(call.lines);
 
+  // The race's clock for the call, in seconds from the gates opening: the recording's while it runs (slow
+  // motion and all), and real time once it has ended.
+  let endedAt = 0;
+  let up = null; // the line of the call that's up, and when it came up
+  const callClock = () => (ended ? endT + (performance.now() - endedAt) / 1000 : T);
+  const seconds = () => performance.now() / 1000;
+
+  // The call is read at every speed. A change of speed doesn't cut off the line being said: the rest of
+  // the race is planned again from where it is, in shorter lines at 2x and only the headlines at 4x.
   function setSpeed(s) {
-    if (s !== speed) audio.hush(); // the call is read at normal speed only
+    if (s !== speed) call.setSpeed(s, callClock() - t0, seconds());
     speed = s;
     speedBtns.forEach((b, i) => b.setAttribute('aria-pressed', String([1, 2, 4][i] === s)));
   }
@@ -110,13 +124,15 @@ export function renderWatch(el, nav, params) {
       if (T < winT) cheered = true;
       T = endT; scene.lastT = null;
     }
+    // The caller picks the race up from there.
+    call.skip(T - t0, seconds());
   }
 
   function frame(tNow) {
     const realDt = Math.min(0.1, (tNow - last) / 1000);
     last = tNow;
     // A close finish goes into slow motion for the last couple of seconds.
-    const slow = close && speed === 1 && T > winT - 2.2 && T < winT + 0.6 ? 0.4 : 1;
+    const slow = close && speed === 1 && T > winT - SLOW.before && T < winT + SLOW.after ? SLOW.by : 1;
     if (!ended) T = Math.min(endT, T + realDt * speed * slow);
     const clockT = T - t0;
 
@@ -132,12 +148,12 @@ export function renderWatch(el, nav, params) {
     const fr = run.fractions.filter(f => f.t <= clockT);
     frs.textContent = fr.length ? fr.map((f, i) => `${i === fr.length - 1 && f.at >= race.distance - 1 ? 'Final' : fracName(f.at)} ${fmtTime(f.t)}`).join('   ') : fieldText(race);
 
-    // The call.
-    let idx = -1;
-    for (let i = 0; i < call.lines.length; i++) if (call.lines[i].t <= clockT) idx = i;
-    if (idx !== shown && idx >= 0) {
-      shown = idx;
-      showLine(call.lines[idx], idx > 0 ? call.lines[idx - 1].text : '');
+    // The call: the line that has come up, if it's a new one, with the one before it.
+    const line = call.next(callClock() - t0, seconds());
+    if (line) {
+      const k = call.lines.indexOf(line);
+      up = { line, at: performance.now() };
+      showLine(line, k > 0 ? call.lines[k - 1].text : '');
     }
 
     // Running order, a few times a second.
@@ -161,19 +177,18 @@ export function renderWatch(el, nav, params) {
     raf = requestAnimationFrame(frame);
   }
 
-  // The caller's new line, with the one before it above, read aloud at normal speed. The voice is given
-  // the line's spoken form, where a time is in words ("one seventeen and two" for 1:17.55), at a pace
-  // that builds toward the wire. If it's still on the line before, this one waits its turn, and how long
-  // it has waited is counted on the race's clock (in slow motion a line can wait longer) and in real time
-  // once the recording has ended.
-  let endedAt = 0;
-  const callClock = () => (ended ? endT + (performance.now() - endedAt) / 1000 : T);
+  // The caller's new line, with the one before it above, read aloud. The voice is given the line's
+  // spoken form, where a time is in words ("one seventeen and two" for 1:17.55), at a pace that builds
+  // toward the wire. The plan has the voice free when a line comes up; if it's still on the line before
+  // (a voice slower than it was taken to be), this one waits its turn, and how long it has waited is
+  // counted on the race's clock (in slow motion a line can wait longer) and in real time once the
+  // recording has ended.
   function showLine(line, before) {
     prev.textContent = before;
     now.textContent = line.text;
     fitCall();
     now.style.animation = 'none'; void now.offsetWidth; now.style.animation = '';
-    if (speed === 1 && !quiet) audio.say(line, { ...pace(line, winT - T), clock: callClock });
+    if (!quiet) audio.say(line, { ...pace(line, winT - T), clock: callClock });
   }
 
   // A long line on a narrow screen gets a smaller size rather than spilling out of the box. The line
@@ -279,14 +294,23 @@ export function renderWatch(el, nav, params) {
         if (cap.scrollWidth > cap.clientWidth) cap.classList.add('tight');
         if (cap.scrollWidth > cap.clientWidth) { cap.classList.remove('tight'); cap.textContent = short; }
         photoShown = true;
-        setTimeout(() => {
+        const raise = () => {
           sign.classList.add('up');
           signUp = true;
           if (!gone) drawOrder(T); // the pair in the photo, in the order they finished
           // Only now does the caller say who won it (unless the race has been left meanwhile).
           if (call.official && !gone) showLine(officialLine(call.official), now.textContent);
           done();
-        }, 1600);
+        };
+        // The sign waits for the caller's last line (second, third and the time) to be over, by the time
+        // it was planned to take. Watched at 2x or 4x the recording is done well before he is, and the
+        // winner's line would have come up over that one.
+        const wait = () => {
+          const last = call.lines[call.lines.length - 1];
+          const over = !last || (up && up.line === last && performance.now() >= up.at + last.d * 1000) || performance.now() - endedAt > 20000;
+          if (over || gone) raise(); else setTimeout(wait, 100);
+        };
+        setTimeout(wait, 1600);
       }, 1600);
     } else setTimeout(done, 900);
   }
