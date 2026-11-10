@@ -53,6 +53,7 @@ const audio = await import('../js/audio.js');
 const { pickVoice, offeredVoices, callQueue, sayTime } = audio;
 const { raceCall, pace, officialLine } = await import('../js/call.js');
 const { createWorld, simulateRace, applyResult, nextDay } = await import('../js/world.js');
+const { STAKES, BIG_STAKES } = await import('../js/data.js');
 const last = () => spoken[spoken.length - 1];
 
 test('the race call is read aloud with the sound off, and not with the voice off', () => {
@@ -263,7 +264,7 @@ function rig({ syllablesASecond = 4.3, startAfter = 20, events = true } = {}) {
       log.push({ ev: 'speak', t, T: r.stamp(), line, text, rate: o.rate, pitch: o.pitch });
       const takes = 120 + (sayTime(text, o.rate) - 0.12) * 1000 * 4.3 / syllablesASecond;
       clock.later(() => { if (saying === me && r.events) o.onstart(); }, r.startAfter);
-      clock.later(() => { if (saying === me && r.events) { saying = null; log.push({ ev: 'end', t, text }); o.onend(); } }, Math.max(r.startAfter, takes));
+      clock.later(() => { if (saying === me && r.events) { saying = null; log.push({ ev: 'end', t, T: r.stamp(), text }); o.onend(); } }, Math.max(r.startAfter, takes));
     },
     stop(why) { log.push({ ev: 'stop', t, T: r.stamp(), why: why || null, cut: saying ? saying.text : null }); saying = null; },
   };
@@ -517,5 +518,26 @@ test('over a race at normal speed no line is cut off before the wire, the wire c
     }
     // Lines are left out when the voice is still on the one before (more with a slow voice), but not many.
     assert.ok(spoken / lines > 0.9, `${syllablesASecond} syllables a second: ${spoken} of ${lines} lines were said`);
+  }
+});
+
+test('"And they\'re off!" is said in a race with a name, even by a slow voice', () => {
+  // "The field is in the gate for the Odds and Ends Handicap." takes a voice about three seconds, and it
+  // came up 2.6 seconds before the off: in a card's feature race the line was still being said at the
+  // off, which was cut off by it once and left out for it since. A named race's line now comes up sooner.
+  const w = createWorld('test-voice', '2026-09-26');
+  const race = w.cards[w.day].races[0];
+  const run = simulateRace(race, w, { record: true });
+  for (const { name } of [...STAKES, BIG_STAKES, { name: '' }]) {
+    const call = raceCall({ ...race, name }, run, race.entries.map(e => w.horses[e.hid].name));
+    const named = { lines: call.lines, official: call.official, t0: run.t0, winT: run.t0 + run.results[0].time, endT: run.frames.length * run.dt, close: false };
+    assert.ok(run.t0 + call.lines[0].t > -5.2, `${name}: the first line is due before the race screen opens`);
+    for (const syllablesASecond of [3.7, 4.3, 4.9]) {
+      const r = rig({ syllablesASecond });
+      replay(r, named);
+      const start = r.log.filter(x => x.ev !== 'stop' && x.T < 3).map(x => `${x.ev} ${x.text}`);
+      assert.deepEqual(start.slice(0, 4), [`speak ${call.lines[0].say}`, `end ${call.lines[0].say}`, "speak And they're off!", "end And they're off!"], `${name || 'no name'}, ${syllablesASecond} syllables a second`);
+      assert.equal(r.log.filter(x => x.ev === 'stop' && x.T < 3).length, 0, `${name}: a line was cut off at the start`);
+    }
   }
 });

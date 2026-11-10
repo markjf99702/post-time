@@ -129,7 +129,9 @@ export function raceCall(race, run, names) {
   const dur = run.frames.length * run.dt - t0;
   const finishT = run.finalTime;
 
-  say(-t0 - 2.6, race.name ? `The field is in the gate for the ${race.name}.` : `The field is in the gate.`, 'pre');
+  // A race's name takes the voice a while ("The field is in the gate for the Odds and Ends Handicap." is
+  // about three seconds), so that line comes up sooner than the plain one, to be done by the off.
+  say(-t0 - (race.name ? 3.4 : 2.6), race.name ? `The field is in the gate for the ${race.name}.` : `The field is in the gate.`, 'pre');
   say(-t0, 'And they\'re off!', 'off');
 
   // The break. It's a clean one only if nobody stumbled, broke slowly or was bumped.
