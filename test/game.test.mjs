@@ -12,10 +12,20 @@ globalThis.localStorage = {
 globalThis.window = new EventTarget();
 const { game, newMeet, load, save, card, toteFor, placeBet, goToGate, mtpState, advanceDay, callFor, horseOf } = await import('../js/game.js');
 const { stateAt } = await import('../js/sim.js');
+const { buildWorld } = await import('../js/world.js');
 
 function build(seed) {
   const meet = newMeet(seed);
   while (!meet.step()) { /* a week of history at a time */ }
+}
+
+// A meet with a fixed seed and first race day (newMeet takes today's date), and a new player.
+function buildOn(seed, start) {
+  const steps = buildWorld(seed, start);
+  let r = steps.next();
+  while (!r.done) r = steps.next();
+  game.world = r.value;
+  game.player = { v: 1, bank: 200, bets: {}, settled: {}, ledger: [], book: [], atm: 0, opened: {}, settings: { sound: true, voice: false }, best: null };
 }
 
 // A long meet played the way the page plays it: every race sent to the gate and called. What each race
@@ -215,4 +225,33 @@ test("a save that isn't a meet is left alone until a new meet is started", () =>
   store.set('post-time/player', player);
   assert.equal(load(), true);
   assert.ok(card().races.length);
+});
+
+// What the meet with the seed 'pinned', begun on 3 October 2026, comes to over its first three race days,
+// with a $2 win ticket on number 1 in every race: the first three home by number, the time, the $2 win
+// price, and the bankroll after each day. A race's result comes only from its seed and its entries, and
+// a meet from its seed, so any change that moves a random draw in the race, the world, the handicapping
+// or the tote changes these lines, and with them the rest of every meet in progress. If that's meant,
+// set the new lines in the same commit and say in its message that meets in progress will run
+// differently from there.
+const PINNED = [
+  { bank: 196.8, races: ['R1 5-3-8 71.39 $13.20', 'R2 7-1-8 64.59 $10.40', 'R3 2-7-1 84.22 $8.60', 'R4 4-1-5 70.30 $4.20', 'R5 3-4-1 64.06 $35.40', 'R6 3-7-5 64.66 $7.80', 'R7 7-2-6 63.43 $21.40', 'R8 1-2-4 101.60 $12.80'] },
+  { bank: 180.8, races: ['R1 5-8-4 110.97 $13.80', 'R2 9-2-4 64.60 $11.60', 'R3 5-3-7 103.24 $5.40', 'R4 7-1-2 103.21 $15.20', 'R5 4-3-7 76.83 $12.20', 'R6 5-9-4 63.99 $13.80', 'R7 2-7-3 108.94 $14.60', 'R8 8-7-2 94.62 $10.80'] },
+  { bank: 182.6, races: ['R1 7-1-9 84.92 $17.60', 'R2 2-4-3 97.90 $17.80', 'R3 1-7-3 64.30 $10.80', 'R4 8-5-4 64.87 $14.40', 'R5 4-2-5 83.38 $7.60', 'R6 4-1-6 109.43 $7.40', 'R7 7-1-4 102.99 $27.40', 'R8 1-5-8 109.21 $7.00'] },
+];
+
+test('a meet in progress runs the way it did: three race days of a fixed meet come out the same', () => {
+  buildOn('pinned', '2026-10-03');
+  const played = [];
+  for (let d = 0; d < PINNED.length; d++) {
+    const races = [];
+    for (const race of card().races) {
+      assert.ok(placeBet(race, { type: 'win', sel: [0], amt: 2 }).ok);
+      const { run, pay } = goToGate(race);
+      races.push(`R${race.no} ${run.results.slice(0, 3).map(r => race.entries[r.h].pp).join('-')} ${run.finalTime.toFixed(2)} $${pay.win[run.results[0].h].toFixed(2)}`);
+    }
+    advanceDay();
+    played.push({ bank: game.player.bank, races });
+  }
+  assert.deepEqual(played, PINNED);
 });
