@@ -113,7 +113,7 @@ export function renderRace(root, nav, params) {
       );
       return;
     }
-    say(bets.length ? [h('b', {}, `${bets.length} ticket${bets.length > 1 ? 's' : ''}`), ` · ${money(spent)} on this race`] : [h('span', { class: 'muted' }, isNext ? 'No tickets yet. You can watch without betting.' : race.status === 'official' ? 'This race is over.' : `Race ${race.no} goes after race ${nxt ? nxt.no : ''}.`)]);
+    say(bets.length ? [h('b', {}, `${bets.length} ticket${bets.length > 1 ? 's' : ''}`), ` · ${money(spent)} on this race`] : [h('span', { class: 'muted' }, isNext ? 'No tickets yet. You can watch without betting.' : race.status === 'official' ? 'This race is over.' : `Race ${nxt ? nxt.no : ''} is up first.`)]);
     if (race.status === 'official') bar.append(h('button', { class: 'btn', type: 'button', onclick: () => nav.go('result', { no: race.no }) }, 'Results ▸'));
     else if (isNext) bar.append(h('button', { class: 'btn brass', type: 'button', onclick: toGate }, 'To the gate ▸'));
     else bar.append(h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('race', { no: nxt.no }) }, `Race ${nxt.no} first`));
@@ -258,7 +258,11 @@ function fillMore(more, race, e, hs) {
     more.append(t);
   }
   if (hs.works.length) {
-    more.append(h('p', { class: 'works' }, h('b', {}, 'Works: '), hs.works.slice().reverse().map((w, k) => [
+    // Newest first, by date. They're kept in the order they were made, and a work's date is a few days
+    // before that, so two made on the same day (as every horse has from before the meet) can be either
+    // way round: one horse in five listed a work from August ahead of one from September.
+    const works = hs.works.slice().reverse().sort((a, b) => (a.dt < b.dt ? 1 : a.dt > b.dt ? -1 : 0));
+    more.append(h('p', { class: 'works' }, h('b', {}, 'Works: '), works.map((w, k) => [
       k ? ' · ' : '', `${shortDate(w.dt).slice(0, -2)} ${w.f}f ${w.surf === 't' ? 'turf' : 'ft'} ${fmtWork(w.t)} ${w.g} `,
       w.rank === 1 ? h('b', {}, `${w.rank}/${w.of} ●`) : `${w.rank}/${w.of}`,
     ])));
@@ -411,7 +415,8 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
     panel.append(ticketList(race, false, changed));
     return;
   }
-  panel.append(h('p', { class: 'note' }, open ? MOVING : `You can bet this race once race ${nextRace().no} is over. The odds will have moved by then.`));
+  // A later race opens for betting when the one before it is over (which isn't always the one that's up).
+  panel.append(h('p', { class: 'note' }, open ? MOVING : `You can bet this race once race ${race.no - 1} is over. The odds will have moved by then.`));
 
   const builder = h('div', { class: 'builder' });
   panel.append(builder);

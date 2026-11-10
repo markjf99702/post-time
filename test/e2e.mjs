@@ -149,6 +149,10 @@ await page.locator('.race-row').nth(2).click();
 await page.click('.tabs button:nth-child(4)');
 assert.equal(await page.locator('.tote-top span').first().textContent(), 'Opening odds');
 assert.equal(await page.evaluate(() => window.postTime.game.player.opened['0:3']), undefined, "race 3's clock started while race 1 was up");
+// It opens for betting after race 2, the one before it, and race 1 is the one that's up.
+assert.match(await page.locator('.tote + .note').textContent(), /^You can bet this race once race 2 is over\./);
+assert.equal(await page.locator('.post-bar .info').textContent(), 'Race 1 is up first.');
+assert.match(await page.locator('meta[name="description"]').getAttribute('content'), /Horses, form and your bankroll carry over/);
 await page.click('.rhead .back');
 await page.waitForSelector('.races');
 
@@ -177,6 +181,25 @@ const sexWords = await page.evaluate(() => {
   return out;
 });
 assert.deepEqual(sexWords, ['colt 4', 'horse 5', 'filly 4', 'mare 6', 'gelding 6']);
+// A horse's workouts are listed newest first by their dates, whatever order they were made in. (Two made
+// on the same day are dated a few days apart, either way round.)
+const works = await page.evaluate(async () => {
+  const { shortDate } = await import('./js/world.js');
+  const { game, card, nav } = window.postTime;
+  const race = card().races.find(r => r.status !== 'official');
+  const k = race.entries.findIndex(e => new Set(game.world.horses[e.hid].works.map(w => w.dt)).size >= 2);
+  const horse = game.world.horses[race.entries[k].hid], was = horse.works;
+  // Oldest first, then the newest moved to the front: no way of reading the list in order gets it right.
+  const byDate = was.slice().sort((a, b) => (a.dt < b.dt ? -1 : 1));
+  horse.works = [byDate[byDate.length - 1], ...byDate.slice(0, -1)];
+  nav.refresh();
+  document.querySelectorAll('.entry-head')[k].click();
+  const shown = document.querySelectorAll('.entry')[k].querySelector('.works').textContent.match(/\d{1,2}[A-Z][a-z]{2}(?= \df)/g);
+  horse.works = was;
+  nav.refresh();
+  return { shown, newestFirst: byDate.reverse().map(w => shortDate(w.dt).slice(0, -2)) };
+});
+assert.deepEqual(works.shown, works.newestFirst, 'the workouts are not listed newest first');
 
 // The forum has posts with picks.
 await page.click('.tabs button:nth-child(3)');
@@ -358,6 +381,21 @@ assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= i
 // size as the lines come and go, and the Results button is on the screen at the end.
 await page.setViewportSize({ width: 320, height: 568 });
 await page.click('.race-row.next');
+// The past performances of every horse in the race, opened on this small phone: a table wider than its
+// card can be slid sideways to the end of its rows (it used to be cut off at the card's edge).
+const cutOff = await page.evaluate(() => {
+  let wide = 0, stuck = 0;
+  for (const head of document.querySelectorAll('.entry-head')) {
+    head.click();
+    const more = head.closest('.entry').querySelector('.entry-more'), table = more.querySelector('.pps');
+    if (!table || table.getBoundingClientRect().right <= more.getBoundingClientRect().right - 11) continue;
+    wide++;
+    more.scrollLeft = 1000;
+    if (table.getBoundingClientRect().right > more.getBoundingClientRect().right - 11) stuck++;
+  }
+  return { wide, stuck, sideways: document.documentElement.scrollWidth > innerWidth };
+});
+assert.deepEqual({ stuck: cutOff.stuck, sideways: cutOff.sideways }, { stuck: 0, sideways: false }, `${cutOff.stuck} of ${cutOff.wide} tables of past performances wider than their cards can't be reached`);
 await page.click('.tabs button:nth-child(4)');
 await page.locator('.pick-row').nth(0).locator('button').nth(0).click();
 await page.click('.builder .btn');
