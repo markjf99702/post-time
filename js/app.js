@@ -7,6 +7,7 @@ import { renderRace } from './ui/race.js';
 import { renderWatch } from './ui/watch.js';
 import { renderResult, renderCircle } from './ui/results.js';
 import { renderBook, renderHelp } from './ui/book.js';
+import { SAMPLE, pace } from './call.js';
 import * as audio from './audio.js';
 
 const app = document.getElementById('app');
@@ -170,7 +171,8 @@ optVoiceName.addEventListener('change', () => {
   audio.setVoiceName(savedVoice());
   save();
 });
-document.getElementById('hearIt').addEventListener('click', () => audio.hearIt());
+// Hear it: a line of a call in that voice, at the pace of one about twenty seconds from the wire.
+document.getElementById('hearIt').addEventListener('click', () => audio.hearIt(SAMPLE, pace(SAMPLE, 20)));
 audio.onVoicesChanged(showVoices);
 // Starting over takes two taps: the first says what it will do.
 const restart = document.getElementById('restart');

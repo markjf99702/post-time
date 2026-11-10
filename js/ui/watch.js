@@ -10,7 +10,7 @@ import { marginShort, fmtTime, fmtClock } from '../chart.js';
 import { game, save, goToGate, callFor, runnersFor, raceLabel, horseOf, myBets } from '../game.js';
 import { BET_NAMES } from '../tote.js';
 import { clockText } from '../world.js';
-import { aloud } from '../call.js';
+import { pace, officialLine } from '../call.js';
 import * as audio from '../audio.js';
 
 export function renderWatch(el, nav, params) {
@@ -88,11 +88,12 @@ export function renderWatch(el, nav, params) {
   if (resizer) resizer.observe(stage); else window.addEventListener('resize', onResize);
   const stopResizing = () => { if (resizer) resizer.disconnect(); else window.removeEventListener('resize', onResize); };
   if (game.player.settings.sound) audio.bugle();
+  audio.prepareCall(call.lines);
 
   function setSpeed(s) {
+    if (s !== speed) audio.hush(); // the call is read at normal speed only
     speed = s;
     speedBtns.forEach((b, i) => b.setAttribute('aria-pressed', String([1, 2, 4][i] === s)));
-    if (s > 1) audio.hush();
   }
   function skip() {
     audio.hush();
@@ -149,13 +150,18 @@ export function renderWatch(el, nav, params) {
   }
 
   // The caller's new line, with the one before it above, read aloud at normal speed. The voice is given
-  // the line's spoken form, where a time is in words ("one seventeen and two" for 1:17.55).
+  // the line's spoken form, where a time is in words ("one seventeen and two" for 1:17.55), at a pace
+  // that builds toward the wire. If it's still on the line before, this one waits its turn, and how long
+  // it has waited is counted on the race's clock (in slow motion a line can wait longer) and in real time
+  // once the recording has ended.
+  let endedAt = 0;
+  const callClock = () => (ended ? endT + (performance.now() - endedAt) / 1000 : T);
   function showLine(line, before) {
     prev.textContent = before;
     now.textContent = line.text;
     fitCall();
     now.style.animation = 'none'; void now.offsetWidth; now.style.animation = '';
-    if (speed === 1 && !quiet) audio.say(line.say || line.text);
+    if (speed === 1 && !quiet) audio.say(line, { ...pace(line, winT - T), clock: callClock });
   }
 
   // A long line on a narrow screen gets a smaller size rather than spilling out of the box. The line
@@ -197,6 +203,7 @@ export function renderWatch(el, nav, params) {
 
   function finish() {
     ended = true;
+    endedAt = performance.now();
     audio.raceLevel(0.1, 0);
     setTimeout(() => audio.stopRace(), 2500);
     const flash = h('div', { class: 'w-flash' }, call.photo ? 'PHOTO' : 'OFFICIAL');
@@ -223,21 +230,22 @@ export function renderWatch(el, nav, params) {
         setTimeout(() => {
           sign.classList.add('up');
           // Only now does the caller say who won it (unless the race has been left meanwhile).
-          if (call.official && !gone) showLine({ text: call.official, say: aloud(call.official) }, now.textContent);
+          if (call.official && !gone) showLine(officialLine(call.official), now.textContent);
           done();
         }, 1600);
       }, 1600);
     } else setTimeout(done, 900);
   }
 
-  // Put everything back the way it was, whichever way the race is left.
+  // Put everything back the way it was, whichever way the race is left. On the way to the results the
+  // caller finishes the line he's on (it's usually the placings and the time); any other way out, he stops.
   let gone = false;
-  function teardown() {
+  function teardown(toResults = false) {
     if (gone) return;
     gone = true;
     cancelAnimationFrame(raf);
     audio.stopRace();
-    audio.hush();
+    audio.hush({ finish: toResults });
     stopResizing();
     el.hidden = true;
     clear(el);
@@ -245,7 +253,7 @@ export function renderWatch(el, nav, params) {
     for (const x of behind) x.inert = false;
   }
   function leave(where) {
-    teardown();
+    teardown(where === 'result');
     nav.go(where, { no: race.no, fresh: true });
   }
 

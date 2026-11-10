@@ -367,15 +367,25 @@ assert.equal(await page.locator('#bank').textContent(), '$200.00', 'the new meet
 // voices are the ones Chrome lists on a Mac: Apple's, novelty ones and all, then Chrome's own, which need
 // the internet.
 const macVoices = JSON.parse(await readFile(join(root, 'test/voices.fixture.json'), 'utf8')).lists['Chrome, Mac (nothing downloaded)'];
+// It says when a line starts and ends, as a real one does, and takes __wordMs for each word of it.
 await page.addInitScript(voices => {
-  window.__voice = [];
-  window.__said = [];
+  window.__voice = [];  // what it was asked to read, and '(cancel)'
+  window.__said = [];   // the same lines, with the voice, pace and pitch asked for
+  window.__ended = [];  // the lines it got to the end of
+  window.__wordMs = 80;
+  let saying = null;
   const list = voices.map(([name, lang, local]) => ({ name, lang, localService: !!local }));
   window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
   Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
     getVoices: () => list,
-    speak(u) { window.__voice.push(u.text); window.__said.push({ text: u.text, voice: u.voice ? u.voice.name : null, lang: u.lang }); },
-    cancel() { window.__voice.push('(cancel)'); },
+    speak(u) {
+      const me = saying = {};
+      window.__voice.push(u.text);
+      window.__said.push({ text: u.text, voice: u.voice ? u.voice.name : null, lang: u.lang, rate: u.rate, pitch: u.pitch, volume: u.volume });
+      setTimeout(() => { if (saying === me && u.onstart) u.onstart({}); }, 10);
+      setTimeout(() => { if (saying === me) { saying = null; window.__ended.push(u.text); if (u.onend) u.onend({}); } }, Math.max(300, u.text.split(' ').length * window.__wordMs));
+    },
+    cancel() { window.__voice.push('(cancel)'); saying = null; },
     addEventListener() {},
   } });
 }, macVoices);
@@ -396,16 +406,21 @@ const offered = await page.locator('#optVoiceName option').allTextContents();
 assert.equal(offered[0], 'Best here (Google US English)');
 assert.equal(offered[1], 'Google US English (needs the internet)');
 assert.ok(offered.includes('Samantha') && !offered.some(o => /^(Fred|Zarvox|Bells|Eddy)/.test(o)), `the voices offered: ${offered.join(', ')}`);
-const heard = async () => (await page.evaluate(() => window.__said.splice(0))).filter(u => /Copper Detour/.test(u.text));
-await page.evaluate(() => window.__said.splice(0));
-await page.click('#hearIt');
-await page.waitForTimeout(400);
-assert.deepEqual((await heard()).map(u => [u.voice, u.lang]), [['Google US English', 'en-US']], 'Hear it should say one line, in the best voice here');
+// Hear it, and what was said for it: one line, however soon after the last (a tap while it's still talking
+// starts it again, a quarter of a second after the cancel).
+const hearIt = async () => {
+  await page.evaluate(() => window.__said.splice(0));
+  await page.click('#hearIt');
+  await page.waitForFunction(() => window.__said.length > 0);
+  await page.waitForTimeout(400);
+  return page.evaluate(() => window.__said.splice(0));
+};
+const sample = await hearIt();
+assert.deepEqual(sample.map(u => [u.text, u.voice, u.lang]), [["Turning for home, it's Copper Detour by a length and a half!", 'Google US English', 'en-US']], 'Hear it should say one line, in the best voice here');
+assert.ok(sample[0].rate > 1.25 && sample[0].rate < 1.6 && sample[0].pitch > 1, `Hear it isn't at the pace of a race: ${sample[0].rate}, ${sample[0].pitch}`);
 await page.selectOption('#optVoiceName', 'Samantha');
 assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('post-time/player')).settings.voiceName), 'Samantha', "the voice chosen isn't saved");
-await page.click('#hearIt');
-await page.waitForTimeout(400);
-assert.deepEqual((await heard()).map(u => u.voice), ['Samantha'], 'Hear it should say one line, in the voice chosen');
+assert.deepEqual((await hearIt()).map(u => u.voice), ['Samantha'], 'Hear it should say one line, in the voice chosen');
 await page.reload();
 await page.waitForSelector('.races');
 await page.click('#menuBtn');
@@ -417,9 +432,7 @@ await page.reload();
 await page.waitForSelector('.races');
 await page.click('#menuBtn');
 assert.equal(await page.locator('#optVoiceName option:checked').textContent(), 'Ava (Premium) (not here now)');
-await page.click('#hearIt');
-await page.waitForTimeout(400);
-assert.deepEqual((await heard()).map(u => u.voice), ['Google US English'], 'with the chosen voice missing, the best here should read');
+assert.deepEqual((await hearIt()).map(u => u.voice), ['Google US English'], 'with the chosen voice missing, the best here should read');
 assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('post-time/player')).settings.voiceName), 'Ava (Premium)', 'a missing voice was forgotten');
 // Back to the best here: nothing is saved for it, as in a save from before there was a choice.
 await page.selectOption('#optVoiceName', '');
@@ -429,6 +442,7 @@ await page.click('#menuBtn');
 // The race's Sound button quiets the caller too: turned off during a race, it cuts off the line being read
 // and the ones after it until it's turned back on. The next race is read again with Sound off, since
 // reading the call aloud has a tick of its own in the menu.
+await page.waitForTimeout(1200); // the line Hear it said is over
 await page.evaluate(() => window.__voice.splice(0));
 await page.click('#menuBtn');
 await page.check('#optSound');
@@ -453,6 +467,7 @@ const quieted = await page.evaluate(async () => {
   sound(); // on again
   const on = v.length;
   await reach(mid + 1);
+  await new Promise(r => setTimeout(r, 400)); // a line waits a quarter of a second after a cancel
   return { read, cut, whileOff, again: readSince(on).length > 0 };
 });
 assert.deepEqual(quieted, { read: true, cut: true, whileOff: [], again: true }, "the race's Sound button doesn't quiet the caller, or doesn't let it carry on when it's back on");
@@ -465,22 +480,50 @@ await page.locator('.actions .btn', { hasText: /^Race 2/ }).click();
 await page.click('.post-bar .btn.brass');
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 const nextRace = await page.evaluate(async () => {
-  const w = window.__watch, from = window.__voice.length;
+  const w = window.__watch;
+  window.__voice.splice(0); window.__said.splice(0); window.__ended.splice(0);
   w.setT(w.t0 + w.call.lines[2].t + 0.05);
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-  return { menu: ['optSound', 'optVoice'].map(id => document.getElementById(id).checked), read: window.__voice.slice(from).some(x => x !== '(cancel)') };
+  return { menu: ['optSound', 'optVoice'].map(id => document.getElementById(id).checked), read: window.__voice.filter(x => x !== '(cancel)') };
 });
-assert.deepEqual(nextRace, { menu: [false, true], read: true }, "the next race isn't read aloud with Sound off and the call's own tick on");
-// The voice is given the time in words, while the call box keeps its digits.
-const timeRead = await page.evaluate(async () => {
-  const w = window.__watch, last = w.call.lines[w.call.lines.length - 1];
-  w.setT(w.t0 + last.t + 0.05);
+assert.deepEqual({ ...nextRace, read: nextRace.read.length }, { menu: [false, true], read: 1 }, "the next race isn't read aloud with Sound off and the call's own tick on");
+// The call at the wire doesn't wait its turn: it comes at once (a quarter of a second after cutting off a
+// line that has a way to go), at the top of the pace, which builds from the steady pace early on. Then
+// the placings and the time, back at the steady pace, with the time in words though the call box keeps
+// its digits.
+const paced = await page.evaluate(async () => {
+  const w = window.__watch, lines = w.call.lines, said = window.__said;
+  const until = async f => { while (!f()) await new Promise(r => setTimeout(r, 30)); };
+  const wire = lines.find(l => l.wire), last = lines[lines.length - 1];
+  w.setT(w.t0 + wire.t + 0.02);
+  await until(() => said.some(u => u.text === wire.say));
+  window.__wordMs = 400; // the last line takes a few seconds, as a real voice would
+  w.setT(w.endT - 0.05);
+  await until(() => said.some(u => u.text === last.say));
+  const pace = text => { const u = said.find(x => x.text === text); return [u.rate, u.pitch]; };
+  return { early: pace(lines[2].say), wire: pace(wire.say), last: pace(last.say), read: last.say, shown: document.querySelector('.call .now').textContent };
+});
+assert.deepEqual([paced.early, paced.wire, paced.last], [[1.25, 1], [1.6, 1.12], [1.25, 1]], "the caller's pace doesn't build to the wire and settle after it");
+assert.match(paced.shown, /The time, (\d:)?\d\d\.\d\d\.$/, 'the call box lost the time in digits');
+assert.match(paced.read, /The time, [a-z -]+\.$/, 'the voice is given the time in digits');
+// On the way to the results the caller finishes the line he's on. Any other way out of a race, he stops.
+await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
+await page.click('.w-ctl .btn');
+await page.waitForSelector('.official');
+const toResults = await page.evaluate(text => { const v = window.__voice; return { cut: v.slice(v.lastIndexOf(text)).includes('(cancel)'), over: window.__ended.includes(text) }; }, paced.read);
+assert.deepEqual(toResults, { cut: false, over: false }, 'the caller was cut off on the way to the results (or had already finished, and this checked nothing)');
+await page.waitForFunction(text => window.__ended.includes(text), paced.read, { timeout: 15000 });
+await page.locator('.actions .btn', { hasText: /^Race 3/ }).click();
+await page.click('.post-bar .btn.brass');
+await page.waitForSelector('.watch:not([hidden]) canvas.scene');
+const leftEarly = await page.evaluate(async () => {
+  const w = window.__watch, v = window.__voice, line = w.call.lines[2];
+  w.setT(w.t0 + line.t + 0.05);
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-  return { shown: document.querySelector('.call .now').textContent, read: window.__voice.filter(x => x !== '(cancel)').pop() };
+  window.postTime.nav.go('card');
+  return { read: v.includes(line.say), cut: v[v.length - 1] === '(cancel)' };
 });
-assert.match(timeRead.shown, /The time, (\d:)?\d\d\.\d\d\.$/, 'the call box lost the time in digits');
-assert.match(timeRead.read, /The time, [a-z -]+\.$/, 'the voice is given the time in digits');
-await page.evaluate(() => window.postTime.nav.go('card'));
+assert.deepEqual(leftEarly, { read: true, cut: true }, 'leaving a race for the card leaves the caller talking');
 await page.waitForSelector('.races');
 
 // Opening day, with the build held part-way: there's no card or scrapbook yet, so tapping them (or the

@@ -236,7 +236,8 @@ export function offeredVoices(voices) {
 }
 
 // The voice to use: the one saved in the menu if it's in the list and can be used now, otherwise the
-// best there is. A voice that needs the internet is passed over while there isn't any. Null when the
+// best there is. A voice that needs the internet is passed over while there isn't any (and, in the page,
+// for the rest of the visit once one has failed). Null when the
 // list has nothing in English (or hasn't arrived yet): the browser then uses its own voice for en-US.
 export function pickVoice(voices, { saved = null, online = true } = {}) {
   const list = Array.from(voices || []);
@@ -257,7 +258,8 @@ let voices = [];      // the browser's list, as last read
 let picked = null;    // the voice in use: worked out when the list or the choice changes, not on every line
 let pickedOnline = true;
 let voicesChanged = null;
-const online = () => typeof navigator === 'undefined' || navigator.onLine !== false;
+let netDown = false;  // a voice that needs the internet has failed: not again this visit
+const online = () => !netDown && (typeof navigator === 'undefined' || navigator.onLine !== false);
 
 function pick() {
   pickedOnline = online();
@@ -295,21 +297,195 @@ export function voiceChoices() {
 }
 export function onVoicesChanged(fn) { voicesChanged = fn; }
 
-function utter(text, rate, pitch) {
-  const u = new SpeechSynthesisUtterance(text);
-  if (pickedOnline !== online()) pick(); // gone offline, or back: a voice that needs the internet comes and goes with it
-  // The language is always set: Android speaks by language, not by a named voice.
-  u.lang = 'en-US';
-  if (picked) u.voice = picked;
-  u.rate = rate; u.pitch = pitch;
-  synth().cancel();
-  synth().speak(u);
+// ---------------------------------------------------------------- saying the call, a line at a time
+
+// About how long a voice takes over a line, in seconds: 4.3 syllables a second at its own speed (175 words
+// a minute), a pause at each comma and between sentences, and a moment to get going. It's a model, not a
+// measurement, and the queue below only leans on it to tell "nearly done" from "barely started" and to
+// know when a voice has gone quiet for far too long.
+function syllables(word) {
+  let w = word.toLowerCase().replace(/[^a-z]/g, '');
+  if (!w) return 0;
+  if (w.length <= 3) return 1;
+  w = w.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '').replace(/^y/, '');
+  return Math.max(1, (w.match(/[aeiouy]{1,2}/g) || []).length);
 }
-export function say(text, rate = 1.15) {
-  if (voiceEnabled()) utter(text, rate, 1.05);
+export function sayTime(text, rate = 1) {
+  const words = text.replace(/\d/g, ' seven ').split(/\s+/);
+  const syl = words.reduce((n, w) => n + syllables(w), 0);
+  const stops = (text.match(/[.!?](\s|$)/g) || []).length, commas = (text.match(/,/g) || []).length;
+  return 0.12 + (syl / 4.3 + Math.max(0, stops - 1) * 0.3 + commas * 0.15) / rate;
 }
-// One line of a race call in the chosen voice, for the menu's Hear it.
-export function hearIt() {
-  if (canSpeak()) utter("Turning for home, it's Copper Detour by a length and a half!", 1.15, 1.05);
+
+const GAP = 250;       // ms between a cancel and the next line: Safari drops a line spoken sooner than that
+const NO_START = 1500; // ms a voice gets to say it has started a line
+
+// The caller's queue. Each line used to cancel the one before it, so in most races a line or two was cut
+// off in the middle of a sentence. Now a line that comes up while another is being said waits for it to
+// end, one line at most: a newer line takes the place of the one waiting, unless the one waiting matters
+// more (rank: the off, a lead change, the call at the wire). When the voice is free the waiting line is
+// said if it isn't too old by then (its `late`, in seconds on the clock it came with), and left out
+// otherwise. The call at the wire is the one line that can't wait: it lets a line that's nearly done
+// finish, and cuts off one that isn't.
+//
+// `voice` is anything with { prepare(lines), speak(line, opts), stop() }: the browser's voice below is
+// one, and another source of sound could stand in for it. speak() says line.say (or line.text) and calls
+// opts.onstart, then opts.onend or opts.onerror. Nothing here trusts those calls to come: a voice that
+// goes quiet is cancelled and the call carries on.
+export function callQueue(voice, { now = () => performance.now(), later = (fn, ms) => setTimeout(fn, ms), never = id => clearTimeout(id) } = {}) {
+  let cur = null;       // the line being said
+  let held = null;      // the one line waiting for it to end
+  let quietUntil = 0;   // no line before this, after a cancel
+  let gapTimer = null;
+  let proven = false;   // this voice has said when a line started, so silence from it means it's stuck
+
+  // The call at the wire is never too old: it's said as soon as the voice is free.
+  const inTime = h => !!h.line.wire || h.clock() - h.due <= (h.line.late ?? 1.5);
+
+  function hold(item) {
+    if (held && inTime(held) && (held.line.rank || 0) > (item.line.rank || 0)) return;
+    held = item;
+  }
+
+  function next() {
+    if (cur || !held) return;
+    const wait = quietUntil - now();
+    if (wait > 0) {
+      if (gapTimer === null) gapTimer = later(() => { gapTimer = null; next(); }, wait);
+      return;
+    }
+    const h = held;
+    held = null;
+    if (inTime(h)) begin(h);
+  }
+
+  function begin(item) {
+    const text = item.line.say || item.line.text;
+    const rate = Math.min(1.7, Math.max(0.9, item.rate));
+    const me = cur = { item, at: now(), started: null, est: sayTime(text, rate), timer: null };
+    const patience = (2 * me.est + 2) * 1000; // no line takes twice its time and two seconds more
+    me.timer = later(() => {
+      // No word that it started. From a voice that has sent word before, that's a voice that's stuck.
+      // From one that never has, it may be speaking and not saying so: leave it be for as long as the
+      // line could take, rather than cut it off a second and a half into every line.
+      if (proven) { fail(me, 'silent'); return; }
+      me.started = me.at;
+      me.timer = later(() => fail(me, 'stalled'), Math.max(0, patience - NO_START));
+    }, NO_START);
+    const opts = {
+      rate, pitch: item.pitch, volume: item.volume,
+      onstart() {
+        if (cur !== me || me.started !== null) return;
+        proven = true;
+        me.started = now();
+        never(me.timer);
+        // Chrome's voices that need the internet can stop partway with no word: don't wait for ever.
+        me.timer = later(() => fail(me, 'stalled'), patience);
+      },
+      onend() { if (cur === me) { never(me.timer); cur = null; next(); } },
+      onerror() { if (cur === me) { never(me.timer); cur = null; again(me); next(); } },
+    };
+    try { voice.speak(item.line, opts); } catch { opts.onerror(); }
+  }
+
+  // The voice has gone quiet on this line: cancel it, which unsticks a stuck voice, and carry on.
+  function fail(me, why) {
+    if (cur !== me) return;
+    cur = null;
+    voice.stop(why);
+    quietUntil = now() + GAP;
+    again(me);
+    next();
+  }
+  // A line that failed before a word of it was heard gets one more go, if it's still wanted by then.
+  function again(me) {
+    if (me.started !== null || me.item.tried || held) return;
+    me.item.tried = true;
+    held = me.item;
+  }
+
+  function cut() {
+    never(cur.timer);
+    cur = null;
+    voice.stop();
+    quietUntil = now() + GAP;
+  }
+
+  return {
+    prepare(lines) { voice.prepare(lines); },
+    // opts: rate and pitch (and volume), and `clock`, a function giving the time, in seconds, that the
+    // line's lateness is counted on: the race's own clock while it runs. Without one it's real time.
+    speak(line, { rate = 1.25, pitch = 1, volume, clock = () => now() / 1000 } = {}) {
+      if (cur && line.wire) {
+        const was = cur, left = cur.est - (now() - (cur.started ?? cur.at)) / 1000;
+        if (left > 0.5) cut();
+        // "Nearly done" is a guess. If the line is still going in half a second, it's cut off then.
+        else later(() => { if (cur === was) { cut(); next(); } }, 500);
+      }
+      hold({ line, rate, pitch, volume, clock, due: clock(), tried: false });
+      next();
+    },
+    // Stops the line being said, if there is one, and forgets the one waiting.
+    stop() {
+      held = null;
+      if (cur) cut();
+    },
+    // The line being said, if any, is let finish; the one waiting is forgotten.
+    settle() { held = null; },
+    speaking: () => !!cur,
+  };
 }
-export function hush() { synth()?.cancel(); }
+
+// The browser's own voice, as the queue's voice.
+let uttering = null; // kept while it's being said: Chrome can lose an utterance nothing refers to, and its events with it
+const browserVoice = {
+  prepare() { refreshVoices(); },
+  speak(line, { rate, pitch, volume, onstart, onend, onerror }) {
+    const u = new SpeechSynthesisUtterance(line.say || line.text);
+    if (pickedOnline !== online()) pick(); // gone offline, or back: a voice that needs the internet comes and goes with it
+    // The language is always set: Android speaks by language, not by a named voice.
+    u.lang = 'en-US';
+    if (picked) u.voice = picked;
+    u.rate = rate; u.pitch = pitch;
+    if (volume !== undefined) u.volume = volume;
+    u.onstart = onstart;
+    u.onend = onend;
+    u.onerror = e => {
+      // Chrome reports a line that was cancelled as an error: that's only the line ending.
+      if (e && (e.error === 'interrupted' || e.error === 'canceled')) { onend(); return; }
+      localOnly(u.voice);
+      onerror();
+    };
+    uttering = u;
+    synth().speak(u);
+  },
+  // With a reason, the voice had gone quiet and is being given up on.
+  stop(why) {
+    if (why) localOnly(picked);
+    synth()?.cancel();
+  },
+};
+// A voice that needs the internet has failed: the voices on the device read the rest of this visit.
+function localOnly(v) {
+  if (!v || !needsNet(v) || netDown) return;
+  netDown = true;
+  pick();
+}
+
+const caller = callQueue(browserVoice);
+// A race's lines, at the gate: the browser's voice only looks at its list of voices again.
+export function prepareCall(lines) { if (voiceEnabled()) caller.prepare(lines); }
+// Says a line of the call ({ text, say, late, rank, wire }, or just the words), when the voice is free.
+export function say(line, opts) {
+  if (voiceEnabled()) caller.speak(typeof line === 'string' ? { text: line } : line, opts);
+}
+// One line in the chosen voice, for the menu's Hear it. A second tap starts it again.
+export function hearIt(line, opts) {
+  if (!canSpeak()) return;
+  caller.stop();
+  caller.speak(line, opts);
+}
+// Stops the caller mid-line. With `finish`, the line being said is let finish, and nothing follows it.
+export function hush({ finish = false } = {}) {
+  if (finish) caller.settle(); else caller.stop();
+}

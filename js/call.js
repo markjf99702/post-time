@@ -81,14 +81,45 @@ export function finishWords(l) {
   return lengthsWords(Math.round(l));
 }
 
-// Each line is { t, text, say, kind }: `text` is what the call box shows and `say` is the same line as the
-// voice is given it, with times in words. For the tests, a line also has what it claims: `lead` is the
-// horse it names as the leader, `change` marks a lead change, `who` is a horse it says something else
-// about (making a move, closing), and `sure` is the horse it says has the race won.
+// How long a line may wait to be said, in seconds, when the voice is still on the line before: after
+// that it's old news and is left out. "And they're off!" and the call at the wire belong to their moment,
+// a lead change nearly so, and the placings and the time can follow whenever the winner's line is done.
+const LATE = { off: 0.3, wire: 0.3, change: 1.0, other: 1.5, placings: 6 };
+
+// How a line is delivered: how fast, and how high. The pace is steady until about 33 seconds from the
+// wire and climbs from there, the way a call builds through the far turn and the stretch: 1.25 times the
+// voice's own speed rising to 1.6, with the pitch a little higher too. Before the start it's slower, and
+// after the wire it's back to the steady pace for the placings and the time. (These numbers come from a
+// model of how long a voice takes over a line, not from listening.) `toWire` is seconds to the wire.
+export function pace(line, toWire) {
+  if (line.kind === 'pre') return { rate: 1.15, pitch: 1 };
+  if (line.kind === 'finish' && !line.wire) return { rate: 1.25, pitch: 1 };
+  const k = line.wire ? 1 : Math.max(0, Math.min(1, 1 - (toWire - 3) / 30));
+  return { rate: +(1.25 + 0.35 * k).toFixed(3), pitch: +(1 + 0.12 * k).toFixed(3) };
+}
+
+// After a photo, the winner's line that goes with the official sign, as a line of the call.
+export function officialLine(text) {
+  return { text, say: aloud(text), kind: 'finish', late: LATE.placings, rank: 1 };
+}
+// A line like the ones in a call, for trying a voice out in the menu.
+export const SAMPLE = { text: "Turning for home, it's Copper Detour by a length and a half!", kind: 'call', late: LATE.other, rank: 0 };
+
+// Each line is { t, text, say, kind, late, rank }: `text` is what the call box shows and `say` is the same
+// line as the voice is given it, with times in words. `late` is how long the voice may be behind with it
+// (see LATE) and `rank` is 1 for the lines that take the place of another line waiting to be said: the
+// off, a lead change and the call at the wire, which is also marked `wire` (the last line, with the time,
+// is marked `placings`). For the tests, a line also
+// has what it claims: `lead` is the horse it names as the leader, `change` marks a lead change, `who` is
+// a horse it says something else about (making a move, closing), and `sure` is the horse it says has the
+// race won.
 export function raceCall(race, run, names) {
   const R = rng(`call:${race.seed}`);
   const lines = [];
-  const say = (t, text, kind = 'call', claims = null, spoken = text) => lines.push({ t, text, say: aloud(spoken), kind, ...claims });
+  const say = (t, text, kind = 'call', claims = null, spoken = text) => {
+    const urgent = kind === 'off' ? 'off' : claims?.wire ? 'wire' : claims?.change ? 'change' : null;
+    lines.push({ t, text, say: aloud(spoken), kind, late: LATE[urgent || (claims?.placings ? 'placings' : 'other')], rank: urgent ? 1 : 0, ...claims });
+  };
   const D = run.distance;
   const t0 = run.t0;
   const at = t => stateAt(run, t0 + t);
@@ -255,9 +286,9 @@ export function raceCall(race, run, names) {
   let official = null;
   if (photo) {
     const [a, b] = R.chance(0.5) ? [w, s] : [s, w];
-    say(finishT + 0.1, `${nm(a.h)} and ${nm(b.h)} hit the wire together. It's a photo!`, 'finish');
+    say(finishT + 0.1, `${nm(a.h)} and ${nm(b.h)} hit the wire together. It's a photo!`, 'finish', { wire: true });
     const line = time => `They'll need the photo for ${nm(a.h)} and ${nm(b.h)}.${th ? ` ${nm(th.h)} is third.` : ''} The time, ${time}.`;
-    say(finishT + 3.2, line(timeWords(finishT)), 'finish', null, line(timeSay(finishT)));
+    say(finishT + 3.2, line(timeWords(finishT)), 'finish', { placings: true }, line(timeSay(finishT)));
     official = `It's ${nm(w.h)}, by ${finishWords(s.toPrev)}!`;
   } else {
     const m = s ? s.toPrev : 0;
@@ -265,10 +296,10 @@ export function raceCall(race, run, names) {
     const how = !s ? 'all alone!' : m > 6 ? `in a romp, by ${finishWords(m)}!` : m > 2.5 && w.finishSpeed >= s.finishSpeed ? `by ${finishWords(m)}, going away!` : `by ${finishWords(m)}!`;
     // A winner who wasn't in front a second before the wire got up in the last strides.
     const late = s && lead(at(finishT - 1)).i !== w.h;
-    say(finishT + 0.1, `${nm(w.h)} ${late ? 'gets up to win it' : 'wins it'} ${how}`, 'finish');
+    say(finishT + 0.1, `${nm(w.h)} ${late ? 'gets up to win it' : 'wins it'} ${how}`, 'finish', { wire: true });
     const placed = [s && `${nm(s.h)} second`, th && `${nm(th.h)} third`].filter(Boolean).join(', ');
     const line = time => `${placed ? `${placed}. ` : ''}The time, ${time}.`;
-    say(finishT + 3.2, line(timeWords(finishT)), 'finish', null, line(timeSay(finishT)));
+    say(finishT + 3.2, line(timeWords(finishT)), 'finish', { placings: true }, line(timeSay(finishT)));
   }
   lines.sort((a, b) => a.t - b.t);
   return { lines, photo: !!photo, official, dur };
