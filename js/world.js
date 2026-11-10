@@ -356,8 +356,11 @@ function fillRaces(world, races, R, day, busy = new Set()) {
   for (const race of races) {
     R.shuffle(race.entries);
     race.entries.forEach((e, i) => { e.pp = i + 1; });
-    // Better riders get on the better horses, mostly.
-    const byChance = race.entries.slice().sort((a, b) => (est.get(world.horses[b.hid]) || 70) - (est.get(world.horses[a.hid]) || 70) + R.gauss() * 4);
+    // Better riders get on the better horses, mostly. One draw a horse, then a plain sort: a sort that
+    // draws inside its comparison makes as many draws as the browser's sort makes comparisons, which
+    // varies from one run to the next, and every draw after it on the card shifted with it. (2.83 spreads
+    // the difference between two horses the way the old draw of 4 for each comparison did.)
+    const byChance = race.entries.map(e => ({ e, k: (est.get(world.horses[e.hid]) || 70) + R.gauss() * 2.83 })).sort((a, b) => b.k - a.k).map(x => x.e);
     const riders = JOCKEYS.map((j, i) => ({ i, k: j.skill + R.gauss() * 0.45 })).sort((a, b) => b.k - a.k);
     byChance.forEach((e, k) => { e.j = riders[k].i; });
     for (const e of race.entries) {

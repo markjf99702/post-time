@@ -238,7 +238,8 @@ test("the recording runs long enough for the caller's last line", () => {
 test('a first-time starter in a maiden claimer is seldom the morning-line favourite', () => {
   // The public guessed every horse that hadn't run at a 64, which is better than most maiden claimers
   // ever run, so one of them was the favourite in about a quarter of those races and seldom won.
-  const w = createWorld('test-debut', '2026-09-26');
+  // (This meet has ten horses that haven't run when it opens; some seeds leave only two, too few to judge by.)
+  const w = createWorld('test-debut-8', '2026-09-26');
   let races = 0, first = 0, favs = 0;
   for (let d = 1; d <= 40; d++) {
     const r = buildCard(w, d).races.find(x => x.cls === 'MCL');

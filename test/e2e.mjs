@@ -58,6 +58,17 @@ await page.evaluate(() => document.fonts.ready);
 assert.equal(await page.locator('.race-row').count(), 8, 'eight races on the card');
 assert.equal(await page.locator('#bank').textContent(), '$200.00');
 
+// A seed builds the same meet every time. (The riders were handed out with a sort that drew a random number
+// in every comparison, and this browser's sort doesn't always make the same number of comparisons: four
+// builds of one seed in one page gave three different meets. Compared here with each other, not with Node,
+// whose arithmetic differs from the browser's in the last decimal place of some numbers.)
+const sameSeed = await page.evaluate(async () => {
+  const { createWorld } = await import('./js/world.js');
+  const built = [1, 2, 3, 4].map(() => JSON.stringify(createWorld('same-seed', '2026-11-14')));
+  return built.map(b => built.indexOf(b));
+});
+assert.deepEqual(sameSeed, [0, 0, 0, 0], 'one seed built four times in the page gave different meets');
+
 // A look at a later race shows its opening odds, and doesn't start its clock.
 await page.locator('.race-row').nth(2).click();
 await page.click('.tabs button:nth-child(4)');
