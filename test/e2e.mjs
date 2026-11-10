@@ -77,7 +77,7 @@ assert.deepEqual(sameSeed, [0, 0, 0, 0], 'one seed built four times in the page 
 const noses = await page.evaluate(async () => {
   const { createWorld, simulateRace, ownerSilks } = await import('./js/world.js');
   const { photoFinish } = await import('./js/draw/photo.js');
-  const w = createWorld('same-seed', '2026-11-14'), W = 360, H = 216, out = [];
+  const w = window.sameSeed = createWorld('same-seed', '2026-11-14'), W = 360, H = 216, out = [];
   for (const race of w.cards[0].races) {
     const run = simulateRace(race, w), res = run.results;
     const runners = race.entries.map(e => { const h = w.horses[e.hid]; return { number: e.pp, coat: h.coat, marks: h.marks, silks: ownerSilks(h.owner), name: h.name }; });
@@ -112,6 +112,37 @@ const noses = await page.evaluate(async () => {
 assert.ok(noses.filter(n => n.pos === 1).length === 8 && noses.length >= 12, `too few noses to check the photo finish with: ${noses.length}`);
 const offLine = noses.filter(n => n.col === null || Math.abs(n.col - n.due) > 1.5);
 assert.deepEqual(offLine, [], 'in the photo finish, a nose is not where the race says it crossed');
+
+// The lake in the infield lies on the ground: as the leader passes it, 330 metres from the wire, the water
+// is a strip a few percent of the picture deep, most of the way across. (It was drawn five metres tall, a
+// pale-blue slab over a quarter of the picture.) Measured by drawing the same moment with and without it.
+const lake = await page.evaluate(async () => {
+  const { simulateRace, ownerSilks } = await import('./js/world.js');
+  const { RaceScene } = await import('./js/draw/scene.js');
+  const { stateAt } = await import('./js/sim.js');
+  const w = window.sameSeed, race = w.cards[0].races[0], run = simulateRace(race, w);
+  const runners = race.entries.map(e => { const h = w.horses[e.hid]; return { number: e.pp, coat: h.coat, marks: h.marks, silks: ownerSilks(h.owner), name: h.name }; });
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:fixed;left:0;top:0;width:390px;height:360px';
+  document.body.append(c);
+  const scene = new RaceScene(c, { race, run, runners, wx: w.cards[0].wx });
+  let t = 0;
+  while (Math.max(...stateAt(run, t, []).map(x => x.p)) < race.distance - 330) t += 0.1;
+  const shot = () => { scene.draw(t); return c.getContext('2d').getImageData(0, 0, c.width, c.height).data; };
+  const withIt = shot();
+  scene.infield = scene.infield.filter(o => o.kind !== 'lake');
+  const without = shot();
+  c.remove();
+  const deep = []; // in each column the lake is in, how many pixels of it
+  for (let x = 0; x < c.width; x++) {
+    let n = 0;
+    for (let y = 0; y < c.height; y++) { const i = (y * c.width + x) * 4; if (withIt[i] !== without[i] || withIt[i + 1] !== without[i + 1] || withIt[i + 2] !== without[i + 2]) n++; }
+    if (n) deep.push(n);
+  }
+  deep.sort((a, b) => a - b);
+  return { across: +(deep.length / c.width).toFixed(2), deep: +((deep[deep.length >> 1] || 0) / c.height).toFixed(3) };
+});
+assert.ok(lake.across > 0.5 && lake.deep > 0.01 && lake.deep < 0.1, `the lake should be a thin strip of water across the infield: it is ${lake.deep} of the picture deep, across ${lake.across} of it`);
 
 // A look at a later race shows its opening odds, and doesn't start its clock.
 await page.locator('.race-row').nth(2).click();

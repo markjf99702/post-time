@@ -75,8 +75,11 @@ export class RaceScene {
       const z = kind === 'flowers' || kind === 'flag' ? Z_TURF_IN + R.range(6, 14) : kind === 'tree' ? Z_TURF_IN + R.range(50, 200) : Z_TURF_IN + R.range(14, 120);
       this.infield.push({ kind, x, z, s: R.range(0.8, 1.3), c: R.int(0, 3) });
     }
-    // The tote board and the lake sit across from the stretch.
-    this.infield.push({ kind: 'lake', x: D - 330, z: Z_TURF_IN + 60, w: 180, s: 1 });
+    // The tote board and the lake sit across from the stretch. The lake is 180 metres long and 40 from front
+    // to back, and nothing grows in it.
+    const lake = { kind: 'lake', x: D - 330, z: Z_TURF_IN + 60, w: 180, d: 40, s: 1 };
+    this.infield = this.infield.filter(o => ((o.x - lake.x) / (lake.w / 2 + 6)) ** 2 + ((o.z - lake.z) / (lake.d / 2 + 4)) ** 2 > 1);
+    this.infield.push(lake);
     this.infield.push({ kind: 'tote', x: D - 190, z: Z_TURF_IN + 75, s: 1 });
     this.infield.sort((a, b) => b.z - a.z);
     this.clouds = [...Array(7)].map(() => ({ az: R.range(0, Math.PI * 2), el: R.range(0.06, 0.22), w: R.range(0.12, 0.3), h: R.range(0.02, 0.05) }));
@@ -375,22 +378,30 @@ export class RaceScene {
           ctx.fillRect(x + Math.cos(a) * rr * w / 2, y0 - Math.sin(a) * rr * hgt, Math.max(1, 0.28 * k), Math.max(1, 0.2 * k));
         }
       } else if (o.kind === 'flag') {
+        // Five metres of pole. (At eight, on a wide screen, they ran from the grass out of the top of the picture.)
         ctx.strokeStyle = '#ddd';
         ctx.lineWidth = Math.max(1, 0.12 * k);
-        ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0 - 8 * k); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0 - 5 * k); ctx.stroke();
         ctx.fillStyle = ['#b03a2e', '#2e86c1', '#f4d03f', '#27ae60'][o.c];
-        ctx.fillRect(x, y0 - 8 * k, 2.2 * k, 1.4 * k);
+        ctx.fillRect(x, y0 - 5 * k, 2.2 * k, 1.4 * k);
       } else if (o.kind === 'lake') {
-        const w = o.w * k;
+        // Water lying on the ground: from this far off, forty metres of it front to back is a thin
+        // ellipse, as deep on the screen as its near and far shores are apart. (It was drawn five metres
+        // tall, so a pale-blue slab filled the infield as the field went past it.)
+        const yFar = this.py(0, o.z + o.d / 2), yShore = this.py(0, o.z - o.d / 2);
+        const cy = (yFar + yShore) / 2, ry = Math.max(1, (yShore - yFar) / 2), rx = o.w * k / 2;
+        ctx.save();
+        ctx.beginPath(); ctx.rect(0, yA, W, Math.max(0, yNear - yA)); ctx.clip(); // the infield, this side of the far track
+        ctx.fillStyle = shade('#4c7f3b', this.sky.dim); // the bank
+        ctx.beginPath(); ctx.ellipse(x, cy, rx + 2 * k, ry + Math.max(1, ry * 0.12), 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = mixColor(this.sky.low, '#5f8fae', 0.55);
-        ctx.beginPath();
-        ctx.ellipse(x, y0, w / 2, Math.max(2, 5 * k), 0, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = 'rgba(255,255,255,.35)';
-        ctx.fillRect(x - w * 0.2, y0 - 1, w * 0.4, 1);
-        // Fountain.
+        ctx.fillRect(x - rx * 0.4, Math.round(cy), rx * 0.8, 1);
+        ctx.restore();
+        // The fountain: five metres of spray from the middle of the water.
         ctx.fillStyle = 'rgba(255,255,255,.6)';
-        ctx.beginPath(); ctx.ellipse(x + w * 0.1, y0 - 2 * k, 0.6 * k, 2.5 * k, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x + rx * 0.2, y0 - 2 * k, 0.6 * k, 2.5 * k, 0, 0, Math.PI * 2); ctx.fill();
       } else if (o.kind === 'tote') {
         this.drawToteBoard(x, y0, k);
       }
