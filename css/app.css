@@ -416,7 +416,7 @@ a { color: var(--green-2); }
 }
 .w-ctl button[aria-pressed="true"] { background: var(--amber); color: #111; }
 .w-ctl .spacer { flex: 1; }
-.w-ctl .btn { padding: 11px 16px; }
+.w-ctl .btn { padding: 0 16px; height: 34px; } /* Results, the height of the buttons it joins, so the row and the picture above it stay as they are */
 .w-ctl .hint { font-size: 12.5px; color: #8f8a78; width: 100%; }
 
 @media (min-width: 700px) {

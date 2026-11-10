@@ -55,6 +55,9 @@ export class RaceScene {
     this.resize();
   }
 
+  // The picture's box has changed size. Only the size is read again: the camera stays where it is. (It
+  // used to be thrown away here, so when the buttons under the picture changed height at the finish it
+  // snapped a metre or three to where it had been easing to.)
   resize() {
     const r = this.canvas.getBoundingClientRect();
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -63,7 +66,6 @@ export class RaceScene {
     this.canvas.width = Math.round(this.W * dpr);
     this.canvas.height = Math.round(this.H * dpr);
     this.dpr = dpr;
-    this.cam = null;
   }
 
   buildScenery() {

@@ -292,7 +292,7 @@ export function renderWatch(el, nav, params) {
   el.tabIndex = -1;
   el.focus({ preventScroll: true });
   // Debug hook for tests and screenshots.
-  window.__watch = { setT: t => { T = t; scene.lastT = null; }, get T() { return T; }, winT, endT, t0, leave, run, call, pause: () => { speed = 0; } };
+  window.__watch = { setT: t => { T = t; scene.lastT = null; }, get T() { return T; }, winT, endT, t0, leave, run, call, pause: () => { speed = 0; }, get cam() { return scene.cam; } };
   return teardown;
 }
 

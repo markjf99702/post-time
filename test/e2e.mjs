@@ -789,6 +789,38 @@ const skipped = await page.evaluate(async () => {
   return { inGate, toRun: Math.round(w.winT - w.T), bells: window.__oscillators.slice(made).filter(o => o.frequency.value === 1760).length, crowd: window.__crowd !== crowd };
 });
 assert.deepEqual(skipped, { inGate: true, toRun: 12, bells: 0, crowd: true }, 'after Skip from the gate the starting bell rings in mid-stretch, or the crowd never starts');
+// On a wide screen that isn't tall, the picture gives way when anything under it grows. The camera keeps
+// its place when the picture changes size (it used to snap to where it was easing to), and Results is the
+// height of the buttons it joins, so the picture doesn't change size at the finish at all.
+await page.setViewportSize({ width: 1280, height: 700 });
+const steady = await page.evaluate(async () => {
+  const w = window.__watch, stage = document.querySelector('.w-stage'), row = document.querySelector('.w-ctl');
+  const frames = async n => { for (let i = 0; i < n; i++) await new Promise(r => requestAnimationFrame(r)); };
+  const tall = el => el.getBoundingClientRect().height;
+  await frames(3);
+  // Follow the last horse, and stop the race while the camera is on its way across to it.
+  [...document.querySelectorAll('.order button')].pop().click();
+  await new Promise(r => setTimeout(r, 150));
+  w.pause();
+  await frames(3);
+  const was = { off: w.cam.off, span: w.cam.span, stage: tall(stage) };
+  row.style.paddingBottom = '20px'; // the row under the picture, 8 px taller
+  await frames(4);
+  const now = { off: w.cam.off, span: w.cam.span, stage: tall(stage) };
+  row.style.paddingBottom = '';
+  await frames(4);
+  // On to the finish, at normal speed again.
+  document.querySelector('.w-ctl button').click();
+  const racing = { stage: tall(stage), row: tall(row) };
+  w.setT(w.endT - 0.1);
+  return { resized: was.stage - now.stage, moved: Math.abs(now.off - was.off) + Math.abs(now.span - was.span), racing };
+});
+assert.ok(steady.resized > 4, `the picture didn't change size for the check (${steady.resized}px)`);
+assert.ok(steady.moved < 0.001, `the camera jumped ${steady.moved.toFixed(2)} m when the picture changed size`);
+await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
+const atFinish = await page.evaluate(() => ({ stage: document.querySelector('.w-stage').getBoundingClientRect().height, row: document.querySelector('.w-ctl').getBoundingClientRect().height }));
+assert.deepEqual(atFinish, steady.racing, 'the picture or the row of buttons changes height when Results appears');
+await page.setViewportSize({ width: 390, height: 844 });
 await page.evaluate(() => window.postTime.nav.go('card'));
 await page.waitForSelector('.races');
 
