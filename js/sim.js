@@ -11,7 +11,7 @@ export const LIVE_DT = 1 / 30;  // recorded races, for smooth playback
 const QUICK_DT = 1 / 12;        // races nobody watches
 const Q = 0.3;                // how much extra a burst of speed costs
 const LANE = 1.0;             // one path, in metres
-const RAIL = 0.55;            // a horse's middle, on the rail
+export const RAIL = 0.55;     // a horse's middle, on the rail
 const HALF = 0.78;            // two horses closer than this side by side are touching
 const REACH = 1.12 * LENGTH;  // nose to nose closer than this, the one behind is in the way
 

@@ -1,12 +1,21 @@
 // The race caller. Reads the recorded race as it unfolds (never ahead of the moment it's calling)
-// and produces lines of commentary with the time each one starts.
+// and produces lines of commentary with the time each one starts. A line is worded from the race as it
+// stands at that time and is never moved afterwards, so what it says is true when it comes up.
 
-import { stateAt } from './sim.js';
+import { stateAt, RAIL } from './sim.js';
 import { segmentAt, LENGTH, FURLONG } from './track.js';
 import { rng } from './rng.js';
 import { marginText, lengthsText } from './chart.js';
 
-const SAY_NUM = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+const SAY_NUM = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
+  'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+const lengthsWords = n => `${SAY_NUM[n] || n} lengths`;
+
+// Paths off the rail (the chart's measure: a horse on the rail is at 0, in the fourth path at 3).
+// "On the outside" is the fourth path or wider, "on the inside" and "up the rail" the rail path.
+const OUTSIDE = 2.5, INSIDE = 0.8;
+// Running calls keep this many seconds clear of a fraction's line, before and after.
+const CLEAR = 1.8;
 
 function secsWords(t) {
   // 22.43 -> "twenty-two and two"; 45.9 -> "forty-five and four"
@@ -22,42 +31,58 @@ export function timeWords(t) {
   return m ? `${m}:${s.toFixed(2).padStart(5, '0')}` : s.toFixed(2);
 }
 
+// A gap during the running, as a caller judges it by eye.
 function gapWords(l) {
   if (l < 0.35) return 'a head';
   if (l < 0.8) return 'a half length';
   if (l < 1.3) return 'a length';
   if (l < 1.8) return 'a length and a half';
-  if (l < 2.4) return 'two lengths';
-  if (l < 3.5) return 'three lengths';
-  return `${Math.round(l)} lengths`;
+  return lengthsWords(Math.max(2, Math.round(l)));
 }
 
+// The winning margin, in the chart's terms: a nose, a head, a neck, then to the quarter of a length up to
+// two lengths (as the running order and the chart show it), and whole lengths from there.
+export function finishWords(l) {
+  if (l < 0.06) return 'a nose';
+  if (l < 0.18) return 'a head';
+  const q = Math.round(l * 4) / 4;
+  if (q <= 0.25) return 'a neck';
+  if (q < 2) {
+    return { 0.5: 'a half length', 0.75: 'three quarters of a length', 1: 'a length', 1.25: 'a length and a quarter', 1.5: 'a length and a half', 1.75: 'a length and three quarters' }[q];
+  }
+  return lengthsWords(Math.round(l));
+}
+
+// Each line is { t, text, kind } and, for the tests, what it claims: `lead` is the horse it names as the
+// leader, `change` marks a lead change, `who` is a horse it says something else about (making a move,
+// closing), and `sure` is the horse it says has the race won.
 export function raceCall(race, run, names) {
   const R = rng(`call:${race.seed}`);
   const lines = [];
-  const say = (t, text, kind = 'call') => lines.push({ t, text, kind });
+  const say = (t, text, kind = 'call', claims = null) => lines.push({ t, text, kind, ...claims });
   const D = run.distance;
   const t0 = run.t0;
   const at = t => stateAt(run, t0 + t);
   const ordered = st => st.map((s, i) => ({ ...s, i })).sort((a, b) => b.p - a.p);
   const nm = i => names[i];
   const lead = st => ordered(st)[0];
-  const behind = (st, a, b) => (st[a].p - st[b].p) / LENGTH;
   const dur = run.frames.length * run.dt - t0;
   const finishT = run.finalTime;
 
   say(-t0 - 2.6, race.name ? `The field is in the gate for the ${race.name}.` : `The field is in the gate.`, 'pre');
   say(-t0, 'And they\'re off!', 'off');
 
-  // The break.
+  // The break. It's a clean one only if nobody stumbled, broke slowly or was bumped.
   const bad = run.results.filter(r => r.stumble).map(r => r.h);
   const slow = run.results.filter(r => r.slow).map(r => r.h);
+  const bumped = run.results.some(r => r.bumped);
   if (bad.length) say(1.2, `${nm(bad[0])} stumbles at the start!`);
   else if (slow.length) say(1.2, `${nm(slow[0])} broke a step slow.`);
-  else if (R.chance(0.5)) say(1.2, 'A clean break for all of them.');
+  else if (R.chance(0.5) && !bumped) say(1.2, 'A clean break for all of them.');
 
   // First call: who went to the front.
   const firstT = Math.min(9, finishT * 0.12);
+  let lastLeader; // the horse the caller last named as the leader
   {
     const st = at(firstT);
     const o = ordered(st);
@@ -67,39 +92,46 @@ export function raceCall(race, run, names) {
     const text = g > 1.2
       ? `${nm(a.i)} ${verb}.${b ? ` ${nm(b.i)} second${c ? `, ${nm(c.i)} third` : ''}.` : ''}`
       : `${nm(a.i)} and ${nm(b.i)} vie for the early lead${c ? `, ${nm(c.i)} right there` : ''}.`;
-    say(firstT, text);
+    say(firstT, text, 'call', { lead: a.i });
+    lastLeader = a.i;
   }
 
-  // Fractions.
-  const par = D < 1300 ? 22.6 : 23.8;
+  // Fractions. The opening quarter is fast or slow against a usual one for the distance: sprints go off
+  // quicker than routes.
+  const furlongs = D / FURLONG;
+  const par = furlongs < 6.25 ? 22.9 : furlongs < 7.25 ? 23.2 : 23.7;
   const frs = run.fractions.filter(f => f.at < D - 1);
+  const fracAt = [];
   frs.slice(0, 2).forEach((f, k) => {
-    if (f.t > finishT - 6) return;
+    // In a five-furlong race the half comes up at the eighth pole, where the stretch call belongs: the
+    // clock shows it, and the caller calls the race.
+    if (f.t > finishT - 6 || D - f.at < FURLONG * 1.25) return;
     const label = k === 0 ? 'The quarter' : 'The half';
     const pace = k === 0 ? (f.t < par - 0.6 ? ', a fast pace' : f.t > par + 0.8 ? ', nice and easy up front' : '') : '';
+    fracAt.push(f.t + 0.3);
     say(f.t + 0.3, `${label} in ${secsWords(f.t)}${pace}.`, 'frac');
   });
 
-  // Running calls every few seconds until the top of the stretch.
+  // Running calls every few seconds until the wire. Each is made from the race as it stands at its own
+  // time, in a moment that's clear of the line before and of the fractions.
   const path = run.path;
   const stretchStart = path[path.length - 1].start;
-  let lastLeader = lead(at(firstT)).i;
   let lastSeg = null;
   let nextFree = firstT + 4.5;
   const moveSeen = new Set();
   let troubleCalls = 0;
   for (let t = firstT + 1; t < finishT - 0.2; t += 0.5) {
+    if (t < nextFree || fracAt.some(ft => Math.abs(t - ft) < CLEAR)) continue;
     const st = at(t);
     const o = ordered(st);
     const L = o[0];
     const seg = segmentAt(path, L.p);
     const inStretch = L.p >= stretchStart;
     const toGo = D - L.p;
-    if (t < nextFree) continue;
 
-    // Lead change.
+    // Lead change: a new horse in front of the one last named as the leader.
     if (L.i !== lastLeader && (L.p - o[1].p) / LENGTH > 0.25) {
-      say(t, R.pick([`${nm(L.i)} takes over!`, `${nm(L.i)} goes by and takes the lead!`, `And now it's ${nm(L.i)} in front!`]));
+      say(t, R.pick([`${nm(L.i)} takes over!`, `${nm(L.i)} goes by and takes the lead!`, `And now it's ${nm(L.i)} in front!`]), 'call', { lead: L.i, change: true });
       lastLeader = L.i; nextFree = t + 3.2; continue;
     }
     // Someone on the move from the back.
@@ -109,8 +141,11 @@ export function raceCall(race, run, names) {
       const mover = o.find((x, k) => k > 0 && po.indexOf(x.i) - k >= 3 && !moveSeen.has(x.i));
       if (mover) {
         moveSeen.add(mover.i);
-        const wide = Math.round(mover.o) + 1;
-        say(t, wide >= 4 ? `${nm(mover.i)} is moving, ${SAY_NUM[wide] || wide} wide!` : `${nm(mover.i)} is making a run on the inside!`);
+        const off = mover.o - RAIL;
+        const wide = Math.round(off) + 1; // its path, counted the way the chart counts it
+        say(t, off >= OUTSIDE ? `${nm(mover.i)} is moving, ${SAY_NUM[wide] || wide} wide!`
+          : off < INSIDE ? `${nm(mover.i)} is making a run on the inside!`
+          : `${nm(mover.i)} is making a run!`, 'call', { who: mover.i });
         nextFree = t + 3.2; continue;
       }
     }
@@ -128,22 +163,27 @@ export function raceCall(race, run, names) {
       const tail = o[o.length - 1];
       const rear = R.chance(0.5) && o.length > 3;
       const extra = !o[2] ? '' : rear ? ` ${nm(o[2].i)} is third, and ${nm(tail.i)} brings up the rear.` : ` ${nm(o[2].i)} sits third.`;
-      say(t, o[1] ? `${where}, ${nm(L.i)} leads by ${gapWords((L.p - o[1].p) / LENGTH)}. ${nm(o[1].i)} second.${extra}` : `${where}, ${nm(L.i)} all alone.`);
-      nextFree = t + 4.5; continue;
+      say(t, o[1] ? `${where}, ${nm(L.i)} leads by ${gapWords((L.p - o[1].p) / LENGTH)}. ${nm(o[1].i)} second.${extra}` : `${where}, ${nm(L.i)} all alone.`, 'call', { lead: L.i });
+      lastLeader = L.i; nextFree = t + 4.5; continue;
     }
     if (inStretch && lastSeg !== 'home') {
       lastSeg = 'home';
-      const closers = o.slice(1, 5).filter(x => x.v > L.v + 0.3).map(x => x.i);
-      const tail = closers.length ? ` ${nm(closers[0])} ${R.pick(['is coming!', 'is flying on the outside!', 'is charging!'])}` : '';
-      say(t, o[1] ? `Turning for home, it's ${nm(L.i)} by ${gapWords((L.p - o[1].p) / LENGTH)}.${tail}` : `Turning for home, it's ${nm(L.i)} all alone.`);
-      nextFree = t + 3.5; continue;
+      // The first of the next four that's running faster than the leader, and where it's doing it.
+      const c = o.slice(1, 5).find(x => x.v > L.v + 0.3);
+      const off = c ? c.o - RAIL : 0;
+      const how = c && R.pick(off >= OUTSIDE ? ['is coming!', 'is flying on the outside!', 'is charging!']
+        : off < INSIDE ? ['is coming!', 'is coming up the rail!', 'is charging!']
+        : ['is coming!', 'is flying!', 'is charging!']);
+      const tail = c ? ` ${nm(c.i)} ${how}` : '';
+      say(t, o[1] ? `Turning for home, it's ${nm(L.i)} by ${gapWords((L.p - o[1].p) / LENGTH)}.${tail}` : `Turning for home, it's ${nm(L.i)} all alone.`, 'call', c ? { lead: L.i, who: c.i } : { lead: L.i });
+      lastLeader = L.i; nextFree = t + 3.5; continue;
     }
     if (!o[1]) continue; // the rest of the stretch calls are about who's chasing
     if (inStretch && toGo < FURLONG + 20 && toGo > FURLONG - 40 && !moveSeen.has('eighth')) {
       moveSeen.add('eighth');
       const gap = (L.p - o[1].p) / LENGTH;
-      say(t, gap < 0.5 ? `At the eighth pole, ${nm(L.i)} and ${nm(o[1].i)} are head and head!` : `A furlong to go, ${nm(L.i)} leads by ${gapWords(gap)}, ${nm(o[1].i)} chasing.`);
-      nextFree = t + 3; continue;
+      say(t, gap < 0.5 ? `At the eighth pole, ${nm(L.i)} and ${nm(o[1].i)} are head and head!` : `A furlong to go, ${nm(L.i)} leads by ${gapWords(gap)}, ${nm(o[1].i)} chasing.`, 'call', { lead: L.i });
+      lastLeader = L.i; nextFree = t + 3; continue;
     }
     if (inStretch && toGo < 110 && toGo > 45 && !moveSeen.has('late')) {
       moveSeen.add('late');
@@ -157,11 +197,22 @@ export function raceCall(race, run, names) {
       // when none of the next three is, the caller says the leader is still in front, and by how much.
       const fast = o.slice(1, 4).find(x => x.v > L.v + 0.5);
       const chaser = fast || o.slice(1, 4).filter(x => x.v > L.v).reduce((a, b) => (!a || b.v > a.v ? b : a), null);
-      say(t, gap < 0.6 ? `${nm(L.i)}, ${nm(o[1].i)}, it's a battle to the wire!`
-        : chaser && (fast || !sure) ? `${nm(chaser.i)} closing fast, but ${nm(L.i)} still in front!`
-        : !sure ? `${nm(L.i)} still in front by ${gapWords(gap)}!`
-        : R.pick([`${nm(L.i)}, clear and drawing away!`, `They won't catch ${nm(L.i)} today!`]));
-      nextFree = t + 2.4; continue;
+      // "Closing fast" is for a horse within three lengths. One further back than that isn't going to
+      // get there: if the leader is three clear of them all and, at the speeds they're going now, nobody
+      // gets within a length and a half by the wire, the leader is home free and the closer is running
+      // for second.
+      const back = chaser ? (L.p - chaser.p) / LENGTH : 0;
+      const secs = toGo / Math.max(1, L.v);
+      const safe = gap >= 3 && o.slice(1).every(x => L.p - x.p - (x.v - L.v) * secs >= 1.5 * LENGTH);
+      const claims = { lead: L.i };
+      let text;
+      if (gap < 0.6) text = `${nm(L.i)}, ${nm(o[1].i)}, it's a battle to the wire!`;
+      else if (chaser && (fast || !sure) && back < 3) { text = `${nm(chaser.i)} closing fast, but ${nm(L.i)} still in front!`; claims.who = chaser.i; }
+      else if (chaser && (fast || !sure) && safe) { text = `${nm(L.i)} is home free, ${nm(chaser.i)} running on for second.`; claims.sure = L.i; }
+      else if (!sure || chaser && fast) text = `${nm(L.i)} still in front by ${gapWords(gap)}!`;
+      else { text = R.pick([`${nm(L.i)}, clear and drawing away!`, `They won't catch ${nm(L.i)} today!`]); claims.sure = L.i; }
+      say(t, text, 'call', claims);
+      lastLeader = L.i; nextFree = t + 2.4; continue;
     }
   }
 
@@ -176,17 +227,18 @@ export function raceCall(race, run, names) {
     const [a, b] = R.chance(0.5) ? [w, s] : [s, w];
     say(finishT + 0.1, `${nm(a.h)} and ${nm(b.h)} hit the wire together. It's a photo!`, 'finish');
     say(finishT + 3.2, `They'll need the photo for ${nm(a.h)} and ${nm(b.h)}.${th ? ` ${nm(th.h)} is third.` : ''} The time, ${timeWords(finishT)}.`, 'finish');
-    official = `It's ${nm(w.h)}, by a ${marginText(s.toPrev)}!`;
+    official = `It's ${nm(w.h)}, by ${finishWords(s.toPrev)}!`;
   } else {
     const m = s ? s.toPrev : 0;
-    const how = !s ? 'all alone!' : m > 6 ? `in a romp, by ${Math.round(m)} lengths!` : m > 2.5 ? `by ${gapWords(m)}, going away!` : m < 0.6 ? 'by a whisker!' : `by ${gapWords(m)}!`;
-    say(finishT + 0.1, `${nm(w.h)} wins it ${how}`, 'finish');
+    // "Going away" is for a winner still running at least as fast as the runner-up at the wire.
+    const how = !s ? 'all alone!' : m > 6 ? `in a romp, by ${finishWords(m)}!` : m > 2.5 && w.finishSpeed >= s.finishSpeed ? `by ${finishWords(m)}, going away!` : `by ${finishWords(m)}!`;
+    // A winner who wasn't in front a second before the wire got up in the last strides.
+    const late = s && lead(at(finishT - 1)).i !== w.h;
+    say(finishT + 0.1, `${nm(w.h)} ${late ? 'gets up to win it' : 'wins it'} ${how}`, 'finish');
     const placed = [s && `${nm(s.h)} second`, th && `${nm(th.h)} third`].filter(Boolean).join(', ');
     say(finishT + 3.2, `${placed ? `${placed}. ` : ''}The time, ${timeWords(finishT)}.`, 'finish');
   }
   lines.sort((a, b) => a.t - b.t);
-  // Keep lines from crowding each other.
-  for (let i = 1; i < lines.length; i++) if (lines[i].t < lines[i - 1].t + 1.8 && lines[i].kind !== 'finish') lines[i].t = lines[i - 1].t + 1.8;
   return { lines, photo: !!photo, official, dur };
 }
 
