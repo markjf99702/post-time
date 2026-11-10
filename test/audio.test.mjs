@@ -96,7 +96,7 @@ test('the voice picked is the best in the list, and never a novelty one', () => 
     'Chrome, Android (United States first)': ['English United States', 'English United States'],
     'Samsung Internet, Android': ['English United States', 'English United States'],
     'Firefox, Android': ['English (United States)', 'English (United States)'],
-    'Chrome OS': [/^Google US English \d+ \(Natural\)$/, /^Google US English \d+ \(Natural\)$/], // a Chromebook's natural voices are on the device
+    'Chrome OS': ['Chrome OS US English 4', 'Chrome OS US English 4'], // the pick of a Chromebook's own voices, by ear
     'No voices yet (Chrome before voiceschanged, or a browser with none)': [null, null],
   };
   assert.deepEqual(Object.keys(lists).sort(), Object.keys(want).sort(), 'a list in the fixture has no pick to check');
@@ -115,6 +115,19 @@ test('the voice picked is the best in the list, and never a novelty one', () => 
     assert.equal(offered[0] || null, picks[0], `${where}: the best voice isn't first in the menu`);
     assert.equal(offered.length, voices.filter(v => /^en/i.test(v.lang) && !NEVER.test(v.name)).length, `${where}: an English voice isn't offered`);
   }
+});
+
+test("on a Chromebook the fourth of its own voices is used, with the fifth next, and not the first", () => {
+  // Every Chromebook has "Chrome OS US English 1" to "8", and the first was used, as the first in the
+  // list. Listened to on one in November 2026, the fourth and fifth were the best of the eight.
+  const own = lists['Chrome OS'].filter(v => /^Chrome OS US English \d$/.test(v.name));
+  assert.deepEqual(own.map(v => v.name.slice(-1)).join(''), '12345678', 'the list in the fixture has changed');
+  for (const online of [true, false]) assert.equal(pickVoice(own, { online }).name, 'Chrome OS US English 4');
+  assert.equal(offeredVoices(own).map(v => v.name.slice(-1)).join(''), '45123678');
+  // On one that has Google's natural voices as well, these two are still first, then the natural ones.
+  assert.match(offeredVoices(lists['Chrome OS']).slice(0, 3).map(v => v.name).join(' / '), /^Chrome OS US English 4 \/ Chrome OS US English 5 \/ Google US English \d+ \(Natural\)$/);
+  // A voice chosen in the menu still wins.
+  assert.equal(pickVoice(own, { saved: 'Chrome OS US English 7' }).name, 'Chrome OS US English 7');
 });
 
 test('a voice chosen in the menu is used while it is there, and kept while it is not', () => {

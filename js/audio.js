@@ -224,17 +224,21 @@ const APPLE = /^(Samantha|Ava|Zoe|Allison|Evan|Nathan|Tom|Joelle|Karen|Daniel|Mo
 const langOf = v => String(v.lang || '').replace(/_/g, '-').toLowerCase().replace(/^eng(?=-|$)/, 'en');
 const needsNet = v => v.localService === false;
 
-// How good a voice is for the call, or -1 for one that can't be used. The better kinds first: the natural
-// voices in Edge and on a Chromebook, the ones downloaded in a Mac's or an iPhone's settings (Premium,
-// Siri, Enhanced), Alex, Chrome's Google voices, then what each system starts with. American English
-// ahead of other English, since the track is American, and of two alike the one that works offline.
+// How good a voice is for the call, or -1 for one that can't be used. The better kinds first: the two of a
+// Chromebook's own voices that were picked by ear, the natural voices in Edge and on a Chromebook, the ones
+// downloaded in a Mac's or an iPhone's settings (Premium, Siri, Enhanced), Alex, Chrome's Google voices,
+// then what each system starts with. American English ahead of other English, since the track is
+// American, and of two alike the one that works offline.
 function grade(v, online) {
   const lang = langOf(v), name = String(v.name || '');
   if (!/^en(-|$)/.test(lang)) return -1;
   if (NEVER.has(name.replace(/\s*\(.*$/, '').trim().toLowerCase()) || /^espeak/i.test(name)) return -1;
   if (needsNet(v) && !online) return -1;
   let g = 20;
-  if (/\b(Natural|Neural)\b/i.test(name)) g = 90;
+  // A Chromebook's own eight voices: the fourth and fifth were the pick of them by ear (the first is its
+  // default, and was being used as the first in the list), so on a Chromebook they come before anything.
+  if (/^Chrome OS US English [45]$/.test(name)) g = 92;
+  else if (/\b(Natural|Neural)\b/i.test(name)) g = 90;
   else if (/\(Premium\)|\bSiri\b/i.test(name)) g = 88;
   else if (/\(Enhanced\)/i.test(name)) g = 80;
   else if (name === 'Alex') g = 78;
