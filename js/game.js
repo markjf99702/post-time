@@ -166,8 +166,12 @@ export function mtpState(race) {
   const k = raceKey(race);
   if (race.status === 'official') return { mtp: 0, frac: 1 };
   if (nextRace() !== race) return { mtp: MTP_START, frac: 0 };
-  const opened = game.player.opened[k] || (game.player.opened[k] = Date.now());
-  const secs = (Date.now() - opened) / 1000;
+  // A race opened later than now was opened by a clock that has since been put back (a phone's wrong
+  // clock put right). Start its clock again from now, or it would be hundreds of minutes from post, with
+  // a board that can't work out any odds, until the clock caught up.
+  const now = Date.now();
+  if (!(game.player.opened[k] <= now)) game.player.opened[k] = now;
+  const secs = Math.max(0, (now - game.player.opened[k]) / 1000);
   const mtp = Math.max(2, MTP_START - Math.floor(secs / MTP_SECONDS));
   const frac = Math.min(0.9, secs / (MTP_SECONDS * (MTP_START - 2)) * 0.9);
   return { mtp, frac };

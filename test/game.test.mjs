@@ -10,7 +10,7 @@ globalThis.localStorage = {
   removeItem: k => { store.delete(k); },
 };
 globalThis.window = new EventTarget();
-const { game, newMeet, load, save, card, toteFor, placeBet, goToGate, mtpState, advanceDay, callFor, horseOf, runnersFor, photoRecord } = await import('../js/game.js');
+const { game, newMeet, load, save, card, toteFor, placeBet, goToGate, mtpState, currentBoard, advanceDay, callFor, horseOf, runnersFor, photoRecord } = await import('../js/game.js');
 const { stateAt, RAIL } = await import('../js/sim.js');
 const { LENGTH } = await import('../js/track.js');
 const { marginShort } = await import('../js/chart.js');
@@ -191,6 +191,19 @@ test("looking ahead at a later race doesn't start its clock", () => {
   load();
   assert.equal(game.player.opened['0:3'], undefined);
   assert.ok(game.player.opened['0:1']);
+});
+
+test("a clock put back after a race was opened doesn't leave it hours from post with no odds", () => {
+  // The race was opened with the clock an hour ahead (a phone's wrong clock, since put right): it showed
+  // "312 MTP", a win pool of $NaN and 1-5 on every horse until the clock caught up.
+  build('clock-back');
+  const [r1] = card().races;
+  game.player.opened['0:1'] = Date.now() + 3600000;
+  assert.deepEqual(mtpState(r1), { mtp: 12, frac: 0 });
+  assert.ok(game.player.opened['0:1'] <= Date.now(), 'the race is still opened in the future');
+  const b = currentBoard(r1);
+  assert.ok([...b.odds, ...Object.values(b.pools)].every(Number.isFinite), `the board has ${JSON.stringify(b.pools)}`);
+  assert.ok(new Set(b.text).size > 1, 'every horse is at the same odds');
 });
 
 test('the next race day comes after the page is opened again', () => {
