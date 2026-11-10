@@ -124,11 +124,7 @@ export function renderWatch(el, nav, params) {
     for (let i = 0; i < call.lines.length; i++) if (call.lines[i].t <= clockT) idx = i;
     if (idx !== shown && idx >= 0) {
       shown = idx;
-      prev.textContent = idx > 0 ? call.lines[idx - 1].text : '';
-      now.textContent = call.lines[idx].text;
-      fitCall();
-      now.style.animation = 'none'; void now.offsetWidth; now.style.animation = '';
-      if (speed === 1 && !quiet) audio.say(call.lines[idx].text);
+      showLine(call.lines[idx].text, idx > 0 ? call.lines[idx - 1].text : '');
     }
 
     // Running order, a few times a second.
@@ -149,6 +145,15 @@ export function renderWatch(el, nav, params) {
 
     if (!ended && T >= endT - 0.01) finish();
     raf = requestAnimationFrame(frame);
+  }
+
+  // The caller's new line, with the one before it above, read aloud at normal speed.
+  function showLine(text, before) {
+    prev.textContent = before;
+    now.textContent = text;
+    fitCall();
+    now.style.animation = 'none'; void now.offsetWidth; now.style.animation = '';
+    if (speed === 1 && !quiet) audio.say(text);
   }
 
   // A long line on a narrow screen gets a smaller size rather than spilling out of the box. The line
@@ -213,7 +218,12 @@ export function renderWatch(el, nav, params) {
         const box = h('div', { class: 'w-photo' }, pc, h('div', { class: 'cap' }, `#${first.number} ${first.name} by a ${marginWord(run.results[1].toPrev)} over #${second.number}`), sign);
         stage.append(box);
         photoShown = true;
-        setTimeout(() => { sign.classList.add('up'); done(); }, 1600);
+        setTimeout(() => {
+          sign.classList.add('up');
+          // Only now does the caller say who won it (unless the race has been left meanwhile).
+          if (call.official && !gone) showLine(call.official, now.textContent);
+          done();
+        }, 1600);
       }, 1600);
     } else setTimeout(done, 900);
   }

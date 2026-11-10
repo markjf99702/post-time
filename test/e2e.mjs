@@ -149,6 +149,11 @@ await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 const shownOrder = await page.locator('.order button').evaluateAll(bs => bs.map(b => +b.getAttribute('aria-label').match(/number (\d+)/)[1]));
 const officialOrder = await page.evaluate(() => { const r = window.postTime.card().races[0]; return r.result.order.map(o => r.entries[o.k].pp); });
 assert.deepEqual(shownOrder, officialOrder, 'the running order at the end is not the official order');
+// The caller's last line (second, third and the time) has come up by the end. After a photo the winner's
+// line is under it, put up with the official sign.
+const lastCall = await page.evaluate(() => ({ now: document.querySelector('.call .now').textContent, prev: document.querySelector('.call .prev').textContent, official: window.__watch.call.official }));
+if (lastCall.official) assert.deepEqual([lastCall.now, /The time, /.test(lastCall.prev)], [lastCall.official, true], "after a photo the call doesn't end on the winner's line");
+else assert.match(lastCall.now, /The time, /, "the call's last line never came up");
 await page.click('.w-ctl .btn');
 await page.waitForSelector('.official');
 assert.equal(await page.locator('.board tbody tr.mine').count() >= 1, true, 'your horses are marked in the order of finish');
@@ -222,8 +227,26 @@ const small = await page.evaluate(async () => {
 assert.ok(small.spill <= 1, `the race call spills ${small.spill}px out of its box on a small phone`);
 assert.equal(small.heights.length, 1, `the picture changes size with the call: ${small.heights}`);
 assert.ok(small.label < 24, 'the race number wraps onto two lines');
-// This one goes to a photo. The official sign goes up under the photo, not over it.
-await page.evaluate(() => { window.__watch.call.photo = true; window.__watch.setT(window.__watch.endT); });
+// This one goes to a photo. The caller says who won it when the official sign goes up, not before, and
+// the line fits its box. The official sign goes up under the photo, not over it.
+const photoCall = await page.evaluate(() => new Promise(resolve => {
+  const w = window.__watch, line = "It's Number One, by a nose!";
+  w.call.photo = true;
+  w.call.official = line;
+  w.setT(w.endT);
+  let early = false;
+  const look = () => {
+    const sign = document.querySelector('.w-photo .w-flash'), box = document.querySelector('.call');
+    const up = !!sign && sign.classList.contains('up');
+    const said = box.querySelector('.now').textContent === line;
+    if (said && !up) early = true;
+    if (up) resolve({ early, said, spill: box.scrollHeight - box.clientHeight });
+    else requestAnimationFrame(look);
+  };
+  look();
+}));
+assert.deepEqual({ early: photoCall.early, said: photoCall.said }, { early: false, said: true }, "a photo's winner is called before the official sign, or not at all");
+assert.ok(photoCall.spill <= 1, `the winner's line spills ${photoCall.spill}px out of its box on a small phone`);
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 const photoSign = await page.evaluate(() => {
   const box = s => document.querySelector(s).getBoundingClientRect();

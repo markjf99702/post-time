@@ -167,6 +167,27 @@ test('a field of one or two horses can be called, and the forum can talk about i
   }
 });
 
+test("the recording runs long enough for the caller's last line", () => {
+  // The recording ended about a second and a half after the last horse, and the line with second, third
+  // and the time is due 3.2 seconds after the winner: in two races out of three it was never reached.
+  const w = createWorld('test-last-line', '2026-09-26');
+  const short = [];
+  for (let d = 0; d < 2; d++) {
+    for (const r of w.cards[w.day].races) {
+      const run = simulateRace(r, w, { record: true });
+      const call = raceCall(r, run, r.entries.map(e => w.horses[e.hid].name));
+      const end = run.frames.length * run.dt;
+      const lastHome = run.t0 + Math.max(...run.results.map(x => x.time));
+      assert.ok(Math.abs(end - lastHome - 4) < 0.1, `race day ${d + 1}, race ${r.no}: the recording runs ${(end - lastHome).toFixed(2)} s past the last horse`);
+      assert.match(call.lines[call.lines.length - 1].text, /The time, /);
+      for (const l of call.lines) if (run.t0 + l.t >= end) short.push(`race day ${d + 1}, race ${r.no}: "${l.text}" is due ${(run.t0 + l.t - end).toFixed(2)} s after the recording ends`);
+      applyResult(w, r, run, r.entries.map(() => 3));
+    }
+    nextDay(w);
+  }
+  assert.deepEqual(short, []);
+});
+
 test('a first-time starter in a maiden claimer is seldom the morning-line favourite', () => {
   // The public guessed every horse that hadn't run at a 64, which is better than most maiden claimers
   // ever run, so one of them was the favourite in about a quarter of those races and seldom won.

@@ -352,8 +352,10 @@ export function runRace(race, entrants, { record = true } = {}) {
       frames.push(f);
     }
     if (allDone === n) {
+      // A recorded race runs on for four seconds after the last horse is home, long enough for the
+      // caller's last line. (A horse's time is on the race clock, which starts t0 after the gate opens.)
       const lastT = Math.max(...hs.map(h => h.time));
-      if (t > lastT + (record ? 4 : 0)) break;
+      if (t > t0 + lastT + (record ? 4 : 0)) break;
     }
   }
 

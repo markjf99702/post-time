@@ -168,19 +168,26 @@ export function raceCall(race, run, names) {
   // The finish.
   const [w, s, th] = run.results;
   const photo = s && s.toPrev < 0.3;
+  // In a photo the caller doesn't know who won until the picture is read, so no line with a time on it
+  // says: the two are named in an order picked by a coin toss, and the winner's line is handed back on
+  // its own, for when the official sign goes up.
+  let official = null;
   if (photo) {
-    say(finishT + 0.1, `${nm(w.h)} and ${nm(s.h)} hit the wire together. It's a photo!`, 'finish');
+    const [a, b] = R.chance(0.5) ? [w, s] : [s, w];
+    say(finishT + 0.1, `${nm(a.h)} and ${nm(b.h)} hit the wire together. It's a photo!`, 'finish');
+    say(finishT + 3.2, `They'll need the photo for ${nm(a.h)} and ${nm(b.h)}.${th ? ` ${nm(th.h)} is third.` : ''} The time, ${timeWords(finishT)}.`, 'finish');
+    official = `It's ${nm(w.h)}, by a ${marginText(s.toPrev)}!`;
   } else {
     const m = s ? s.toPrev : 0;
     const how = !s ? 'all alone!' : m > 6 ? `in a romp, by ${Math.round(m)} lengths!` : m > 2.5 ? `by ${gapWords(m)}, going away!` : m < 0.6 ? 'by a whisker!' : `by ${gapWords(m)}!`;
     say(finishT + 0.1, `${nm(w.h)} wins it ${how}`, 'finish');
+    const placed = [s && `${nm(s.h)} second`, th && `${nm(th.h)} third`].filter(Boolean).join(', ');
+    say(finishT + 3.2, `${placed ? `${placed}. ` : ''}The time, ${timeWords(finishT)}.`, 'finish');
   }
-  const placed = [s && `${nm(s.h)} ${photo ? 'in the photo' : 'second'}`, th && `${nm(th.h)} third`].filter(Boolean).join(', ');
-  say(finishT + 3.2, `${placed ? `${placed}. ` : ''}The time, ${timeWords(finishT)}.`, 'finish');
   lines.sort((a, b) => a.t - b.t);
   // Keep lines from crowding each other.
   for (let i = 1; i < lines.length; i++) if (lines[i].t < lines[i - 1].t + 1.8 && lines[i].kind !== 'finish') lines[i].t = lines[i - 1].t + 1.8;
-  return { lines, photo: !!photo, dur };
+  return { lines, photo: !!photo, official, dur };
 }
 
 export function marginPhrase(l) { return marginText(l); }

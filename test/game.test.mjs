@@ -50,6 +50,7 @@ function playLongMeet(days = 60) {
       races.push({
         day: d + 1, no: race.no, field: race.entries.length, lines: call.lines.map(l => l.text), photo: call.photo,
         winner: horseOf(race.entries[run.results[0].h]).name, reactions: (race.forumAfter || []).map(p => p.text), closing,
+        second: run.results[1] ? horseOf(race.entries[run.results[1].h]).name : null, official: call.official,
       });
     }
     advanceDay();
@@ -201,6 +202,31 @@ test('the caller says a horse is closing only when it is gaining on the leader',
   assert.deepEqual(wrong.map(r => `race day ${r.day}, race ${r.no}: ${r.closing.map(c => c.text).join(' / ')}`), []);
   assert.ok(races.some(r => r.closing.length), 'nobody is ever called closing');
   assert.ok(races.some(r => r.lines.some(l => / still in front by /.test(l))), "the caller never just says who's still in front");
+});
+
+test("in a photo finish the caller doesn't say who won until the official sign", () => {
+  // The winner was always the first of the two named at the wire, and the next line had the other one
+  // 'in the photo'. Now a coin toss orders the two names, and the winner's line comes with the sign.
+  const races = playLongMeet();
+  const photos = races.filter(r => r.photo);
+  assert.ok(photos.length > 20, `only ${photos.length} photo finishes in ${races.length} races`);
+  let winnerFirst = 0;
+  for (const r of photos) {
+    const where = `race day ${r.day}, race ${r.no}: ${r.lines.slice(-2).join(' / ')}`;
+    const [wire, placings] = r.lines.slice(-2);
+    const two = [`${r.winner} and ${r.second}`, `${r.second} and ${r.winner}`];
+    const order = two.findIndex(x => wire === `${x} hit the wire together. It's a photo!`);
+    assert.ok(order >= 0, where);
+    assert.ok(placings.startsWith(`They'll need the photo for ${two[order]}.`) && / The time, [\d:.]+\.$/.test(placings), where);
+    if (order === 0) winnerFirst++;
+    assert.deepEqual(r.lines.filter(l => /\bwins?\b|\bwon\b|gets up|gets the nod|^It's .+, by /.test(l)), [], where);
+    assert.ok(!/by a (nose|head|neck)/.test(wire + placings), where);
+    assert.match(r.official, /^It's .+, by a (nose|head|neck)!$/);
+    assert.ok(r.official.startsWith(`It's ${r.winner}, by a `), `${where} / ${r.official}`);
+  }
+  const share = winnerFirst / photos.length;
+  assert.ok(share > 0.3 && share < 0.7, `the winner is named first in ${winnerFirst} of ${photos.length} photo finishes`);
+  assert.deepEqual(races.filter(r => !r.photo && r.official !== null).map(r => `race day ${r.day}, race ${r.no}`), [], 'a race that is not a photo has a line for the sign');
 });
 
 test("a save that isn't a meet is left alone until a new meet is started", () => {
