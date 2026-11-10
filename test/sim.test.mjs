@@ -10,7 +10,7 @@ import { coursePath, FURLONG, COURSES } from '../js/track.js';
 import { createWorld, simulateRace, buildCard, applyResult, nextDay, ageOf } from '../js/world.js';
 import { makeTote, board, settle, ticketReturn, cost, TAKEOUT } from '../js/tote.js';
 import { fmtTime, fmtClock } from '../js/chart.js';
-import { timeWords, raceCall } from '../js/call.js';
+import { timeWords, timeSay, aloud, raceCall } from '../js/call.js';
 import { forumPosts } from '../js/forum.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -351,6 +351,47 @@ test('times round up into the next minute instead of reading 60 seconds', () => 
   assert.equal(timeWords(119.996), '2:00.00');
   assert.equal(timeWords(58.5), '58.50');
   assert.equal(timeWords(97.44), '1:37.44');
+});
+
+test('the voice is given times and numbers in words', () => {
+  // The call box showed "The time, 1:17.55." and "The quarter in 22 and 3.", and the voice was handed the
+  // same digits to make what it could of. Now each line has a spoken form: a time in fifths, a part of a
+  // fifth dropped, the way the quarter and the half are called.
+  assert.equal(timeSay(59.996), 'one minute flat');
+  assert.equal(timeSay(60.0), 'one minute flat');
+  assert.equal(timeSay(63.37), 'one oh three and one');
+  assert.equal(timeSay(109.79), 'one forty-nine and three');
+  assert.equal(timeSay(58.5), 'fifty-eight and two');
+  assert.equal(timeSay(77.55), 'one seventeen and two');
+  assert.equal(timeSay(57.35), 'fifty-seven and one');
+  assert.equal(timeSay(22.6), 'twenty-two and three');
+  assert.equal(timeSay(22.4), 'twenty-two and two');
+  assert.equal(timeSay(47.1), 'forty-seven flat');
+  assert.equal(timeSay(120.2), 'two minutes and one');
+  assert.equal(aloud("It's Dr. Fizz, by a nose!"), "It's Doctor Fizz, by a nose!");
+  // Two race days of calls: nothing the voice is given has a digit or a sign in it, the call box keeps
+  // its digits for the times, and a fraction says the same fifths both ways.
+  const w = createWorld('test-spoken', '2026-09-26');
+  const fifth = ['flat', 'and one', 'and two', 'and three', 'and four'];
+  let fractions = 0;
+  for (let d = 0; d < 2; d++) {
+    for (const r of w.cards[w.day].races) {
+      const run = simulateRace(r, w, { record: true });
+      const call = raceCall(r, run, r.entries.map((e, i) => (i ? w.horses[e.hid].name : 'Dr. Fizz')));
+      for (const l of call.lines) {
+        assert.equal(typeof l.say, 'string', `"${l.text}" has no spoken form`);
+        assert.ok(!/[\d#:½¼¾&<>]|Dr\./.test(l.say), `the voice is given "${l.say}"`);
+        const shown = l.kind === 'frac' && l.text.match(/ in \d+ (flat|and (\d))/);
+        if (shown) { fractions++; assert.ok(l.say.includes(` ${fifth[+shown[2] || 0]}`), `"${l.text}" is said as "${l.say}"`); }
+      }
+      const last = call.lines[call.lines.length - 1];
+      assert.match(last.text, /The time, (\d:)?\d\d\.\d\d\.$/, 'the call box lost the time in digits');
+      assert.ok(last.say.endsWith(`The time, ${timeSay(run.finalTime)}.`), `the time is said as "${last.say}"`);
+      applyResult(w, r, run, r.entries.map(() => 3));
+    }
+    nextDay(w);
+  }
+  assert.ok(fractions > 10, 'no fractions were called');
 });
 
 test('the offline copy lists every file the page needs', async () => {

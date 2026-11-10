@@ -413,6 +413,15 @@ const nextRace = await page.evaluate(async () => {
   return { menu: ['optSound', 'optVoice'].map(id => document.getElementById(id).checked), read: window.__voice.slice(from).some(x => x !== '(cancel)') };
 });
 assert.deepEqual(nextRace, { menu: [false, true], read: true }, "the next race isn't read aloud with Sound off and the call's own tick on");
+// The voice is given the time in words, while the call box keeps its digits.
+const timeRead = await page.evaluate(async () => {
+  const w = window.__watch, last = w.call.lines[w.call.lines.length - 1];
+  w.setT(w.t0 + last.t + 0.05);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  return { shown: document.querySelector('.call .now').textContent, read: window.__voice.filter(x => x !== '(cancel)').pop() };
+});
+assert.match(timeRead.shown, /The time, (\d:)?\d\d\.\d\d\.$/, 'the call box lost the time in digits');
+assert.match(timeRead.read, /The time, [a-z -]+\.$/, 'the voice is given the time in digits');
 await page.evaluate(() => window.postTime.nav.go('card'));
 await page.waitForSelector('.races');
 

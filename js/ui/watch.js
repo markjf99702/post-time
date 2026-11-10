@@ -10,6 +10,7 @@ import { marginShort, fmtTime, fmtClock } from '../chart.js';
 import { game, save, goToGate, callFor, runnersFor, raceLabel, horseOf, myBets } from '../game.js';
 import { BET_NAMES } from '../tote.js';
 import { clockText } from '../world.js';
+import { aloud } from '../call.js';
 import * as audio from '../audio.js';
 
 export function renderWatch(el, nav, params) {
@@ -124,7 +125,7 @@ export function renderWatch(el, nav, params) {
     for (let i = 0; i < call.lines.length; i++) if (call.lines[i].t <= clockT) idx = i;
     if (idx !== shown && idx >= 0) {
       shown = idx;
-      showLine(call.lines[idx].text, idx > 0 ? call.lines[idx - 1].text : '');
+      showLine(call.lines[idx], idx > 0 ? call.lines[idx - 1].text : '');
     }
 
     // Running order, a few times a second.
@@ -147,13 +148,14 @@ export function renderWatch(el, nav, params) {
     raf = requestAnimationFrame(frame);
   }
 
-  // The caller's new line, with the one before it above, read aloud at normal speed.
-  function showLine(text, before) {
+  // The caller's new line, with the one before it above, read aloud at normal speed. The voice is given
+  // the line's spoken form, where a time is in words ("one seventeen and two" for 1:17.55).
+  function showLine(line, before) {
     prev.textContent = before;
-    now.textContent = text;
+    now.textContent = line.text;
     fitCall();
     now.style.animation = 'none'; void now.offsetWidth; now.style.animation = '';
-    if (speed === 1 && !quiet) audio.say(text);
+    if (speed === 1 && !quiet) audio.say(line.say || line.text);
   }
 
   // A long line on a narrow screen gets a smaller size rather than spilling out of the box. The line
@@ -221,7 +223,7 @@ export function renderWatch(el, nav, params) {
         setTimeout(() => {
           sign.classList.add('up');
           // Only now does the caller say who won it (unless the race has been left meanwhile).
-          if (call.official && !gone) showLine(call.official, now.textContent);
+          if (call.official && !gone) showLine({ text: call.official, say: aloud(call.official) }, now.textContent);
           done();
         }, 1600);
       }, 1600);

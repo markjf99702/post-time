@@ -7,9 +7,16 @@ import { segmentAt, LENGTH, FURLONG } from './track.js';
 import { rng } from './rng.js';
 import { marginText, lengthsText } from './chart.js';
 
-const SAY_NUM = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
-  'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
-const lengthsWords = n => `${SAY_NUM[n] || n} lengths`;
+// Numbers in words, since the voice reads the call: "twenty-two", and "oh" for a nought.
+const ONES = ['oh', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
+  'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+const TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+export function numWords(n) {
+  if (n < 20) return ONES[n];
+  if (n < 100) return TENS[Math.floor(n / 10)] + (n % 10 ? `-${ONES[n % 10]}` : '');
+  return `${ONES[Math.floor(n / 100)]} hundred${n % 100 ? ` and ${numWords(n % 100)}` : ''}`;
+}
+const lengthsWords = n => `${numWords(n)} lengths`;
 
 // Paths off the rail (the chart's measure: a horse on the rail is at 0, in the fourth path at 3).
 // "On the outside" is the fourth path or wider, "on the inside" and "up the rail" the rail path.
@@ -17,18 +24,39 @@ const OUTSIDE = 2.5, INSIDE = 0.8;
 // Running calls keep this many seconds clear of a fraction's line, before and after.
 const CLEAR = 1.8;
 
-function secsWords(t) {
-  // 22.43 -> "twenty-two and two"; 45.9 -> "forty-five and four"
-  const whole = Math.floor(t);
-  const fifth = Math.min(4, Math.floor((t - whole) * 5));
-  return `${whole}${fifth ? ` and ${fifth}` : ' flat'}`;
+// A caller gives a time in fifths of a second, and a part of a fifth is dropped: 22.59 is "22 and 2".
+// The fifths come from the time as the clock shows it, to the hundredth, so the two never disagree
+// (22.996 is 23.00 on the clock, and "23 flat").
+function fifths(t) {
+  const h = Math.round(t * 100);
+  return { min: Math.floor(h / 6000), sec: Math.floor((h % 6000) / 100), fifth: Math.floor((h % 100) / 20) };
 }
-// Rounded before it's split into minutes and seconds, so it never says 1:60.00.
+// A fraction as the call box shows it: 22.43 -> "22 and 2"; 47.1 -> "47 flat".
+function secsWords(t) {
+  const { min, sec, fifth } = fifths(t);
+  return `${min * 60 + sec}${fifth ? ` and ${fifth}` : ' flat'}`;
+}
+// Any time as it's said aloud, the quarter, the half and the final time alike: 22.6 -> "twenty-two and
+// three", 77.55 -> "one seventeen and two", 63.37 -> "one oh three and one", 60 -> "one minute flat".
+export function timeSay(t) {
+  const { min, sec, fifth } = fifths(t);
+  const tail = fifth ? ` and ${numWords(fifth)}` : ' flat';
+  if (!min) return `${numWords(sec)}${tail}`;
+  if (!sec) return `${numWords(min)} minute${min > 1 ? 's' : ''}${tail}`;
+  return `${numWords(min)} ${sec < 10 ? 'oh ' : ''}${numWords(sec)}${tail}`;
+}
+// The final time as the call box shows it, to the hundredth. Rounded before it's split into minutes and
+// seconds, so it never says 1:60.00.
 export function timeWords(t) {
   const h = Math.round(t * 100);
   const m = Math.floor(h / 6000);
   const s = (h % 6000) / 100;
   return m ? `${m}:${s.toFixed(2).padStart(5, '0')}` : s.toFixed(2);
+}
+// A line as the voice is given it. A title is spelt out, since "Dr." has a full stop that a voice
+// takes for the end of a sentence.
+export function aloud(text) {
+  return text.replace(/\bDr\. /g, 'Doctor ');
 }
 
 // A gap during the running, as a caller judges it by eye.
@@ -53,13 +81,14 @@ export function finishWords(l) {
   return lengthsWords(Math.round(l));
 }
 
-// Each line is { t, text, kind } and, for the tests, what it claims: `lead` is the horse it names as the
-// leader, `change` marks a lead change, `who` is a horse it says something else about (making a move,
-// closing), and `sure` is the horse it says has the race won.
+// Each line is { t, text, say, kind }: `text` is what the call box shows and `say` is the same line as the
+// voice is given it, with times in words. For the tests, a line also has what it claims: `lead` is the
+// horse it names as the leader, `change` marks a lead change, `who` is a horse it says something else
+// about (making a move, closing), and `sure` is the horse it says has the race won.
 export function raceCall(race, run, names) {
   const R = rng(`call:${race.seed}`);
   const lines = [];
-  const say = (t, text, kind = 'call', claims = null) => lines.push({ t, text, kind, ...claims });
+  const say = (t, text, kind = 'call', claims = null, spoken = text) => lines.push({ t, text, say: aloud(spoken), kind, ...claims });
   const D = run.distance;
   const t0 = run.t0;
   const at = t => stateAt(run, t0 + t);
@@ -109,7 +138,8 @@ export function raceCall(race, run, names) {
     const label = k === 0 ? 'The quarter' : 'The half';
     const pace = k === 0 ? (f.t < par - 0.6 ? ', a fast pace' : f.t > par + 0.8 ? ', nice and easy up front' : '') : '';
     fracAt.push(f.t + 0.3);
-    say(f.t + 0.3, `${label} in ${secsWords(f.t)}${pace}.`, 'frac');
+    const line = time => `${label} in ${time}${pace}.`;
+    say(f.t + 0.3, line(secsWords(f.t)), 'frac', null, line(timeSay(f.t)));
   });
 
   // Running calls every few seconds until the wire. Each is made from the race as it stands at its own
@@ -143,7 +173,7 @@ export function raceCall(race, run, names) {
         moveSeen.add(mover.i);
         const off = mover.o - RAIL;
         const wide = Math.round(off) + 1; // its path, counted the way the chart counts it
-        say(t, off >= OUTSIDE ? `${nm(mover.i)} is moving, ${SAY_NUM[wide] || wide} wide!`
+        say(t, off >= OUTSIDE ? `${nm(mover.i)} is moving, ${numWords(wide)} wide!`
           : off < INSIDE ? `${nm(mover.i)} is making a run on the inside!`
           : `${nm(mover.i)} is making a run!`, 'call', { who: mover.i });
         nextFree = t + 3.2; continue;
@@ -226,7 +256,8 @@ export function raceCall(race, run, names) {
   if (photo) {
     const [a, b] = R.chance(0.5) ? [w, s] : [s, w];
     say(finishT + 0.1, `${nm(a.h)} and ${nm(b.h)} hit the wire together. It's a photo!`, 'finish');
-    say(finishT + 3.2, `They'll need the photo for ${nm(a.h)} and ${nm(b.h)}.${th ? ` ${nm(th.h)} is third.` : ''} The time, ${timeWords(finishT)}.`, 'finish');
+    const line = time => `They'll need the photo for ${nm(a.h)} and ${nm(b.h)}.${th ? ` ${nm(th.h)} is third.` : ''} The time, ${time}.`;
+    say(finishT + 3.2, line(timeWords(finishT)), 'finish', null, line(timeSay(finishT)));
     official = `It's ${nm(w.h)}, by ${finishWords(s.toPrev)}!`;
   } else {
     const m = s ? s.toPrev : 0;
@@ -236,7 +267,8 @@ export function raceCall(race, run, names) {
     const late = s && lead(at(finishT - 1)).i !== w.h;
     say(finishT + 0.1, `${nm(w.h)} ${late ? 'gets up to win it' : 'wins it'} ${how}`, 'finish');
     const placed = [s && `${nm(s.h)} second`, th && `${nm(th.h)} third`].filter(Boolean).join(', ');
-    say(finishT + 3.2, `${placed ? `${placed}. ` : ''}The time, ${timeWords(finishT)}.`, 'finish');
+    const line = time => `${placed ? `${placed}. ` : ''}The time, ${time}.`;
+    say(finishT + 3.2, line(timeWords(finishT)), 'finish', null, line(timeSay(finishT)));
   }
   lines.sort((a, b) => a.t - b.t);
   return { lines, photo: !!photo, official, dur };
