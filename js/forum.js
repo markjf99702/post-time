@@ -112,7 +112,7 @@ const SYSTEMS = {
       const bullet = h.works.find(w => w.rank === 1);
       if (bullet) angles.push(`worked the fastest ${bullet.f} furlongs of the morning on ${bullet.dt.slice(5).replace('-', '/')}`);
       if (last && last.claimed) angles.push('first start for a new barn after the claim');
-      if (h.pps.length && h.pps.length <= 2 && ageNum(world, h) === 3) angles.push('lightly raced and still improving');
+      if (h.pps.length && h.pps.length <= 2 && ageOn(race, h) === 3) angles.push('lightly raced and still improving');
       if (!angles.length) return null;
       return { i, angles, odds: ctx.odds[i] };
     }).filter(Boolean).sort((a, b) => b.angles.length - a.angles.length || b.odds - a.odds);
@@ -144,7 +144,8 @@ const SYSTEMS = {
   },
 };
 
-function ageNum(world, h) { return new Date(world.start).getUTCFullYear() - h.foaled; }
+// A horse's age on the day of the race: every horse turns a year older on 1 January.
+function ageOn(race, h) { return +race.date.slice(0, 4) - h.foaled; }
 function cap(s) { return s[0].toUpperCase() + s.slice(1); }
 function rankBy(scores) { return scores.map((s, i) => [s, i]).sort((a, b) => b[0] - a[0]).map(([, i]) => i); }
 function pickLine(lines, race) { return lines[rng(`line:${race.seed}`).int(0, lines.length - 1)]; }

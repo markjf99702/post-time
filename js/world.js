@@ -56,14 +56,15 @@ const COATS = [
   ['bay', 'b.', 40], ['dark bay', 'dk b.', 18], ['chestnut', 'ch.', 26], ['grey', 'gr.', 9], ['black', 'blk.', 5], ['roan', 'ro.', 2],
 ];
 
-function newHorse(world, R, { age, id }) {
+// `day` is the race day the horse arrives for: its age is counted from that day's year.
+function newHorse(world, R, { age, id, day = 0 }) {
   // The names in use, gathered once a day. A save from before they were cleared at the end of the
   // day has them as {}, which is what JSON makes of a Set: gather them again.
   const taken = world._names instanceof Set ? world._names : (world._names = new Set(world.horses.map(h => h.name)));
   const female = R.chance(0.42);
   const sire = R.weighted(SIRES.map(s => [s, 1 + s.q]));
   const coat = R.weighted(COATS.map(c => [c, c[2]]));
-  const year = dayDate(world, 0).getUTCFullYear();
+  const year = dayDate(world, day).getUTCFullYear();
   const ability = clamp(73 + R.gauss() * 8.5 + sire.q * 1.1, 50, 104);
   const potential = age === 3 ? Math.max(0, R.gauss() * 3 + 5) : age === 4 ? Math.max(0, R.gauss() * 2 + 1.5) : 0;
   const dist = clamp(sire.dist + R.gauss() * 0.9, 5.5, 11);
@@ -100,6 +101,8 @@ function newHorse(world, R, { age, id }) {
   if (age >= 4) w = ability < 64 && R.chance(0.5) ? 0 : Math.max(1, w);
   else if (prior <= 2 && R.chance(0.6)) w = 0;
   else if (prior > 2 && ability > 72) w = Math.max(1, w);
+  // A win handed out here takes the place of a third or a second, so nobody has placed more often than run.
+  while (w + p + s > prior) { if (s) s--; else if (p) p--; else w--; }
   h.life = { starts: prior, w, p, s, earn: Math.round((w * 14000 + p * 4500 + s * 2500) * (0.6 + ability / 100) / 10) * 10 };
   h.maiden = w === 0;
   return h;
@@ -186,9 +189,12 @@ function endOfDay(world, day) {
       h.pps = h.pps.slice(-1); h.works = []; // keep the save small
     }
   }
+  // They first run on the next race day, and are three, four or five then. (Their foaling year used to
+  // be counted from the meet's first race day, so after a New Year they arrived a year older than drawn,
+  // and no three-year-old ever came again. Horses already in a barn keep the age they've been shown at.)
   const active = world.horses.filter(h => !h.retired).length;
   for (let i = active; i < BARN; i++) {
-    const h = newHorse(world, R, { age: R.weighted([[3, 70], [4, 20], [5, 10]]), id: world.horses.length });
+    const h = newHorse(world, R, { age: R.weighted([[3, 70], [4, 20], [5, 10]]), id: world.horses.length, day: day + 1 });
     world.horses.push(h);
     addWork(world, h, day + 1, R); addWork(world, h, day + 1, R);
   }

@@ -7,7 +7,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runRace, figureFor, stateAt, runningOrder } from '../js/sim.js';
 import { coursePath, FURLONG, COURSES } from '../js/track.js';
-import { createWorld, simulateRace, buildCard, applyResult, nextDay } from '../js/world.js';
+import { createWorld, simulateRace, buildCard, applyResult, nextDay, ageOf } from '../js/world.js';
 import { makeTote, board, settle, ticketReturn, cost, TAKEOUT } from '../js/tote.js';
 import { fmtTime, fmtClock } from '../js/chart.js';
 import { timeWords, raceCall } from '../js/call.js';
@@ -119,6 +119,53 @@ test('the world builds a full card with past performances that happened', () => 
     assert.equal(new Set(ids).size, ids.length);
   }
   assert.ok(JSON.stringify(w).length < 900_000, 'the save stays small');
+});
+
+test('horses that ship in are three, four or five on the day they arrive, whatever year the meet began', () => {
+  // A newcomer's foaling year was counted from the meet's first race day, so one drawn at three after a
+  // New Year arrived at four, after two New Years at five, and so on: no three-year-old ever came
+  // again, and the whole barn grew old together.
+  const w = createWorld('test-new-year', '2026-12-19');
+  const arrived = [];
+  for (let k = 0; k < 3; k++) {
+    const before = w.horses.length;
+    nextDay(w);
+    for (const h of w.horses.slice(before)) arrived.push({ day: w.day, date: w.cards[w.day].date, age: ageOf(w, h) });
+  }
+  assert.equal(w.cards[w.day].date, '2027-01-09');
+  assert.ok(arrived.filter(a => a.date > '2027').length >= 3, `only ${arrived.length} horses shipped in`);
+  assert.deepEqual(arrived.filter(a => a.age < 3 || a.age > 5), []);
+  assert.ok(w.horses.some(h => !h.retired && ageOf(w, h) === 3), 'no three-year-old in the barn after the New Year');
+});
+
+test("LongshotLou calls a horse 'lightly raced and still improving' only in its three-year-old year", () => {
+  // He counted its age from the year the meet began, so after a New Year he said it of four-year-olds
+  // and never of the new three-year-olds.
+  const w = createWorld('test-lou', '2026-12-19');
+  const wrong = [];
+  let said = 0;
+  for (let d = 0; d < 10; d++) {
+    for (const r of w.cards[w.day].races) {
+      const odds = r.entries.map(e => e.ml);
+      const lou = forumPosts(w, r, { odds, text: r.entries.map(e => e.mlText) }).find(p => p.who === 'lou');
+      if (lou && /lightly raced and still improving/.test(lou.text)) {
+        const h = w.horses[r.entries[lou.pick[0]].hid];
+        if (ageOf(w, h) === 3) said++; else wrong.push(`${r.date}, race ${r.no}: ${h.name} is ${ageOf(w, h)}`);
+      }
+      applyResult(w, r, simulateRace(r, w, { record: false }), odds);
+    }
+    nextDay(w);
+  }
+  assert.deepEqual(wrong, []);
+  assert.ok(said > 0, 'he never says it');
+  assert.ok(w.cards[w.day].date > '2027-02', 'the meet never reached the New Year');
+});
+
+test('no horse comes with more wins, seconds and thirds than starts', () => {
+  // In this meet Borrowed Ticket came with 3 wins, 3 seconds and 4 thirds from 9 starts.
+  const w = createWorld('test-record-3', '2026-09-26');
+  const over = w.horses.filter(h => h.life.w + h.life.p + h.life.s > h.life.starts);
+  assert.deepEqual(over.map(h => `${h.name}: ${JSON.stringify(h.life)}`), []);
 });
 
 test('a maiden race short of horses is opened up until it has a field', () => {

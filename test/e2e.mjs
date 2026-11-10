@@ -74,6 +74,24 @@ assert.ok(await page.locator('.entry-more:not([hidden])').count() === 1, 'past p
 const firstTimer = await page.locator('.entry-more .first-timer').count();
 if (!firstTimer) assert.ok(await page.locator('.pps tbody tr').count() >= 2, 'rows of past performances');
 
+// A colt is called a horse from the year he turns five, and a filly a mare.
+const sexWords = await page.evaluate(() => {
+  const { game, card, nav } = window.postTime;
+  const race = card().races.find(r => r.status !== 'official'), horse = game.world.horses[race.entries[0].hid];
+  const was = [horse.sex, horse.foaled], year = +race.date.slice(0, 4), out = [];
+  for (const [sex, age] of [['c', 4], ['c', 5], ['f', 4], ['f', 6], ['g', 6]]) {
+    horse.sex = sex;
+    horse.foaled = year - age;
+    nav.refresh();
+    document.querySelector('.entry-head').click();
+    out.push(document.querySelector('.pedigree').textContent.match(/(\w+), (\d+) ·/).slice(1).join(' '));
+  }
+  [horse.sex, horse.foaled] = was;
+  nav.refresh();
+  return out;
+});
+assert.deepEqual(sexWords, ['colt 4', 'horse 5', 'filly 4', 'mare 6', 'gelding 6']);
+
 // The forum has posts with picks.
 await page.click('.tabs button:nth-child(3)');
 assert.ok(await page.locator('.post').count() >= 3, 'regulars post on the forum');

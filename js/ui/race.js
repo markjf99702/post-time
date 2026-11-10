@@ -14,6 +14,10 @@ import * as audio from '../audio.js';
 
 const COND = { fast: 'ft', good: 'gd', sloppy: 'sly', muddy: 'my', firm: 'fm', yielding: 'yl', soft: 'sf' };
 const SEX = { c: 'colt', f: 'filly', g: 'gelding', h: 'horse', m: 'mare' };
+// A colt is a horse from the year he turns five, and a filly a mare.
+function sexWord(sex, age) {
+  return age >= 5 && sex === 'c' ? SEX.h : age >= 5 && sex === 'f' ? SEX.m : SEX[sex];
+}
 
 export function renderRace(root, nav, params) {
   const race = card().races.find(r => r.no === params.no);
@@ -170,7 +174,7 @@ function fillMore(more, race, e, hs) {
   const turf = hs.pps.filter(p => p.surf === 't');
   more.append(
     h('p', { class: 'pedigree' },
-      `${hs.coatShort} ${SEX[hs.sex]}, ${age} · by `, sireLink(hs.sire), ` out of ${hs.dam}, by `, sireLink(hs.damsire), '.',
+      `${hs.coatShort} ${sexWord(hs.sex, age)}, ${age} · by `, sireLink(hs.sire), ` out of ${hs.dam}, by `, sireLink(hs.damsire), '.',
       h('br'),
       `Owner ${OWNERS[hs.owner]}. Life: ${plural(life.starts, 'start')}, ${plural(life.w, 'win')}, ${plural(life.p, 'second')}, ${plural(life.s, 'third')}, ${money(life.earn, { cents: false })}.`,
       turf.length ? ` On turf: ${turf.length}-${turf.filter(p => p.fin === 1).length}-${turf.filter(p => p.fin === 2).length}-${turf.filter(p => p.fin === 3).length}.` : '',
