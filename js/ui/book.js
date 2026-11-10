@@ -5,6 +5,7 @@ import { game, START_BANK } from '../game.js';
 import { TIPSTERS } from '../data.js';
 import { longDate } from '../world.js';
 import { photoCard } from './results.js';
+import { MOVING } from './race.js';
 
 export function renderBook(root, nav) {
   const p = game.player;
@@ -69,6 +70,7 @@ export function renderHelp(root, nav) {
       ),
       h('h3', {}, 'Betting'),
       h('p', {}, 'All bets go into pools. The track takes its cut (16% from win, place and show, more from exactas and trifectas) and the rest is shared by the winning tickets, so the odds move as money comes in, right up to post time. Late money tends to know a little more.'),
+      h('p', {}, MOVING),
       h('dl', {},
         h('dt', {}, 'Win, place, show'), h('dd', {}, 'Your horse finishes first; first or second; first, second or third.'),
         h('dt', {}, 'Exacta, trifecta'), h('dd', {}, 'The first two, or the first three, in order. A box covers every order of the horses you pick, one bet per order.'),

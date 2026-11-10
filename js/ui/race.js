@@ -38,37 +38,84 @@ export function renderRace(root, nav, params) {
   );
   const tabs = h('div', { class: 'tabs', role: 'tablist' });
   const panel = h('div', { class: 'panel', role: 'tabpanel' });
-  const bar = h('div', { class: 'post-bar' });
+  // What the bar says is read out when it changes: it's where a pick that hasn't been bought is named.
+  const info = h('div', { class: 'info', role: 'status' });
+  const bar = h('div', { class: 'post-bar' }, info);
   root.append(head, tabs, panel, bar);
 
   const TABS = [['form', 'Form'], ['paddock', 'Paddock'], ['forum', 'Forum'], ['bet', 'Bet']];
   let current = tab;
   let stopPanel = null;
-  function show(which) {
-    current = which;
-    if (stopPanel) { stopPanel(); stopPanel = null; }
+  function drawTabs() {
     clear(tabs);
     for (const [k, label] of TABS) {
       const count = k === 'bet' ? myBets(race).length : 0;
-      tabs.append(h('button', { type: 'button', role: 'tab', 'aria-selected': String(k === which), onclick: () => { show(k); nav.tab(k); window.scrollTo({ top: 0 }); } }, label, count ? h('span', { class: 'n' }, String(count)) : null));
+      tabs.append(h('button', { type: 'button', role: 'tab', 'aria-selected': String(k === current), onclick: () => { show(k); nav.tab(k); window.scrollTo({ top: 0 }); } }, label, count ? h('span', { class: 'n' }, String(count)) : null));
     }
+  }
+  function show(which) {
+    current = which;
+    if (stopPanel) { stopPanel(); stopPanel = null; }
+    drawTabs();
     clear(panel);
     if (which === 'form') formPanel(panel, race);
     if (which === 'paddock') stopPanel = paddockPanel(panel, race);
     if (which === 'forum') forumPanel(panel, race);
-    if (which === 'bet') betPanel(panel, race, () => { refreshBar(); show('bet'); }, isNext);
+    if (which === 'bet') betPanel(panel, race, { changed: () => show('bet'), picked: refreshBar, open: isNext });
     refreshBar();
   }
 
+  // The pick on the betting slip, when it's a whole ticket you could buy now for the race that's up. To
+  // the gate used to run the race over it without a word, and the slip's own Buy button is often below
+  // the bar. So the bar names the pick and its main button buys it, with To the gate beside it; and if To
+  // the gate is tapped all the same, the first tap only says what's being left behind.
+  const slip = () => (isNext && race.status !== 'official' ? unbought(race) : null);
+  let asked = false; // To the gate has been tapped once over a pick that isn't bought
+  let notBefore = 0; // a tap on To the gate sooner than this is the second half of a double tap
+  function say(text) {
+    if (info.textContent === text.map(t => (typeof t === 'string' ? t : t.textContent)).join('')) return;
+    clear(info).append(...text);
+  }
+  function toGate() {
+    if (performance.now() < notBefore) return;
+    const bet = slip();
+    if (bet && !asked) {
+      asked = true;
+      notBefore = performance.now() + DOUBLE_TAP;
+      say([`You picked ${pickShort(race, bet)} for $${betCost(bet)} and haven't bought it. Tap again to go without it.`]);
+      return;
+    }
+    audio.wake(); audio.primeVoice();
+    nav.go('watch', { no: race.no });
+  }
+  function buySlip() {
+    const bet = slip();
+    if (!bet || !placeBet(race, bet).ok) { refreshBar(); return; }
+    audio.ticket();
+    clearSlip(race);
+    // To the gate takes this button's place: a second tap meant for Buy mustn't start the race.
+    notBefore = performance.now() + DOUBLE_TAP;
+    if (current === 'bet') { show('bet'); showPrinted(); } else { drawTabs(); refreshBar(); }
+  }
+
   function refreshBar() {
-    clear(bar);
+    asked = false;
+    while (info.nextSibling) info.nextSibling.remove();
     const bets = myBets(race);
     const spent = bets.reduce((a, b) => a + b.cost, 0);
-    bar.append(h('div', { class: 'info' },
-      bets.length ? [h('b', {}, `${bets.length} ticket${bets.length > 1 ? 's' : ''}`), ` · ${money(spent)} on this race`] : h('span', { class: 'muted' }, isNext ? 'No tickets yet. You can watch without betting.' : race.status === 'official' ? 'This race is over.' : `Race ${race.no} goes after race ${nxt ? nxt.no : ''}.`),
-    ));
+    const bet = slip();
+    bar.classList.toggle('pending', !!bet);
+    if (bet) {
+      say([h('b', {}, pickName(race, bet)), `, $${betCost(bet)}: not bought yet`]);
+      bar.append(
+        h('button', { class: 'btn ghost', type: 'button', onclick: toGate }, 'To the gate ▸'),
+        h('button', { class: 'btn brass', type: 'button', onclick: buySlip }, `Buy ticket · ${money(betCost(bet))}`),
+      );
+      return;
+    }
+    say(bets.length ? [h('b', {}, `${bets.length} ticket${bets.length > 1 ? 's' : ''}`), ` · ${money(spent)} on this race`] : [h('span', { class: 'muted' }, isNext ? 'No tickets yet. You can watch without betting.' : race.status === 'official' ? 'This race is over.' : `Race ${race.no} goes after race ${nxt ? nxt.no : ''}.`)]);
     if (race.status === 'official') bar.append(h('button', { class: 'btn', type: 'button', onclick: () => nav.go('result', { no: race.no }) }, 'Results ▸'));
-    else if (isNext) bar.append(h('button', { class: 'btn brass', type: 'button', onclick: () => { audio.wake(); audio.primeVoice(); nav.go('watch', { no: race.no }); } }, 'To the gate ▸'));
+    else if (isNext) bar.append(h('button', { class: 'btn brass', type: 'button', onclick: toGate }, 'To the gate ▸'));
     else bar.append(h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('race', { no: nxt.no }) }, `Race ${nxt.no} first`));
   }
 
@@ -317,11 +364,45 @@ const HELP = {
 };
 
 const state = new Map(); // per race: builder choices survive switching tabs
-
-function betPanel(panel, race, changed, isNext) {
+const slipFor = race => {
   const k = memoKey(race);
-  const st = state.get(k) || { type: 'win', picks: [[], [], []], amt: 2 };
-  state.set(k, st);
+  if (!state.has(k)) state.set(k, { type: 'win', picks: [[], [], []], amt: 2 });
+  return state.get(k);
+};
+function clearSlip(race) { slipFor(race).picks = [[], [], []]; }
+// The ticket the slip would buy, if it's whole and there's the money for it.
+function unbought(race) {
+  const bet = currentBet(slipFor(race), race.entries.length);
+  return bet && betCost(bet) <= game.player.bank + 1e-9 ? bet : null;
+}
+// A second tap sooner than this after a first is a double tap, not a second answer.
+const DOUBLE_TAP = 700; // ms
+
+// A pick in words. On the slip: "$10 to win on #3 Early Ticket", "$2 exacta box 3, 5, 7". In the bar,
+// by name ("#3 Early Ticket to win"), and in a sentence after "You picked" ("#3 to win").
+const TO = { win: 'to win', place: 'to place', show: 'to show', wps: 'across the board' };
+const numbers = (race, bet) => bet.sel.map(i => race.entries[i].pp).join(bet.type.endsWith('box') ? ', ' : '-');
+const named = (race, bet) => { const e = race.entries[bet.sel[0]]; return `#${e.pp} ${horseOf(e).name}`; };
+function pickLine(race, bet) {
+  return TO[bet.type] ? `$${bet.amt} ${TO[bet.type]} on ${named(race, bet)}` : `$${bet.amt} ${BET_NAMES[bet.type].toLowerCase()} ${numbers(race, bet)}`;
+}
+function pickName(race, bet) {
+  return TO[bet.type] ? `${named(race, bet)} ${TO[bet.type]}` : `${BET_NAMES[bet.type]} ${numbers(race, bet)}`;
+}
+function pickShort(race, bet) {
+  if (TO[bet.type]) return `#${race.entries[bet.sel[0]].pp} ${TO[bet.type]}`;
+  const name = BET_NAMES[bet.type].toLowerCase();
+  return `${/^[aeiou]/.test(name) ? 'an' : 'a'} ${name} (${numbers(race, bet)})`;
+}
+function showPrinted() {
+  setTimeout(() => document.querySelector('.ticket.printed')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50);
+}
+
+// Said under the board and in How to play: a ticket isn't paid at the price it was bought at.
+export const MOVING = 'Odds keep moving until the gate opens. Every ticket is paid at the final odds, whatever the board said when you bought it.';
+
+function betPanel(panel, race, { changed, picked, open: isNext }) {
+  const st = slipFor(race);
   const open = isNext && race.status !== 'official';
 
   panel.append(toteBoard(race));
@@ -330,7 +411,7 @@ function betPanel(panel, race, changed, isNext) {
     panel.append(ticketList(race, false, changed));
     return;
   }
-  if (!open) panel.append(h('p', { class: 'note' }, `You can bet this race once race ${nextRace().no} is over. The odds will have moved by then.`));
+  panel.append(h('p', { class: 'note' }, open ? MOVING : `You can bet this race once race ${nextRace().no} is over. The odds will have moved by then.`));
 
   const builder = h('div', { class: 'builder' });
   panel.append(builder);
@@ -373,8 +454,9 @@ function betPanel(panel, race, changed, isNext) {
     const bet = currentBet(st, race.entries.length);
     const c = bet ? betCost(bet) : 0;
     const msg = h('div', { class: 'cost' });
-    // append() would print a null as "null".
-    if (bet) msg.append(h('b', { class: 'money' }, money(c)), c > st.amt ? h('span', { class: 'muted' }, ` (${c / st.amt} bets of $${st.amt})`) : '', h('span', { class: 'muted' }, ` · you have ${money(game.player.bank)}`));
+    // The pick in words, so the number can be checked against the name without going back to the form;
+    // what it costs when that's more than one bet; and what there is to spend.
+    if (bet) msg.append(h('b', {}, pickLine(race, bet)), c > st.amt ? h('span', { class: 'money' }, ` · ${money(c)} (${c / st.amt} bets of $${st.amt})`) : '', h('span', { class: 'muted' }, ` · you have ${money(game.player.bank)}`));
     else msg.append(h('span', { class: 'muted' }, needs(st)));
     const buy = h('button', {
       class: 'btn', type: 'button', disabled: !bet || !open || c > game.player.bank + 1e-9 ? true : null,
@@ -382,13 +464,13 @@ function betPanel(panel, race, changed, isNext) {
         const res = placeBet(race, bet);
         if (!res.ok) { msg.textContent = res.why; return; }
         audio.ticket();
-        st.picks = [[], [], []];
-        state.set(k, st);
+        clearSlip(race);
         changed();
-        setTimeout(() => document.querySelector('.ticket.printed')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50);
+        showPrinted();
       },
     }, 'Buy ticket');
     builder.append(h('div', { class: 'bet-foot' }, msg, buy));
+    picked(); // the bar at the bottom follows the slip
   };
   draw();
 }
@@ -429,7 +511,7 @@ function toteBoard(race) {
     grid.append(h('div', { class: `tote-cell${i === fav ? ' fav' : ''}`, data: { i } },
       cloth(e.pp, 'sm'),
       h('div', { class: 'odds' }, odds[i]),
-      h('div', { class: 'pay' }, `pays ~$${Math.max(2.2, Math.floor((vals[i] + 1) * 20) / 10).toFixed(0)}`),
+      h('div', { class: 'pay' }, '$2 pays ', h('span', {}, `~$${twoPays(vals[i])}`)),
     ));
   });
   const live = nextRace() === race; // a later race shows its opening odds until it's up
@@ -437,6 +519,14 @@ function toteBoard(race) {
     h('div', { class: 'tote-top' }, h('span', {}, final ? 'Final odds' : live ? `Odds · ${mtp} min to post` : 'Opening odds'), h('span', {}, `Win pool ${money(b.pools.win, { cents: false })}`)),
     grid,
   );
+}
+
+// About what a $2 win ticket pays at these odds, worked out the way the payouts are: per dollar, rounded
+// down to the dime, and never less than $2.10. To the dime under $10, where a dollar either way is most of
+// the profit ("1-5" on the board is anything from $2.40 to $2.70), and to the dollar above.
+function twoPays(odds) {
+  const pay = Math.max(2.1, Math.floor((odds + 1) * 10 + 1e-9) / 10 * 2);
+  return pay < 9.995 ? pay.toFixed(2) : String(Math.round(pay));
 }
 
 function updateTote(panel, race) {

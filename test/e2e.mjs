@@ -107,10 +107,45 @@ assert.deepEqual(sexWords, ['colt 4', 'horse 5', 'filly 4', 'mare 6', 'gelding 6
 await page.click('.tabs button:nth-child(3)');
 assert.ok(await page.locator('.post').count() >= 3, 'regulars post on the forum');
 
-// A $2 win ticket on the first horse, and an exacta.
+// The board says what a $2 win ticket pays, to the dime under $10, and that the odds will move.
 await page.click('.tabs button:nth-child(4)');
+const pays = await page.locator('.tote-cell .pay').allTextContents();
+assert.ok(pays.length >= 5 && pays.every(t => /^\$2 pays ~\$(\d\.\d0|\d{2,})$/.test(t)), `the board's payouts: ${pays.join(' | ')}`);
+assert.match(await page.locator('.tote + .note').textContent(), /^Odds keep moving until the gate opens\. Every ticket is paid at the final odds/);
+// A pick that hasn't been bought. The bar at the bottom names it and offers to buy it, and To the gate
+// doesn't run the race on one tap (or on a double tap): the first tap says what's about to be left behind.
+const third = await page.evaluate(() => { const { game, nextRace } = window.postTime; const e = nextRace().entries[2]; return `#${e.pp} ${game.world.horses[e.hid].name}`; });
+const barText = () => page.locator('.post-bar .info').textContent();
+const barButtons = () => page.locator('.post-bar .btn').allTextContents();
+assert.deepEqual([await barText(), await barButtons()], ['No tickets yet. You can watch without betting.', ['To the gate ▸']]);
+await page.locator('.pick-row').nth(0).locator('button').nth(2).click();
+await page.locator('.seg.amounts button', { hasText: /^\$10$/ }).click();
+assert.equal(await page.locator('.bet-foot .cost').textContent(), `$10 to win on ${third} · you have $200.00`);
+assert.deepEqual([await barText(), await barButtons()], [`${third} to win, $10: not bought yet`, ['To the gate ▸', 'Buy ticket · $10.00']], "the bar doesn't offer the pick that hasn't been bought");
+assert.deepEqual(await page.locator('.post-bar .btn').evaluateAll(bs => bs.map(b => b.className)), ['btn ghost', 'btn brass'], 'with a pick not bought, Buy should be the brass button');
+const unbought = await page.evaluate(() => {
+  const gate = document.querySelector('.post-bar .btn.ghost');
+  gate.click();
+  gate.click(); // a double tap is one tap
+  return { racing: !document.getElementById('watch').hidden, status: window.postTime.nextRace().no, same: document.querySelector('.post-bar .btn.ghost') === gate };
+});
+assert.deepEqual(unbought, { racing: false, status: 1, same: true }, 'To the gate ran the race with a pick not bought');
+assert.equal(await barText(), `You picked ${third.split(' ')[0]} to win for $10 and haven't bought it. Tap again to go without it.`);
+// Changing the pick puts the bar back, and so does buying it from the bar. With nothing picked the bar is
+// as it was, and To the gate is one tap (as every race below goes off).
+await page.locator('.pick-row').nth(0).locator('button').nth(2).click();
+assert.deepEqual([await barText(), await barButtons()], ['No tickets yet. You can watch without betting.', ['To the gate ▸']], "the bar doesn't go back when the pick is cleared");
+await page.locator('.pick-row').nth(0).locator('button').nth(2).click();
+await page.click('.post-bar .btn.brass');
+assert.deepEqual([await barText(), await barButtons(), await page.locator('#bank').textContent()], ['1 ticket · $10.00 on this race', ['To the gate ▸'], '$190.00'], "Buy ticket in the bar didn't buy the pick");
+assert.equal(await page.locator('.ticket .what').textContent(), `$10 WIN ${third.slice(1).split(' ')[0]}`);
+await page.click('.ticket button');
+assert.equal(await page.locator('#bank').textContent(), '$200.00', 'the cancelled ticket was not paid back');
+await page.locator('.seg.amounts button', { hasText: /^\$2$/ }).click();
+
+// A $2 win ticket on the first horse, and an exacta.
 await page.locator('.pick-row').nth(0).locator('button').nth(0).click();
-assert.equal(await page.locator('.bet-foot .cost').textContent(), '$2.00 · you have $200.00');
+assert.match(await page.locator('.bet-foot .cost').textContent(), /^\$2 to win on #\d+ .+ · you have \$200\.00$/);
 await page.click('.builder .btn');
 await page.locator('.seg button', { hasText: /^Exacta$/ }).click();
 await page.locator('.pick-row').nth(0).locator('button').nth(1).click();
@@ -251,8 +286,22 @@ await page.click('.race-row.next');
 await page.click('.tabs button:nth-child(4)');
 await page.locator('.pick-row').nth(0).locator('button').nth(0).click();
 await page.click('.builder .btn');
-await page.click('.post-bar .btn.brass');
+// A second pick, not bought, on this small phone: both of the bar's buttons are on the screen, one tap on
+// To the gate leaves the race where it is, and a second one, after a moment, goes without the pick.
+await page.locator('.seg button', { hasText: /^Exacta box$/ }).click();
+for (const n of [0, 1, 2]) await page.locator('.pick-row').nth(0).locator('button').nth(n).click();
+assert.match(await page.locator('.bet-foot .cost').textContent(), /^\$2 exacta box \d+, \d+, \d+ · \$12\.00 \(6 bets of \$2\) · you have /);
+assert.match(await page.locator('.post-bar .info').textContent(), /^Exacta box \d+, \d+, \d+, \$12: not bought yet$/);
+const barFits = await page.locator('.post-bar .btn').evaluateAll(bs => bs.map(b => { const r = b.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight && b.scrollWidth <= b.clientWidth; }));
+assert.deepEqual(barFits, [true, true], "the bar's two buttons don't fit a small phone");
+await page.click('.post-bar .btn.ghost');
+await page.waitForTimeout(300);
+assert.deepEqual(await page.evaluate(() => [document.getElementById('watch').hidden, window.postTime.nextRace().no]), [true, 2], 'one tap on To the gate ran the race with a pick not bought');
+assert.match(await page.locator('.post-bar .info').textContent(), /^You picked an exacta box \(\d+, \d+, \d+\) for \$12 and haven't bought it\. Tap again to go without it\.$/);
+await page.waitForTimeout(600);
+await page.click('.post-bar .btn.ghost');
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
+assert.equal(await page.evaluate(() => window.postTime.game.player.bets['0:2'].length), 1, "the pick that wasn't bought went to the gate as a ticket");
 const small = await page.evaluate(async () => {
   const w = window.__watch;
   w.pause();

@@ -276,7 +276,8 @@ a { color: var(--green-2); }
 .tote-cell .cloth { margin-bottom: 4px; }
 .tote-cell .odds { font: 600 19px/1 var(--display); color: var(--amber); font-variant-numeric: tabular-nums; text-shadow: 0 0 8px rgba(245,179,61,.35); }
 .tote-cell .odds.flash { animation: flash .9s; }
-.tote-cell .pay { font-size: 10.5px; color: #9f9884; margin-top: 3px; }
+.tote-cell .pay { font-size: 10.5px; line-height: 1.25; color: #9f9884; margin-top: 3px; }
+.tote-cell .pay span { display: block; font-size: 12px; color: #cfc8b2; font-variant-numeric: tabular-nums; }
 .tote-cell.fav .odds { color: #ffd87a; }
 @keyframes flash { 0% { color: #fff; } 100% { color: var(--amber); } }
 .builder { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; box-shadow: var(--shadow); }
@@ -333,6 +334,16 @@ a { color: var(--green-2); }
 .post-bar .info { flex: 1; min-width: 0; font-size: 14px; line-height: 1.3; }
 .post-bar .info b { font-size: 15px; }
 .post-bar .btn { flex: none; }
+/* With a pick on the slip that isn't bought, the bar has To the gate and Buy. On a phone, what the pick is
+   goes on a line of its own above them. */
+.post-bar.pending { gap: 8px 10px; }
+.post-bar.pending .btn { white-space: nowrap; }
+@media (max-width: 640px) {
+  .post-bar.pending { flex-wrap: wrap; }
+  .post-bar.pending .info { flex: 1 0 100%; }
+  .post-bar.pending .btn { flex: 1 1 auto; padding: 12px 10px; font-size: 16px; }
+}
+@media (max-width: 350px) { .post-bar.pending .btn { padding: 12px 6px; font-size: 14.5px; letter-spacing: .03em; } }
 
 /* ------------------------------------------------------------ watching the race */
 .watch {
