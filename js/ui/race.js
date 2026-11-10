@@ -1,7 +1,7 @@
 // A race before it runs: the past performances, the paddock, the forum and the betting window.
 
 import { h, money, cloth, silksCanvas, clear, ago, plural } from './dom.js';
-import { game, card, raceKey, memoKey, horseOf, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor } from '../game.js';
+import { game, card, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor } from '../game.js';
 import { ownerSilks, ageOf, shortDate, clockText, CLASSES, meetStats } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
 import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES } from '../data.js';
@@ -107,8 +107,9 @@ function formPanel(panel, race) {
 
 function entryCard(race, e, i, stats, board) {
   const hs = horseOf(e);
-  const silks = ownerSilks(hs.owner);
-  const js = stats.jockeys[e.j], ts = stats.trainers[hs.trainer];
+  const { owner, trainer } = ranFor(e); // a horse claimed out of this race ran it for the people who entered it
+  const silks = ownerSilks(owner);
+  const js = stats.jockeys[e.j], ts = stats.trainers[trainer];
   const figs = hs.pps.slice().reverse().slice(0, 5).map(p => p.fig);
   const best = figs.length ? Math.max(...figs) : null;
   const chips = angles(race, hs);
@@ -119,7 +120,7 @@ function entryCard(race, e, i, stats, board) {
     silksCanvas(silks, 30),
     h('div', { class: 'nm' }, hs.name),
     h('div', { class: 'ml' }, h('small', {}, race.status === 'official' ? 'Final' : 'Odds'), race.status === 'official' ? race.result.oddsText[i] : board.text[i]),
-    h('div', { class: 'who' }, `${JOCKEYS[e.j].name} (${js.w}-${js.starts}) · Tr. ${TRAINERS[hs.trainer]} (${ts.w}-${ts.starts}) · ${e.wt} lb · ML ${e.mlText}`),
+    h('div', { class: 'who' }, `${JOCKEYS[e.j].name} (${js.w}-${js.starts}) · Tr. ${TRAINERS[trainer]} (${ts.w}-${ts.starts}) · ${e.wt} lb · ML ${e.mlText}`),
   );
   head.addEventListener('click', () => {
     const open = more.hidden;
@@ -176,7 +177,7 @@ function fillMore(more, race, e, hs) {
     h('p', { class: 'pedigree' },
       `${hs.coatShort} ${sexWord(hs.sex, age)}, ${age} · by `, sireLink(hs.sire), ` out of ${hs.dam}, by `, sireLink(hs.damsire), '.',
       h('br'),
-      `Owner ${OWNERS[hs.owner]}. Life: ${plural(life.starts, 'start')}, ${plural(life.w, 'win')}, ${plural(life.p, 'second')}, ${plural(life.s, 'third')}, ${money(life.earn, { cents: false })}.`,
+      `Owner ${OWNERS[ranFor(e).owner]}. Life: ${plural(life.starts, 'start')}, ${plural(life.w, 'win')}, ${plural(life.p, 'second')}, ${plural(life.s, 'third')}, ${money(life.earn, { cents: false })}.`,
       turf.length ? ` On turf: ${turf.length}-${turf.filter(p => p.fin === 1).length}-${turf.filter(p => p.fin === 2).length}-${turf.filter(p => p.fin === 3).length}.` : '',
     ),
   );
@@ -266,7 +267,7 @@ function paddockPanel(panel, race) {
       ctx.translate(d.c.width / 2, d.c.height * 0.9);
       ctx.scale(k, -k);
       const nervy = d.e.pdk.kind === 'poor' && /Fractious|edge/.test(d.e.pdk.text);
-      drawHorse(ctx, { phase: (t * (nervy ? 1.3 : 0.9) + d.offset) % 1, gait: 'walk', coat: d.hs.coat, marks: d.hs.marks, number: d.e.pp, silks: ownerSilks(d.hs.owner), noRider: true });
+      drawHorse(ctx, { phase: (t * (nervy ? 1.3 : 0.9) + d.offset) % 1, gait: 'walk', coat: d.hs.coat, marks: d.hs.marks, number: d.e.pp, silks: ownerSilks(ranFor(d.e).owner), noRider: true });
     }
     raf = requestAnimationFrame(frame);
   };

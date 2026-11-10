@@ -437,11 +437,14 @@ export function applyResult(world, race, run, odds) {
       d: race.day, dt: race.date, no: race.no, f: race.f, surf: race.surface[0], cond: race.cond, cls: race.cls, clm: race.claim,
       nm: race.name, fm: race.fm, fs, pp: e.pp, j: e.j, wt: e.wt, odds: +odds[k].toFixed(2), fin: r.pos, bl: +r.behind.toFixed(2),
       line: runningLine(run, k), fig, t: +r.time.toFixed(2), fr, cm: tripComment(run, k, fs), top: names,
+      tr: h.trainer, // who trained it that day, for the trainers' records
     };
-    // Claimed out of the race by another trainer.
+    // Claimed out of the race by another trainer. It ran for the people who entered it, so the race keeps
+    // who they were: the silks it ran in, and the trainer and owner in the winner's circle, are theirs.
     if (race.claim && R.chance(0.08)) {
       const to = (h.trainer + R.int(1, TRAINERS.length - 1)) % TRAINERS.length;
       pp.claimed = { from: h.trainer, price: race.claim };
+      e.ran = { owner: h.owner, trainer: h.trainer };
       h.trainer = to;
       h.owner = R.int(0, OWNERS.length - 1);
     }
@@ -479,9 +482,16 @@ export function meetStats(world) {
   for (const h of world.horses) for (const p of h.pps) {
     j[p.j].starts++; if (p.fin === 1) j[p.j].w++;
   }
+  // A race counts for whoever trained the horse that day. A line from before that was written on it says
+  // only who the horse was claimed from, so those are worked back from the trainer it has now.
   for (const h of world.horses) {
-    const tr = t[h.trainer];
-    for (const p of h.pps) { tr.starts++; if (p.fin === 1) tr.w++; }
+    let then = h.trainer;
+    for (let i = h.pps.length - 1; i >= 0; i--) {
+      const p = h.pps[i];
+      if (p.claimed) then = p.claimed.from;
+      const tr = t[p.tr ?? then];
+      tr.starts++; if (p.fin === 1) tr.w++;
+    }
   }
   return { jockeys: j, trainers: t };
 }

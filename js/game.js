@@ -207,11 +207,15 @@ export function forumFor(race) {
   return race.forum;
 }
 
+// Who a horse runs for in this race: its owner and trainer or, once the race has been run and the horse
+// was claimed out of it, the ones who entered it. (A race run before that was kept has only the new ones.)
+export const ranFor = e => e.ran || horseOf(e);
+
 export function runnersFor(race) {
   const mine = new Set(myBets(race).flatMap(b => b.sel));
   return race.entries.map((e, i) => {
     const h = horseOf(e);
-    return { number: e.pp, coat: h.coat, marks: h.marks, silks: ownerSilks(h.owner), name: h.name, mine: mine.has(i), blinkers: h.style > 0.8 };
+    return { number: e.pp, coat: h.coat, marks: h.marks, silks: ownerSilks(ranFor(e).owner), name: h.name, mine: mine.has(i), blinkers: h.style > 0.8 };
   });
 }
 
@@ -248,10 +252,11 @@ export function goToGate(race) {
 export function photoRecord(race, winIdx, won) {
   const e = race.entries[winIdx];
   const h = horseOf(e);
+  const { owner, trainer } = ranFor(e);
   return {
     day: race.day, date: race.date, no: race.no, name: race.name, cls: race.cls, claim: race.claim, dist: distanceName(race.distance),
     surface: race.surface, time: race.result.time, horse: { name: h.name, coat: h.coat, marks: h.marks, sex: h.sex },
-    owner: h.owner, number: e.pp, jockey: JOCKEYS[e.j].name, trainer: TRAINERS[h.trainer], ownerName: OWNERS[h.owner],
+    owner, number: e.pp, jockey: JOCKEYS[e.j].name, trainer: TRAINERS[trainer], ownerName: OWNERS[owner],
     seed: race.seed, won: round2(won || 0), stakes: race.cls === 'STK',
   };
 }

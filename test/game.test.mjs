@@ -10,9 +10,10 @@ globalThis.localStorage = {
   removeItem: k => { store.delete(k); },
 };
 globalThis.window = new EventTarget();
-const { game, newMeet, load, save, card, toteFor, placeBet, goToGate, mtpState, advanceDay, callFor, horseOf } = await import('../js/game.js');
+const { game, newMeet, load, save, card, toteFor, placeBet, goToGate, mtpState, advanceDay, callFor, horseOf, runnersFor, photoRecord } = await import('../js/game.js');
 const { stateAt } = await import('../js/sim.js');
-const { buildWorld } = await import('../js/world.js');
+const { buildWorld, meetStats, ownerSilks } = await import('../js/world.js');
+const { TRAINERS, OWNERS } = await import('../js/data.js');
 
 function build(seed) {
   const meet = newMeet(seed);
@@ -227,6 +228,57 @@ test("in a photo finish the caller doesn't say who won until the official sign",
   const share = winnerFirst / photos.length;
   assert.ok(share > 0.3 && share < 0.7, `the winner is named first in ${winnerFirst} of ${photos.length} photo finishes`);
   assert.deepEqual(races.filter(r => !r.photo && r.official !== null).map(r => `race day ${r.day}, race ${r.no}`), [], 'a race that is not a photo has a line for the sign');
+});
+
+test('a horse claimed out of a race it wins ran it, and is photographed, for the people who entered it', () => {
+  // The claim was applied before the race was shown, so the horse ran in its new owner's silks and the
+  // winner's circle named the new trainer and owner, after the form had shown the old ones.
+  buildOn('claims', '2026-10-03');
+  let found = null;
+  for (let d = 0; d < 12 && !found; d++) {
+    for (const race of card().races) {
+      const before = race.entries.map(e => ({ owner: horseOf(e).owner, trainer: horseOf(e).trainer }));
+      const silks = runnersFor(race).map(r => r.silks);
+      game.player.bank = 200;
+      for (let i = 0; i < race.entries.length; i++) placeBet(race, { type: 'win', sel: [i], amt: 2 });
+      const { run } = goToGate(race);
+      const win = run.results[0].h, horse = horseOf(race.entries[win]);
+      if (!horse.pps[horse.pps.length - 1].claimed) continue;
+      found = { race, win, horse, was: before[win], silks: silks[win] };
+      break;
+    }
+    if (!found) advanceDay();
+  }
+  assert.ok(found, 'no winner was claimed in twelve race days');
+  const { race, win, horse, was, silks } = found;
+  assert.notEqual(horse.trainer, was.trainer, 'the claim changed nothing');
+  const check = when => {
+    const e = card().races[race.no - 1].entries[win];
+    assert.deepEqual(runnersFor(card().races[race.no - 1])[win].silks, silks, `${when}: it runs in other silks`);
+    assert.deepEqual(silks, ownerSilks(was.owner));
+    const shot = photoRecord(card().races[race.no - 1], win, 0);
+    assert.deepEqual([shot.trainer, shot.ownerName, shot.owner], [TRAINERS[was.trainer], OWNERS[was.owner], was.owner], `${when}: the photograph names the new people`);
+    assert.deepEqual(e.ran, was);
+  };
+  check('in the race');
+  const kept = game.player.book[game.player.book.length - 1];
+  assert.deepEqual([kept.no, kept.trainer, kept.ownerName, kept.owner], [race.no, TRAINERS[was.trainer], OWNERS[was.owner], was.owner], 'the scrapbook has the new people');
+  // Watch again, and after the page is opened again.
+  assert.equal(goToGate(card().races[race.no - 1]).replay, true);
+  check('on Watch again');
+  save();
+  load();
+  goToGate(card().races[race.no - 1]);
+  check('on Watch again after a reload');
+  // The win counts for the trainer who saddled it, not the one who claimed it; and the same is worked out
+  // for a line written before lines said who the trainer was.
+  const mine = game.world.horses[horse.id];
+  const tally = TRAINERS.map((_, i) => mine.pps.filter(p => p.tr === i).length);
+  assert.equal(mine.pps[mine.pps.length - 1].tr, was.trainer);
+  assert.deepEqual(meetStats({ horses: [mine] }).trainers.map(t => t.starts), tally, "its earlier races count for the trainer who claimed it");
+  const old = structuredClone(mine);
+  for (const p of old.pps) delete p.tr;
+  assert.deepEqual(meetStats({ horses: [old] }).trainers.map(t => t.starts), tally, "a line with no trainer on it isn't worked back from the claim");
 });
 
 test("a save that isn't a meet is left alone until a new meet is started", () => {

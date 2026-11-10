@@ -57,7 +57,9 @@ export function renderResult(root, nav, params) {
       const pp = hs.pps.find(p => p.d === race.day && p.no === race.no);
       return h('tr', { class: mine.has(o.k) ? 'mine' : '' },
         h('td', { class: 'fin' }, ordinal(o.pos)),
-        h('td', {}, cloth(e.pp, 'sm'), ' ', h('b', {}, hs.name), h('div', { class: 'cm' }, `${JOCKEYS[e.j].name} · ${pp ? pp.cm : ''} · fig ${pp ? pp.fig : ''}`)),
+        h('td', {}, cloth(e.pp, 'sm'), ' ', h('b', {}, hs.name), h('div', { class: 'cm' }, `${JOCKEYS[e.j].name} · ${pp ? pp.cm : ''} · fig ${pp ? pp.fig : ''}`),
+          // The trainer it has now is the one who claimed it: it can't have run again since.
+          pp && pp.claimed ? h('div', { class: 'cm' }, `Claimed by ${TRAINERS[hs.trainer]} for $${pp.claimed.price.toLocaleString('en-US')}`) : null),
         h('td', { class: 'r money' }, k === 0 ? '' : marginShort(o.toPrev)),
         h('td', { class: 'r money' }, res.oddsText[o.k]),
       );
