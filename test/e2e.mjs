@@ -359,10 +359,22 @@ await page.locator('.actions .btn', { hasText: /^Race 3/ }).click();
 await page.waitForSelector('.entry');
 await page.click('.tabs button:nth-child(4)');
 await page.locator('.pick-row').nth(0).locator('button').last().click();
+// Starting over takes two taps, and a double tap is one: two taps 120 ms apart leave the meet, the bankroll
+// and the scrapbook as they were, with the button saying what a second tap will do, in a menu no wider for
+// it. A second tap a moment later starts the new meet.
 await page.click('#menuBtn');
-await page.click('#restart');
+const meetNow = () => page.evaluate(() => { const { game } = window.postTime; return [game.world.seed, game.world.day, game.player.bank, game.player.book.length, !!document.querySelector('.setup')]; });
+const meetWas = await meetNow();
+const menuWas = await page.evaluate(() => document.getElementById('menu').getBoundingClientRect().width);
+await page.evaluate(async () => { const b = document.getElementById('restart'); b.click(); await new Promise(r => setTimeout(r, 120)); b.click(); });
+await page.waitForTimeout(400);
+assert.deepEqual(await meetNow(), meetWas, 'a double tap on Start a new meet started one');
+assert.equal(await page.locator('#restart').textContent(), 'Tap again: new horses, $200, empty scrapbook');
+assert.equal(await page.evaluate(() => document.getElementById('menu').getBoundingClientRect().width), menuWas, 'the menu gets wider when Start a new meet is tapped');
+await page.waitForTimeout(500);
 await page.click('#restart');
 await page.waitForSelector('.races', { timeout: 30000 });
+assert.notEqual((await meetNow())[0], meetWas[0], 'a second tap on Start a new meet, a second after the first, started nothing');
 assert.equal(await page.locator('#bank').textContent(), '$200.00', 'a new meet starts with $200');
 await page.locator('.race-row').nth(2).click();
 await page.click('.tabs button:nth-child(4)');
@@ -661,8 +673,19 @@ await page.waitForSelector('.races');
   assert.equal(await first.locator('#app .help').count(), 1, "How to play can't be read during Opening day");
   await first.click('.rhead .back');
   assert.deepEqual(await opening(), { progress: true, bank: '' }, "the progress doesn't come back after How to play");
+  // Start a new meet does nothing while one is being built: taps on it, a second apart, don't start another
+  // beside the first (which used to put up one meet's card and then replace it with the other's).
+  await first.click('#menuBtn');
+  await first.click('#restart', { force: true });
+  await first.waitForTimeout(900);
+  await first.click('#restart', { force: true });
+  assert.deepEqual(await first.evaluate(() => { const b = document.getElementById('restart'); return [b.textContent, b.disabled]; }), ['Start a new meet', true], 'Start a new meet can be tapped while a meet is being built');
+  await first.click('#menuBtn');
   await first.evaluate(() => window.finishBuilding());
   await first.waitForSelector('.races', { timeout: 60000 });
+  const built = await first.evaluate(() => window.postTime.game.world.seed);
+  await first.waitForTimeout(1500);
+  assert.deepEqual(await first.evaluate(() => [window.postTime.game.world.seed, !!document.querySelector('.setup'), document.getElementById('restart').disabled]), [built, false, false], 'a second meet was built beside the first');
   assert.equal(await first.locator('#bank').textContent(), '$200.00');
   await first.click('#menuBtn');
   await first.check('#optVoice');

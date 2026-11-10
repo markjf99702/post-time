@@ -107,7 +107,11 @@ a { color: var(--green-2); }
   display: flex; align-items: center; gap: 10px;
 }
 .menu button:hover, .menu .toggle:hover { background: var(--paper-2); }
-.menu .quiet { color: var(--red); border-top: 1px solid var(--line); border-radius: 0 0 6px 6px; margin-top: 4px; }
+/* Start a new meet. Tapped once it says what a second tap will do, on two lines: like the voice row, it
+   takes the menu's width and never adds to it, so the menu doesn't grow under the finger. */
+.menu .quiet { color: var(--red); border-top: 1px solid var(--line); border-radius: 0 0 6px 6px; margin-top: 4px; width: 0; min-width: 100%; line-height: 1.25; }
+.menu button[disabled] { opacity: .45; cursor: default; }
+.menu button[disabled]:hover { background: none; }
 .menu input { width: 18px; height: 18px; accent-color: var(--green-2); }
 /* Which voice reads the call, under its tick. The row takes the menu's width and never adds to it, however
    long a voice's name is: the name is cut short in the box, and whole in the list. */

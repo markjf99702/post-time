@@ -174,16 +174,22 @@ optVoiceName.addEventListener('change', () => {
 // Hear it: a line of a call in that voice, at the pace of one about twenty seconds from the wire.
 document.getElementById('hearIt').addEventListener('click', () => audio.hearIt(SAMPLE, pace(SAMPLE, 20)));
 audio.onVoicesChanged(showVoices);
-// Starting over takes two taps: the first says what it will do.
+// Starting over takes two taps: the first says what it will do, and the second has four seconds to come.
+// A second tap straight after the first is a double tap, which wiped a meet with no way back: it's ignored,
+// and the button goes on saying what the next tap will do. The button is off while a meet is being built.
 const restart = document.getElementById('restart');
-let armed = null;
+const DOUBLE_TAP = 700; // ms
+let armed = null, armedAt = 0;
 restart.addEventListener('click', e => {
   e.stopPropagation();
+  if (building) return;
   if (!armed) {
     restart.textContent = 'Tap again: new horses, $200, empty scrapbook';
+    armedAt = performance.now();
     armed = setTimeout(() => { armed = null; restart.textContent = 'Start a new meet'; }, 4000);
     return;
   }
+  if (performance.now() - armedAt < DOUBLE_TAP) return;
   clearTimeout(armed); armed = null;
   restart.textContent = 'Start a new meet';
   closeMenu();
@@ -192,7 +198,13 @@ restart.addEventListener('click', e => {
 
 // ------------------------------------------------------------------ start
 
+// One meet at a time: a second build started beside the first put up one meet's card and then replaced it
+// with the other's, and any ticket bought in between went with it.
+let building = false;
 function setup() {
+  if (building) return;
+  building = true;
+  restart.disabled = true;
   const bar = h('i');
   waiting = h('div', { class: 'setup' },
     h('div', { class: 'kicker' }, 'Opening day'),
@@ -207,7 +219,7 @@ function setup() {
     const until = performance.now() + 40;
     while (!done && performance.now() < until) done = meet.step();
     bar.style.width = `${Math.round((done ? 1 : meet.progress()) * 100)}%`;
-    if (done) { waiting = null; lastBank = null; applySettings(); nav.go('card'); }
+    if (done) { waiting = null; building = false; restart.disabled = false; lastBank = null; applySettings(); nav.go('card'); }
     else setTimeout(step, 0);
   };
   setTimeout(step, 30);
