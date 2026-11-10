@@ -338,6 +338,9 @@ export function sayTime(text, rate = 1) {
 
 const GAP = 250;       // ms between a cancel and the next line: Safari drops a line spoken sooner than that
 const NO_START = 1500; // ms a voice gets to say it has started a line
+// The fastest the browser's voice is ever asked to go, whatever is asked of the queue. Sped up, a device's
+// voice gets higher as well as faster: by 1.4 times its own speed it's a chipmunk. (See pace() in call.js.)
+const FASTEST = 1.2;
 
 // The caller's queue. Each line used to cancel the one before it, so in most races a line or two was cut
 // off in the middle of a sentence. Now a line that comes up while another is being said waits for it to
@@ -350,7 +353,7 @@ const NO_START = 1500; // ms a voice gets to say it has started a line
 // `voice` is anything with { prepare(lines), speak(line, opts), stop() }: the browser's voice below is
 // one, and another source of sound could stand in for it. speak() says line.say (or line.text) and calls
 // opts.onstart, then opts.onend or opts.onerror. Nothing here trusts those calls to come: a voice that
-// goes quiet is cancelled and the call carries on.
+// goes quiet is cancelled and the call carries on. A voice with a `fastest` is never asked to go faster.
 export function callQueue(voice, { now = () => performance.now(), later = (fn, ms) => setTimeout(fn, ms), never = id => clearTimeout(id) } = {}) {
   let cur = null;       // the line being said
   let held = null;      // the one line waiting for it to end
@@ -380,7 +383,7 @@ export function callQueue(voice, { now = () => performance.now(), later = (fn, m
 
   function begin(item) {
     const text = item.line.say || item.line.text;
-    const rate = Math.min(1.7, Math.max(0.9, item.rate));
+    const rate = Math.min(voice.fastest || 1.7, Math.max(0.9, item.rate));
     const me = cur = { item, at: now(), started: null, est: sayTime(text, rate), timer: null };
     const patience = (2 * me.est + 2) * 1000; // no line takes twice its time and two seconds more
     me.timer = later(() => {
@@ -434,7 +437,7 @@ export function callQueue(voice, { now = () => performance.now(), later = (fn, m
     prepare(lines) { voice.prepare(lines); },
     // opts: rate and pitch (and volume), and `clock`, a function giving the time, in seconds, that the
     // line's lateness is counted on: the race's own clock while it runs. Without one it's real time.
-    speak(line, { rate = 1.25, pitch = 1, volume, clock = () => now() / 1000 } = {}) {
+    speak(line, { rate = 1.15, pitch = 1, volume, clock = () => now() / 1000 } = {}) {
       if (cur && line.wire) {
         const was = cur, left = cur.est - (now() - (cur.started ?? cur.at)) / 1000;
         if (left > 0.5) cut();
@@ -464,6 +467,7 @@ export function callQueue(voice, { now = () => performance.now(), later = (fn, m
 // The browser's own voice, as the queue's voice.
 let uttering = null; // kept while it's being said: Chrome can lose an utterance nothing refers to, and its events with it
 const browserVoice = {
+  fastest: FASTEST,
   prepare() { refreshVoices(); },
   speak(line, { rate, pitch, volume, onstart, onend, onerror }) {
     const u = new SpeechSynthesisUtterance(line.say || line.text);
@@ -471,7 +475,7 @@ const browserVoice = {
     // The language is always set: Android speaks by language, not by a named voice.
     u.lang = 'en-US';
     if (picked) u.voice = picked;
-    u.rate = rate; u.pitch = pitch;
+    u.rate = rate; u.pitch = Math.min(1, pitch); // never higher than the voice's own pitch: see FASTEST
     if (volume !== undefined) u.volume = volume;
     u.onstart = onstart;
     u.onend = onend;
@@ -526,7 +530,7 @@ export function primeVoice() {
   try {
     const u = new SpeechSynthesisUtterance('a');
     u.volume = 0;
-    u.rate = 1.6;
+    u.rate = FASTEST;
     u.lang = 'en-US';
     if (picked) u.voice = picked;
     synth().speak(u);

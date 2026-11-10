@@ -627,7 +627,8 @@ const hearIt = async () => {
 };
 const sample = await hearIt();
 assert.deepEqual(sample.map(u => [u.text, u.voice, u.lang]), [["Turning for home, it's Copper Detour by a length and a half!", 'Google US English', 'en-US']], 'Hear it should say one line, in the best voice here');
-assert.ok(sample[0].rate > 1.25 && sample[0].rate < 1.6 && sample[0].pitch > 1, `Hear it isn't at the pace of a race: ${sample[0].rate}, ${sample[0].pitch}`);
+// At the pace of a race: a little quicker than the steady 1.15, never past 1.2, at the voice's own pitch.
+assert.ok(sample[0].rate > 1.15 && sample[0].rate <= 1.2 && sample[0].pitch === 1, `Hear it isn't at the pace of a race: ${sample[0].rate}, ${sample[0].pitch}`);
 await page.selectOption('#optVoiceName', 'Samantha');
 assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('post-time/player')).settings.voiceName), 'Samantha', "the voice chosen isn't saved");
 assert.deepEqual((await hearIt()).map(u => u.voice), ['Samantha'], 'Hear it should say one line, in the voice chosen');
@@ -707,7 +708,8 @@ assert.deepEqual({ ...nextRace, read: nextRace.read.length }, { menu: [false, tr
 // The call at the wire doesn't wait its turn: it comes at once (a quarter of a second after cutting off a
 // line that has a way to go), at the top of the pace, which builds from the steady pace early on. Then
 // the placings and the time, back at the steady pace, with the time in words though the call box keeps
-// its digits.
+// its digits. The top of the pace is 1.2 times the voice's own speed, at its own pitch: sped up more
+// than that, a device's voice is a chipmunk.
 const paced = await page.evaluate(async () => {
   const w = window.__watch, lines = w.call.lines, said = window.__said;
   const until = async f => { while (!f()) await new Promise(r => setTimeout(r, 30)); };
@@ -718,9 +720,10 @@ const paced = await page.evaluate(async () => {
   w.setT(w.endT - 0.05);
   await until(() => said.some(u => u.text === last.say));
   const pace = text => { const u = said.find(x => x.text === text); return [u.rate, u.pitch]; };
-  return { early: pace(lines[2].say), wire: pace(wire.say), last: pace(last.say), read: last.say, shown: document.querySelector('.call .now').textContent };
+  return { early: pace(lines[2].say), wire: pace(wire.say), last: pace(last.say), read: last.say, shown: document.querySelector('.call .now').textContent, most: [Math.max(...said.map(u => u.rate)), Math.max(...said.filter(u => u.volume !== 0).map(u => u.pitch))] };
 });
-assert.deepEqual([paced.early, paced.wire, paced.last], [[1.25, 1], [1.6, 1.12], [1.25, 1]], "the caller's pace doesn't build to the wire and settle after it");
+assert.deepEqual([paced.early, paced.wire, paced.last], [[1.15, 1], [1.2, 1], [1.15, 1]], "the caller's pace doesn't build to the wire and settle after it");
+assert.deepEqual(paced.most, [1.2, 1], 'a line was asked for faster than 1.2, or at a raised pitch');
 assert.match(paced.shown, /The time, (\d:)?\d\d\.\d\d\.$/, 'the call box lost the time in digits');
 assert.match(paced.read, /The time, [a-z -]+\.$/, 'the voice is given the time in digits');
 // On the way to the results the caller finishes the line he's on. Any other way out of a race, he stops.

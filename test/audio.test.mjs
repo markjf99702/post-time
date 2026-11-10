@@ -386,7 +386,7 @@ test("the call at the wire lets a line that's nearly done finish, cuts off one t
   // Nearly done: it finishes, and the wire call comes straight after, with no cancel.
   r = rig();
   r.queue.speak(SHORT);
-  const takes = sayTime(SHORT.text, 1.25) * 1000;
+  const takes = sayTime(SHORT.text, 1.15) * 1000;
   r.advance(takes - 300);
   r.queue.speak(WIRE);
   r.advance(10000);
@@ -464,7 +464,7 @@ test('a voice that goes quiet is cancelled and the call carries on', () => {
   r.queue.speak(LONG);
   r.advance(100);
   r.events = false; // the line has started; from here the voice says nothing
-  const patience = (2 * sayTime(LONG.text, 1.25) + 2) * 1000;
+  const patience = (2 * sayTime(LONG.text, 1.15) + 2) * 1000;
   r.log.length = 0;
   r.queue.speak({ text: 'Second and third, and the time.', late: 60 });
   r.advance(patience - 200);
@@ -512,6 +512,31 @@ function replay(r, race) {
   return cameUp;
 }
 
+test("the voice is never asked to go faster than 1.2 times its own speed, or higher than its own pitch", async () => {
+  // Sped up, a device's voice gets higher as well as faster: fine at 1.15, a chipmunk at 1.4 and up. The
+  // pace was built to climb to 1.6 with the pitch raised. Whatever is asked of the page's queue, the
+  // browser's voice is handed no more than its limit.
+  audio.setVoice(true);
+  arrive(IPHONE);
+  await new Promise(done => setTimeout(done, 300)); // clear of the last cancel: the page's own queue keeps real time
+  const from = spoken.length;
+  audio.hearIt({ text: "Turning for home, it's Copper Detour by a length and a half!" }, { rate: 1.6, pitch: 1.12 });
+  // (The silent word that unlocks a phone's voice may come first: it's no faster.)
+  assert.ok(spoken.slice(from).every(u => u.rate <= 1.2), "the browser's voice was asked for more");
+  assert.deepEqual(spoken.slice(from).filter(u => u.volume !== 0).map(u => [u.rate, u.pitch]), [[1.2, 1]], "the browser's voice was asked for more");
+  // And the pace asked for at every point of a race is inside it already: steady, then a small climb.
+  for (const kind of ['pre', 'off', 'call', 'frac', 'finish']) {
+    for (let toWire = 120; toWire >= -5; toWire -= 0.5) {
+      for (const wire of [false, true]) {
+        const p = pace({ kind, wire }, toWire);
+        assert.ok(p.rate >= 1.15 && p.rate <= 1.2 && p.pitch === 1, `${kind} ${toWire} s from the wire: ${p.rate}, ${p.pitch}`);
+      }
+    }
+  }
+  assert.deepEqual([pace({ kind: 'call' }, 60), pace({ kind: 'call' }, 18), pace({ kind: 'finish', wire: true }, 0), pace({ kind: 'finish' }, -3)],
+    [{ rate: 1.15, pitch: 1 }, { rate: 1.175, pitch: 1 }, { rate: 1.2, pitch: 1 }, { rate: 1.15, pitch: 1 }]);
+});
+
 test('over a race at normal speed no line is cut off before the wire, the wire call is always made, and the pace climbs', () => {
   // Every line used to cancel the one before it: by a model of how long a voice takes, about one line in
   // seven was cut off mid-sentence, in most races, all at one pace. Two race days here, with a voice as
@@ -550,17 +575,18 @@ test('over a race at normal speed no line is cut off before the wire, the wire c
       assert.equal(wire.length, 1, `${at}: the call at the wire was made ${wire.length} times`);
       assert.ok(wire[0].T - cameUp.get(wire[0].line) <= 0.8, `${at}: the call at the wire came ${(wire[0].T - cameUp.get(wire[0].line)).toFixed(2)} s late`);
       for (const x of said) if (!x.line.wire) assert.ok(x.T - cameUp.get(x.line) <= x.line.late + 0.05, `${at}: "${x.text}" was said ${(x.T - cameUp.get(x.line)).toFixed(2)} s late`);
-      // The pace: steady early, never falling back before the wire, quickest and highest at the wire,
-      // and back to steady for the placings.
+      // The pace: steady early, never falling back before the wire, quickest at the wire (and never past
+      // 1.2 times the voice's own speed, or off its own pitch), and back to steady for the placings.
       const running = said.filter(x => x.T >= 0 && x.T <= race.winT + 1 && x.line.kind !== 'pre');
-      running.forEach((x, k) => { if (k) assert.ok(x.rate >= running[k - 1].rate && x.pitch >= running[k - 1].pitch, `${at}: the pace falls at "${x.text}"`); });
-      assert.deepEqual([running[0].rate, running[0].pitch], [1.25, 1], `${at}: the pace at the start`);
-      assert.deepEqual([wire[0].rate, wire[0].pitch], [1.6, 1.12], `${at}: the pace at the wire`);
+      running.forEach((x, k) => { if (k) assert.ok(x.rate >= running[k - 1].rate, `${at}: the pace falls at "${x.text}"`); });
+      assert.deepEqual([running[0].rate, running[0].pitch], [1.15, 1], `${at}: the pace at the start`);
+      assert.deepEqual([wire[0].rate, wire[0].pitch], [1.2, 1], `${at}: the pace at the wire`);
       const before = running[running.length - 2];
-      assert.ok(before.rate > 1.4 && before.rate <= 1.6, `${at}: the last line before the wire is at ${before.rate}`);
+      assert.ok(before.rate > 1.17 && before.rate <= 1.2, `${at}: the last line before the wire is at ${before.rate}`);
       for (const x of said) {
+        assert.ok(x.rate <= 1.2 && x.pitch === 1, `${at}: "${x.text}" was asked for at ${x.rate}, pitch ${x.pitch}`);
         if (x.line.kind === 'pre') assert.equal(x.rate, 1.15, `${at}: the pace before the start`);
-        if (x.line.kind === 'finish' && !x.line.wire) assert.deepEqual([x.rate, x.pitch], [1.25, 1], `${at}: the pace of "${x.text}"`);
+        if (x.line.kind === 'finish' && !x.line.wire) assert.deepEqual([x.rate, x.pitch], [1.15, 1], `${at}: the pace of "${x.text}"`);
       }
     }
     // Lines are left out when the voice is still on the one before (more with a slow voice), but not many.

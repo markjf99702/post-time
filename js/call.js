@@ -86,16 +86,16 @@ export function finishWords(l) {
 // a lead change nearly so, and the placings and the time can follow whenever the winner's line is done.
 const LATE = { off: 0.3, wire: 0.3, change: 1.0, other: 1.5, placings: 6 };
 
-// How a line is delivered: how fast, and how high. The pace is steady until about 33 seconds from the
-// wire and climbs from there, the way a call builds through the far turn and the stretch: 1.25 times the
-// voice's own speed rising to 1.6, with the pitch a little higher too. Before the start it's slower, and
-// after the wire it's back to the steady pace for the placings and the time. (These numbers come from a
-// model of how long a voice takes over a line, not from listening.) `toWire` is seconds to the wire.
+// How a line is delivered: how fast, and how high. A device's own voice gets higher as it's sped up: on
+// a Chromebook it was fine at 1.15 times its own speed and "the chipmunks" at 1.4 and up. So the pace stays
+// between 1.15 and 1.2 and the pitch is never raised. It's steady until about 33 seconds from the wire and
+// climbs the little it can from there, through the far turn and the stretch; before the start, and for
+// the placings and the time after the wire, it's the steady pace. `toWire` is seconds to the wire.
+export const STEADY = 1.15, FASTEST = 1.2;
 export function pace(line, toWire) {
-  if (line.kind === 'pre') return { rate: 1.15, pitch: 1 };
-  if (line.kind === 'finish' && !line.wire) return { rate: 1.25, pitch: 1 };
+  if (line.kind === 'pre' || (line.kind === 'finish' && !line.wire)) return { rate: STEADY, pitch: 1 };
   const k = line.wire ? 1 : Math.max(0, Math.min(1, 1 - (toWire - 3) / 30));
-  return { rate: +(1.25 + 0.35 * k).toFixed(3), pitch: +(1 + 0.12 * k).toFixed(3) };
+  return { rate: +(STEADY + (FASTEST - STEADY) * k).toFixed(3), pitch: 1 };
 }
 
 // After a photo, the winner's line that goes with the official sign, as a line of the call.
