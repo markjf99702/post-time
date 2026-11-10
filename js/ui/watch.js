@@ -97,8 +97,18 @@ export function renderWatch(el, nav, params) {
   }
   function skip() {
     audio.hush();
+    // The bell is for a race that starts by running through the off. Skipped from the gate, the race is
+    // picked up with twelve seconds to run: the crowd and the hooves start there, without a bell.
+    if (!rung) {
+      rung = true;
+      if (game.player.settings.sound) audio.startRace();
+    }
     if (T < winT - 12) { T = winT - 12; scene.lastT = null; }
-    else { T = endT; scene.lastT = null; }
+    else {
+      // Skipped past the wire, nobody saw the finish: no roar for it.
+      if (T < winT) cheered = true;
+      T = endT; scene.lastT = null;
+    }
   }
 
   function frame(tNow) {
@@ -140,7 +150,8 @@ export function renderWatch(el, nav, params) {
       const st = stateAt(run, T, []);
       const lead = Math.max(...st.map(s => s.p));
       const toGo = race.distance - lead;
-      const excite = toGo > 600 ? 0.15 : toGo > 0 ? 0.15 + 0.85 * (1 - toGo / 600) : 0.4;
+      // It builds over the last 600 metres, stays at its height for two seconds past the wire, and settles.
+      const excite = toGo > 600 ? 0.15 : toGo > 0 ? 0.15 + 0.85 * (1 - toGo / 600) : T < winT + 2 ? 1 : 0.15;
       audio.raceLevel(excite, T < winT + 2 ? 0.6 : 0.2);
     }
     if (!cheered && T >= winT) { cheered = true; audio.cheer(); }
@@ -216,7 +227,7 @@ export function renderWatch(el, nav, params) {
   function finish() {
     ended = true;
     endedAt = performance.now();
-    audio.raceLevel(0.1, 0);
+    audio.raceOver();
     setTimeout(() => audio.stopRace(), 2500);
     const flash = h('div', { class: 'w-flash' }, call.photo ? 'PHOTO' : 'OFFICIAL');
     if (!call.photo) flash.classList.add('official');

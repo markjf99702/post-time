@@ -132,20 +132,38 @@ export function startRace() {
   hoof = { src: hs, g: hg, am, amg };
 }
 
+// The roar at the wire has the crowd's level to itself until this time, on the sound's own clock.
+let cheering = 0;
+
+// Called every frame of the race: how worked up the crowd is (0 to 1) and how loud the hooves are.
 export function raceLevel(excite, hooves) {
   if (!ac || !crowd) return;
   const t = ac.currentTime;
-  crowd.g.gain.setTargetAtTime(0.04 + excite * 0.3, t, 0.4);
+  // During the roar the crowd's level is left alone. (It wasn't, so the next frame's level took the
+  // roar's place a sixtieth of a second after it began, and the crowd fell away from the wire on.)
+  if (t >= cheering) crowd.g.gain.setTargetAtTime(0.04 + excite * 0.3, t, 0.4);
   crowd.bp.frequency.setTargetAtTime(700 + excite * 900, t, 0.5);
   hoof.g.gain.setTargetAtTime(hooves * 0.5, t, 0.2);
   hoof.amg.gain.setTargetAtTime(hooves * 0.5, t, 0.2);
 }
 
+// The roar as the winner crosses: up at once, held for two and a half seconds, then dying away.
+const ROAR = 2.5, FADE = 1.2; // seconds: how long it's held, and the time constant it fades with
 export function cheer() {
   if (!ac || !crowd) return;
   const t = ac.currentTime;
   crowd.g.gain.setTargetAtTime(0.45, t, 0.1);
-  crowd.g.gain.setTargetAtTime(0.08, t + 2.5, 1.2);
+  crowd.g.gain.setTargetAtTime(0.08, t + ROAR, FADE);
+  cheering = t + ROAR + 3 * FADE; // by then it has all but died away
+}
+
+// The race is over: the crowd settles, whatever it was doing, and the hooves stop.
+export function raceOver() {
+  if (!ac || !crowd) return;
+  const t = ac.currentTime;
+  cheering = 0;
+  crowd.g.gain.cancelScheduledValues(t);
+  raceLevel(0.1, 0);
 }
 
 export function stopRace() {
@@ -155,6 +173,7 @@ export function stopRace() {
     try { x.am?.stop(); } catch { /* already stopped */ }
   }
   crowd = null; hoof = null;
+  cheering = 0;
 }
 
 export function ticket() {

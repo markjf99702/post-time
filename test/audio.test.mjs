@@ -38,10 +38,17 @@ Object.defineProperty(globalThis, 'navigator', { value: { get onLine() { return 
 // The page going out of sight and coming back, and a sound system that can be held and let go.
 const page = { hidden: false, on: {}, addEventListener(type, fn) { this.on[type] = fn; } };
 const show = seen => { page.hidden = !seen; page.on.visibilitychange(); };
+// Its clock is turned by hand, and every level it's asked to move to is noted on the setting it was asked of.
 let sound = null;
+const setting = value => ({ value, asked: [], setTargetAtTime(to, at, tc) { this.asked.push({ to, at, tc }); }, cancelScheduledValues(at) { this.asked.push({ cancel: at }); } });
+const part = more => ({ connect(to) { this.to = to; }, start() {}, stop() {}, ...more });
 class Sound {
-  constructor() { sound = this; this.state = 'running'; this.destination = {}; }
-  createGain() { return { gain: { value: 1 }, connect() {} }; }
+  constructor() { sound = this; this.state = 'running'; this.destination = {}; this.currentTime = 0; this.sampleRate = 100; this.filters = []; }
+  createGain() { return part({ gain: setting(1) }); }
+  createBuffer(channels, length) { return { getChannelData: () => new Float32Array(length) }; }
+  createBufferSource() { return part({}); }
+  createBiquadFilter() { const f = part({ frequency: setting(350), Q: setting(1) }); this.filters.push(f); return f; }
+  createOscillator() { return part({ frequency: setting(440) }); }
   suspend() { this.state = 'suspended'; return Promise.resolve(); }
   resume() { this.state = 'running'; return Promise.resolve(); }
 }
@@ -226,6 +233,46 @@ test('with the page out of sight the voice stops and the sound is held, and both
   show(true);
   assert.equal(sound.state, 'suspended');
   sound.state = 'running';
+});
+
+test('the roar at the wire is not taken back by the next frame, and the crowd settles when it has died away', () => {
+  // The race screen sets the crowd's level every frame, and that used to replace the roar a sixtieth of a
+  // second after it began: the crowd fell away from the moment the winner crossed.
+  audio.setSound(true);
+  audio.startRace();
+  const crowd = sound.filters.filter(f => f.type === 'bandpass').pop().to.gain; // the crowd's own level
+  const frame = 1 / 60;
+  const asked = from => crowd.asked.slice(from).map(a => [+a.to.toFixed(3), +a.at.toFixed(3)]);
+  sound.currentTime = 20;
+  audio.raceLevel(1, 0.6); // the last strides
+  assert.deepEqual(asked(-1), [[0.34, 20]]);
+  sound.currentTime = 20 + frame;
+  let from = crowd.asked.length;
+  audio.cheer();
+  // Up at once, held for two and a half seconds, then dying away: and nothing else for six seconds, though
+  // the race goes on setting its level every frame.
+  for (let t = 20 + 2 * frame; t < 26; t += frame) { sound.currentTime = t; audio.raceLevel(t < 22 ? 1 : 0.15, 0.6); }
+  assert.deepEqual(asked(from), [[0.45, 20.017], [0.08, 22.517]], 'the roar at the wire was replaced by the next frame');
+  // Once it has died away the crowd follows the race again.
+  from = crowd.asked.length;
+  sound.currentTime = 26.2;
+  audio.raceLevel(0.15, 0.2);
+  assert.deepEqual(asked(from), [[0.085, 26.2]], "after the roar the crowd doesn't follow the race");
+  // The race over in the middle of a roar (skipped to the end): what was to come of the roar is dropped
+  // and the crowd settles.
+  sound.currentTime = 30;
+  audio.cheer();
+  sound.currentTime = 31;
+  from = crowd.asked.length;
+  audio.raceOver();
+  assert.deepEqual(crowd.asked.slice(from).map(a => (a.cancel ? ['cancel', a.cancel] : [+a.to.toFixed(3), a.at])), [['cancel', 31], [0.07, 31]], "the crowd doesn't settle when the race is over");
+  // And the next race's crowd isn't held by the last one's roar.
+  audio.cheer();
+  audio.startRace();
+  const next = sound.filters.filter(f => f.type === 'bandpass').pop().to.gain;
+  audio.raceLevel(0.5, 0.6);
+  assert.equal(next.asked.length, 1, "the next race's crowd is held by the last race's roar");
+  audio.stopRace();
 });
 
 // ---------------------------------------------------------------- the queue, with a clock turned by hand

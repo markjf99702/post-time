@@ -508,9 +508,25 @@ await page.addInitScript(voices => {
     cancel() { window.__voice.push('(cancel)'); saying = null; waiting.length = 0; },
     addEventListener() {},
   } });
-  // The page's sound, kept where the tests can see whether it's running.
+  // The page's sound, kept where the tests can see whether it's running. Everything on its way to the
+  // speaker goes through a tap, so how loud it is can be measured; the oscillators it makes are noted (the
+  // starting bell is the only thing with one at 1760 Hz); and so is the crowd's own level, which is the
+  // one a band-pass filter feeds.
   const Sound = window.AudioContext;
-  window.AudioContext = class extends Sound { constructor(...a) { super(...a); window.__sound = this; } };
+  window.__oscillators = [];
+  window.AudioContext = class extends Sound {
+    constructor(...a) { super(...a); window.__sound = this; }
+    get destination() {
+      if (!this.tap) { this.tap = this.createAnalyser(); this.tap.fftSize = 2048; this.tap.connect(super.destination); }
+      return this.tap;
+    }
+    createOscillator() { const o = super.createOscillator(); window.__oscillators.push(o); return o; }
+  };
+  const connect = AudioNode.prototype.connect;
+  AudioNode.prototype.connect = function (to, ...a) {
+    if (this instanceof BiquadFilterNode && this.type === 'bandpass' && to instanceof GainNode) window.__crowd = to;
+    return connect.call(this, to, ...a);
+  };
 }, macVoices);
 await page.reload();
 await page.waitForSelector('.races');
@@ -691,6 +707,58 @@ const leftEarly = await page.evaluate(async () => {
   return { read, cut: v[v.length - 1] === '(cancel)' };
 });
 assert.deepEqual(leftEarly, { read: true, cut: true }, 'leaving a race for the card leaves the caller talking');
+await page.waitForSelector('.races');
+
+// The sound of a race, measured where it goes to the speaker (nobody hears it here). The starting bell
+// rings as the race runs through the off. The crowd builds to the wire and roars as the winner crosses:
+// the two seconds after the wire are louder than the two before. (The roar used to be replaced by the
+// next frame's level, so the crowd fell away from the wire on.) The race is opened with the sound off, so
+// the bugle isn't in the measurement, and the bell is over two seconds before the wire.
+await page.evaluate(() => document.getElementById('optSound').click()); // off
+await page.click('.race-row.next');
+await page.click('.post-bar .btn.brass');
+await page.waitForSelector('.watch:not([hidden]) canvas.scene');
+await page.locator('.w-ctl button', { hasText: /^sound$/i }).click(); // on
+const roar = await page.evaluate(async () => {
+  const w = window.__watch, tap = window.__sound.tap, buf = new Float32Array(2048);
+  const bells = () => window.__oscillators.filter(o => o.frequency.value === 1760).length;
+  const before = bells();
+  w.setT(-0.15);
+  while (w.T < 0.1) await new Promise(r => requestAnimationFrame(r));
+  const rang = bells() - before;
+  w.setT(w.winT - 3.8);
+  const heard = []; // [seconds from the wire on the clock on the wall, the power going to the speaker, the crowd's level]
+  let wire = null;
+  for (;;) {
+    await new Promise(r => requestAnimationFrame(r));
+    const now = performance.now() / 1000;
+    if (wire === null && w.T >= w.winT) wire = now;
+    tap.getFloatTimeDomainData(buf);
+    heard.push([now, buf.reduce((sum, v) => sum + v * v, 0) / buf.length, window.__crowd.gain.value]);
+    if (wire !== null && now - wire > 2.05) break;
+  }
+  const mean = (from, to, k) => { const in2 = heard.filter(x => x[0] - wire >= from && x[0] - wire < to); return in2.reduce((sum, x) => sum + x[k], 0) / in2.length; };
+  const db = power => +(10 * Math.log10(power)).toFixed(1);
+  return { rang, sound: window.__sound.state, before: db(mean(-2, 0, 1)), after: db(mean(0, 2, 1)), crowdBefore: +mean(-2, 0, 2).toFixed(2), crowdAfter: +mean(0, 2, 2).toFixed(2), frames: heard.length };
+});
+assert.deepEqual([roar.rang, roar.sound], [1, 'running'], 'the starting bell should ring once as the race runs through the off');
+assert.ok(roar.after > roar.before && roar.crowdAfter > roar.crowdBefore, `the two seconds after the wire (${roar.after} dB, crowd at ${roar.crowdAfter}) are no louder than the two before (${roar.before} dB, crowd at ${roar.crowdBefore})`);
+await page.evaluate(() => window.postTime.nav.go('card'));
+await page.waitForSelector('.races');
+// Skip from the gate picks the race up with twelve seconds to run. The crowd and the hooves start there,
+// and the bell, which is for the off, doesn't ring in mid-stretch.
+await page.click('.race-row.next');
+await page.click('.post-bar .btn.brass');
+await page.waitForSelector('.watch:not([hidden]) canvas.scene');
+const skipped = await page.evaluate(async () => {
+  const w = window.__watch, made = window.__oscillators.length, crowd = window.__crowd;
+  const inGate = w.T < 0;
+  [...document.querySelectorAll('.w-ctl button')].find(b => /^Skip/.test(b.textContent)).click();
+  for (let i = 0; i < 20; i++) await new Promise(r => requestAnimationFrame(r));
+  return { inGate, toRun: Math.round(w.winT - w.T), bells: window.__oscillators.slice(made).filter(o => o.frequency.value === 1760).length, crowd: window.__crowd !== crowd };
+});
+assert.deepEqual(skipped, { inGate: true, toRun: 12, bells: 0, crowd: true }, 'after Skip from the gate the starting bell rings in mid-stretch, or the crowd never starts');
+await page.evaluate(() => window.postTime.nav.go('card'));
 await page.waitForSelector('.races');
 
 // Opening day, with the build held part-way: there's no card or scrapbook yet, so tapping them (or the
