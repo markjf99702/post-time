@@ -1,25 +1,51 @@
-<!doctype html><meta charset="utf-8"><style>@font-face{font-family:Oswald;src:url(../fonts/oswald.woff2)}@font-face{font-family:'IBM Plex Sans Condensed';src:url(../fonts/plex-condensed-600.woff2);font-weight:600}body{margin:0;background:#333;display:flex;flex-wrap:wrap;gap:8px;padding:8px}canvas{display:block}</style>
+<!doctype html><meta charset="utf-8"><style>@font-face{font-family:Oswald;src:url(../fonts/oswald.woff2)}@font-face{font-family:'IBM Plex Sans Condensed';src:url(../fonts/plex-condensed-600.woff2);font-weight:600}body{margin:0;background:#333;color:#ddd;font:12px sans-serif;display:flex;flex-wrap:wrap;gap:8px;padding:8px}canvas{display:block}figure{margin:0}figcaption{padding:3px 0}</style>
 <script type="module">
+// The photo finish and the winner's circle, drawn on their own.
+//   photo.html            the first three races of one card, and two winner's circles
+//   photo.html?close=6    the six closest finishes on a dozen meets' opening days, each at the size a
+//                         phone gets (360 wide) and the size a desktop gets (560), with the margins
 import { createWorld, simulateRace, ownerSilks } from '../js/world.js';
 import { photoFinish } from '../js/draw/photo.js';
 import { drawCircle } from '../js/draw/circle.js';
 await document.fonts.load('600 20px Oswald');
-const w = createWorld('demo', '2026-09-26');
-let shown = 0;
-for (const race of w.cards[0].races) {
-  const run = simulateRace(race, w);
-  const runners = race.entries.map(e => { const h = w.horses[e.hid]; return { number: e.pp, coat: h.coat, marks: h.marks, silks: ownerSilks(h.owner), name: h.name }; });
-  if (shown < 3) {
-    const c = document.createElement('canvas'); c.style.width = '360px'; document.body.appendChild(c);
-    const t0 = performance.now();
-    photoFinish(c, { run, runners, width: 360, height: 220 });
-    console.log('photo ms', performance.now() - t0, 'margin', run.results[1].toPrev);
-    shown++;
+const runnersOf = (w, race) => race.entries.map(e => { const h = w.horses[e.hid]; return { number: e.pp, coat: h.coat, marks: h.marks, silks: ownerSilks(h.owner), name: h.name }; });
+const show = (run, runners, width, note) => {
+  const c = document.createElement('canvas'); c.style.width = `${width}px`;
+  const fig = document.createElement('figure');
+  fig.append(c, Object.assign(document.createElement('figcaption'), { textContent: note }));
+  document.body.appendChild(fig);
+  const t0 = performance.now();
+  photoFinish(c, { run, runners, width, height: Math.round(width * 0.6) });
+  console.log('photo ms', performance.now() - t0, note);
+};
+const close = +new URLSearchParams(location.search).get('close') || 0;
+if (close) {
+  const found = [];
+  for (let s = 0; s < 12; s++) {
+    const w = createWorld(`photo${s}`, '2026-09-26');
+    for (const race of w.cards[0].races) {
+      const run = simulateRace(race, w);
+      if (run.results[1] && run.results[1].toPrev < 0.3) found.push({ w, race, run });
+    }
   }
-  if (race.no === 8 || race.no === 1) {
-    const c = document.createElement('canvas'); c.style.width = '360px'; c.style.height = '250px'; document.body.appendChild(c);
-    const win = race.entries[run.results[0].h]; const h = w.horses[win.hid];
-    drawCircle(c, { horse: h, silks: ownerSilks(h.owner), number: win.pp, stakes: race.cls === 'STK', you: race.no === 8, seed: race.seed });
+  found.sort((a, b) => a.run.results[1].toPrev - b.run.results[1].toPrev);
+  for (const { w, race, run } of found.slice(0, close)) {
+    const runners = runnersOf(w, race);
+    const note = `${w.seed} race ${race.no}: ${run.results.slice(0, 3).map((r, k) => `#${runners[r.h].number}${k ? ` (${r.toPrev.toFixed(3)} lengths)` : ''}`).join(', ')}`;
+    for (const width of [360, 560]) show(run, runners, width, note);
+  }
+} else {
+  const w = createWorld('demo', '2026-09-26');
+  let shown = 0;
+  for (const race of w.cards[0].races) {
+    const run = simulateRace(race, w);
+    const runners = runnersOf(w, race);
+    if (shown < 3) { show(run, runners, 360, `margin ${run.results[1].toPrev.toFixed(3)} lengths`); shown++; }
+    if (race.no === 8 || race.no === 1) {
+      const c = document.createElement('canvas'); c.style.width = '360px'; c.style.height = '250px'; document.body.appendChild(c);
+      const win = race.entries[run.results[0].h]; const h = w.horses[win.hid];
+      drawCircle(c, { horse: h, silks: ownerSilks(h.owner), number: win.pp, stakes: race.cls === 'STK', you: race.no === 8, seed: race.seed });
+    }
   }
 }
 window.done = true;

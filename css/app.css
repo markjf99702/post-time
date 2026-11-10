@@ -376,7 +376,8 @@ a { color: var(--green-2); }
 @keyframes pop { from { transform: translate(-50%, -50%) scale(.6); opacity: 0; } }
 .w-photo { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(8,10,8,.82); flex-direction: column; gap: 10px; padding: 10px; }
 .w-photo canvas { max-width: 100%; max-height: calc(100% - 100px); border: 6px solid #f3efe3; box-shadow: 0 10px 40px rgba(0,0,0,.5); image-rendering: auto; }
-.w-photo .cap { font: 500 14px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; color: #e8e0c8; }
+.w-photo .cap { font: 500 14px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; color: #e8e0c8; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w-photo .cap.tight { font-size: 12.5px; letter-spacing: .03em; } /* both names, where they wouldn't fit otherwise */
 /* After a photo the official sign is smaller and sits under the caption, so the photo stays clear. */
 .w-photo .w-flash.under { position: static; transform: none; font-size: 24px; padding: 6px 14px; visibility: hidden; animation: none; }
 .w-photo .w-flash.under.up { visibility: visible; animation: popin .35s ease-out; }
@@ -390,6 +391,12 @@ a { color: var(--green-2); }
 .order button.me .cloth { box-shadow: 0 0 0 2px #fff; }
 .order button.follow { background: rgba(245,179,61,.25); }
 .order .gap { font: 500 11px/1 var(--display); color: #a9a28c; min-width: 16px; text-align: center; }
+/* The two in a photo, side by side until the official sign says which of them was in front. */
+.order .pair { position: relative; display: flex; gap: 2px; flex: none; padding: 1px 3px; border: 1px solid var(--amber); border-radius: 7px; }
+.order .pair::before {
+  content: 'PHOTO'; position: absolute; left: 50%; top: -5px; transform: translateX(-50%); padding: 0 3px;
+  background: #161c17; color: var(--amber); font: 600 8px/1 var(--display); letter-spacing: .12em;
+}
 .order .gap.lead { color: var(--amber); }
 .call {
   flex: 1 0 calc(3.9em + 39px); /* the line before, and three lines of this one */

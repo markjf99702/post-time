@@ -69,6 +69,50 @@ const sameSeed = await page.evaluate(async () => {
 });
 assert.deepEqual(sameSeed, [0, 0, 0, 0], 'one seed built four times in the page gave different meets');
 
+// The photo finish is the race: every nose reaches the line in the column for the moment the race says it
+// crossed, so the picture's order is the official order and the line is on the winner's nose. (Each of the
+// first three is photographed alone, with the others taken away from the finish, and the column its nose
+// gets to is read off the bare picture. The picture used to put the winner's nose 6 to 11 columns past the
+// line, and the wrong nose in front in the closest finishes.)
+const noses = await page.evaluate(async () => {
+  const { createWorld, simulateRace, ownerSilks } = await import('./js/world.js');
+  const { photoFinish } = await import('./js/draw/photo.js');
+  const w = createWorld('same-seed', '2026-11-14'), W = 360, H = 216, out = [];
+  for (const race of w.cards[0].races) {
+    const run = simulateRace(race, w), res = run.results;
+    const runners = race.entries.map(e => { const h = w.horses[e.hid]; return { number: e.pp, coat: h.coat, marks: h.marks, silks: ownerSilks(h.owner), name: h.name }; });
+    const tWin = run.t0 + res[0].time;
+    const from = Math.max(0, Math.floor((tWin - 0.6) / run.dt) - 3), to = Math.min(run.frames.length - 1, Math.ceil((tWin + 1) / run.dt) + 3);
+    const shot = keep => {
+      const frames = run.frames.slice();
+      for (let i = from; i <= to; i++) {
+        frames[i] = new Float32Array(run.frames[i]);
+        for (let h = 0; h < run.n; h++) if (h !== keep) frames[i][h * 4] = -1000;
+      }
+      const c = document.createElement('canvas');
+      const info = photoFinish(c, { run: { ...run, frames }, runners, width: W, height: H, grey: false, marks: false });
+      return { ...info, data: c.getContext('2d').getImageData(0, 0, W, H).data };
+    };
+    const empty = shot(-1);
+    const noseCol = keep => {
+      const d = shot(keep).data;
+      for (let c = W - 1; c >= 0; c--) for (let y = Math.round(H * 0.26) + 2; y < H; y++) {
+        const i = (y * W + c) * 4;
+        if (Math.abs(d[i] - empty.data[i]) + Math.abs(d[i + 1] - empty.data[i + 1]) + Math.abs(d[i + 2] - empty.data[i + 2]) > 24) return c;
+      }
+      return null;
+    };
+    for (const r of res.slice(0, 3)) {
+      const due = empty.lineX - (r.time - res[0].time) / empty.dtCol; // the column the race puts this nose in
+      if (due >= 20) out.push({ race: race.no, pos: r.pos, due: +due.toFixed(1), col: noseCol(r.h) });
+    }
+  }
+  return out;
+});
+assert.ok(noses.filter(n => n.pos === 1).length === 8 && noses.length >= 12, `too few noses to check the photo finish with: ${noses.length}`);
+const offLine = noses.filter(n => n.col === null || Math.abs(n.col - n.due) > 1.5);
+assert.deepEqual(offLine, [], 'in the photo finish, a nose is not where the race says it crossed');
+
 // A look at a later race shows its opening odds, and doesn't start its clock.
 await page.locator('.race-row').nth(2).click();
 await page.click('.tabs button:nth-child(4)');
@@ -323,24 +367,31 @@ assert.equal(small.heights.length, 1, `the picture changes size with the call: $
 assert.ok(small.label < 24, 'the race number wraps onto two lines');
 // This one goes to a photo. The caller says who won it when the official sign goes up, not before, and
 // the line fits its box. The official sign goes up under the photo, not over it.
+// Until then the running order doesn't say either: the two in the photo are side by side, lower number
+// first, with no margin between them, and in the order they finished once the sign is up.
 const photoCall = await page.evaluate(() => new Promise(resolve => {
   const w = window.__watch, line = "It's Number One, by a nose!";
   w.call.photo = true;
   w.call.official = line;
   w.setT(w.endT);
-  let early = false;
+  let early = false, held = null;
+  const strip = () => [...document.querySelector('.order').children].map(x => (x.matches('.pair') ? `[${[...x.children].map(b => b.getAttribute('aria-label').replace(/, .*/, '')).join(' | ')}]` : x.matches('.gap') ? 'gap' : x.getAttribute('aria-label').replace(/, .*/, ''))).slice(0, 3);
   const look = () => {
     const sign = document.querySelector('.w-photo .w-flash'), box = document.querySelector('.call');
     const up = !!sign && sign.classList.contains('up');
     const said = box.querySelector('.now').textContent === line;
     if (said && !up) early = true;
-    if (up) resolve({ early, said, spill: box.scrollHeight - box.clientHeight });
+    if (sign && !up) held = strip();
+    if (up) resolve({ early, said, spill: box.scrollHeight - box.clientHeight, held, after: strip(), first2: w.run.results.slice(0, 2).map(r => window.postTime.card().races[1].entries[r.h].pp) });
     else requestAnimationFrame(look);
   };
   look();
 }));
 assert.deepEqual({ early: photoCall.early, said: photoCall.said }, { early: false, said: true }, "a photo's winner is called before the official sign, or not at all");
 assert.ok(photoCall.spill <= 1, `the winner's line spills ${photoCall.spill}px out of its box on a small phone`);
+const [lower, higher] = photoCall.first2.slice().sort((a, b) => a - b);
+assert.equal(photoCall.held[0], `[In the photo: number ${lower} | In the photo: number ${higher}]`, 'the running order gives a photo away before the official sign');
+assert.deepEqual(photoCall.after.filter(x => x !== 'gap').slice(0, 2), photoCall.first2.map((n, k) => `${k + 1}: number ${n}`), "the running order isn't the official one once the sign is up");
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 const photoSign = await page.evaluate(() => {
   const box = s => document.querySelector(s).getBoundingClientRect();

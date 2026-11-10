@@ -178,25 +178,37 @@ export function renderWatch(el, nav, params) {
   }
 
   let orderShown = '';
+  let signUp = false; // after a photo, the official sign is up
   function drawOrder(t) {
     // In the gate, list them by post position.
-    const o = t > 1 ? runningOrder(run, t) : runners.map((r, i) => ({ i, gap: 0 }));
-    const gaps = o.map((x, k) => (k > 0 && t > 1 ? marginShort(x.gap) : ''));
+    let o = t > 1 ? runningOrder(run, t) : runners.map((r, i) => ({ i, gap: 0 }));
+    // A photo: the running order has the official order and margins from the moment a horse crosses, which
+    // gave the result away while the PHOTO sign was still up. From the wire until the official sign, the
+    // two in the photo are shown as a pair, lower number first, with no margin between them.
+    if (call.photo && !signUp && t >= winT) {
+      const two = [run.results[0].h, run.results[1].h].sort((a, b) => runners[a].number - runners[b].number);
+      o = [...two.map(i => ({ i, gap: 0, photo: true })), ...o.filter(x => !two.includes(x.i))];
+    }
+    const gaps = o.map((x, k) => (k > 0 && t > 1 && !x.photo ? marginShort(x.gap) : ''));
     // Rebuilt only when something on it changes, since a rebuilt button loses the keyboard's place;
     // the horse that had it gets it back.
-    const shows = `${following}|${o.map((x, k) => `${x.i} ${gaps[k]}`).join(',')}`;
+    const shows = `${following}|${o.map((x, k) => `${x.i} ${x.photo ? 'photo' : gaps[k]}`).join(',')}`;
     if (shows === orderShown) return;
     orderShown = shows;
     const had = order.contains(document.activeElement) ? document.activeElement.dataset.i : null;
     clear(order);
+    let pair = null;
     o.forEach((x, k) => {
       if (gaps[k]) order.append(h('span', { class: 'gap' }, gaps[k]));
       const r = runners[x.i];
       const b = h('button', {
-        type: 'button', class: `${r.mine ? 'me' : ''}${following === x.i ? ' follow' : ''}`, 'aria-label': `${k + 1}: number ${r.number}, ${r.name}`, data: { i: x.i },
+        type: 'button', class: `${r.mine ? 'me' : ''}${following === x.i ? ' follow' : ''}`, 'aria-label': `${x.photo ? 'In the photo' : k + 1}: number ${r.number}, ${r.name}`, data: { i: x.i },
         onclick: () => { following = following === x.i ? null : x.i; scene.setFocus(following); orderAt = -1; },
       }, cloth(r.number, 'sm'));
-      order.append(b);
+      if (x.photo) {
+        if (!pair) order.append(pair = h('span', { class: 'pair' }));
+        pair.append(b);
+      } else order.append(b);
       if (had === String(x.i)) b.focus({ preventScroll: true });
     });
   }
@@ -224,11 +236,19 @@ export function renderWatch(el, nav, params) {
         // The official sign goes up under the caption, clear of the photo. Its room is there from the start,
         // so the photo doesn't move when it does.
         const sign = h('div', { class: 'w-flash official under' }, 'OFFICIAL');
-        const box = h('div', { class: 'w-photo' }, pc, h('div', { class: 'cap' }, `#${first.number} ${first.name} by a ${marginWord(run.results[1].toPrev)} over #${second.number}`), sign);
+        const short = `#${first.number} ${first.name} by a ${marginWord(run.results[1].toPrev)} over #${second.number}`;
+        const cap = h('div', { class: 'cap' }, `${short} ${second.name}`);
+        const box = h('div', { class: 'w-photo' }, pc, cap, sign);
         stage.append(box);
+        // The caption names both horses when that fits on its line, in closer letters if it has to; when
+        // it doesn't, the second horse is its number.
+        if (cap.scrollWidth > cap.clientWidth) cap.classList.add('tight');
+        if (cap.scrollWidth > cap.clientWidth) { cap.classList.remove('tight'); cap.textContent = short; }
         photoShown = true;
         setTimeout(() => {
           sign.classList.add('up');
+          signUp = true;
+          if (!gone) drawOrder(T); // the pair in the photo, in the order they finished
           // Only now does the caller say who won it (unless the race has been left meanwhile).
           if (call.official && !gone) showLine(officialLine(call.official), now.textContent);
           done();

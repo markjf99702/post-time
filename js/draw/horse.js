@@ -77,6 +77,45 @@ export function pose(phase, gait = 'gallop') {
   };
 }
 
+// The head, from the pose: the poll (where the neck ends, between the ears), the muzzle, the angle the head
+// hangs at, and the unit vector across it, toward the top of the face.
+function headAt(P, gait) {
+  const neckLen = gait === 'gallop' ? 0.82 : 0.7;
+  const poll = [0.54 + Math.cos(P.neck) * neckLen, 1.62 + Math.sin(P.neck) * neckLen];
+  const ha = P.neck - P.headDrop;
+  const muzzle = [poll[0] + Math.cos(ha) * 0.6, poll[1] + Math.sin(ha) * 0.6];
+  return { poll, ha, muzzle, nx: Math.cos(ha + Math.PI / 2), ny: Math.sin(ha + Math.PI / 2) };
+}
+
+// Where the tip of the nose is drawn at this point in the stride: how far in front of the horse's middle
+// (x) and how far off the ground (y), in metres. It's the foremost point of the muzzle's outline, with the
+// body's bob and pitch, so it moves about a tenth of a metre either way through a stride. The photo finish
+// places each horse by it, so that the nose in the picture reaches the line when the race says it did.
+export function noseAt(phase, gait = 'gallop') {
+  const P = pose(phase, gait);
+  const { poll, ha, muzzle, nx, ny } = headAt(P, gait);
+  const dx = Math.cos(ha), dy = Math.sin(ha);
+  const cos = Math.cos(P.pitch), sin = Math.sin(P.pitch);
+  const turned = ([x, y]) => [x * cos - y * sin, x * sin + y * cos + P.bob];
+  // The outline round the muzzle is two curves that meet at its tip (see drawHorse): down the face to the
+  // tip, and back under the chin. Each is furthest forward at an end or where it turns back.
+  const tip = [muzzle[0] + dx * 0.03, muzzle[1] + dy * 0.03];
+  const curves = [
+    [[poll[0] + dx * 0.2 + nx * 0.05, poll[1] + dy * 0.2 + ny * 0.05], [muzzle[0] + nx * 0.07, muzzle[1] + ny * 0.07], tip],
+    [tip, [muzzle[0] - nx * 0.09, muzzle[1] - ny * 0.09], [muzzle[0] - dx * 0.12 - nx * 0.1, muzzle[1] - dy * 0.12 - ny * 0.1]],
+  ];
+  let best = turned(tip);
+  for (const c of curves) {
+    const [a, b, d] = c.map(turned);
+    const den = a[0] - 2 * b[0] + d[0];
+    const t = den ? (a[0] - b[0]) / den : -1;
+    if (t <= 0 || t >= 1) continue;
+    const q = k => (1 - t) * (1 - t) * a[k] + 2 * t * (1 - t) * b[k] + t * t * d[k];
+    if (q(0) > best[0]) best = [q(0), q(1)];
+  }
+  return { x: best[0], y: best[1] };
+}
+
 // Joint positions for one leg in body coordinates.
 function leg(which, phase, gait, bodyY, pitch) {
   const fore = which[1] === 'f';
@@ -220,12 +259,7 @@ export function drawHorse(ctx, o) {
   // Neck and head.
   const a = P.neck;
   const nb1 = [0.42, 1.62], nb2 = [0.74, 1.28];
-  const neckLen = gait === 'gallop' ? 0.82 : 0.7;
-  const poll = [nb1[0] + 0.12 + Math.cos(a) * neckLen, nb1[1] + Math.sin(a) * neckLen];
-  const ha = a - P.headDrop;
-  const hl = 0.6;
-  const muzzle = [poll[0] + Math.cos(ha) * hl, poll[1] + Math.sin(ha) * hl];
-  const nx = Math.cos(ha + Math.PI / 2), ny = Math.sin(ha + Math.PI / 2);
+  const { poll, ha, muzzle, nx, ny } = headAt(P, gait);
   const throat = [poll[0] + Math.cos(ha) * 0.18 - nx * 0.2, poll[1] + Math.sin(ha) * 0.18 - ny * 0.2];
   const ng = ctx.createLinearGradient(nb1[0], nb1[1], nb2[0], nb2[1]);
   ng.addColorStop(0, c.light);
