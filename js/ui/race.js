@@ -454,13 +454,15 @@ const said = new Set();
 let again = null;
 function callAgain(race) { clearTimeout(again); again = setTimeout(() => rehearse(race), 400); }
 
-// A pick in words. On the slip: "$10 to win on #3 Early Ticket", "$2 exacta box 3, 5, 7". In the bar,
+// A pick in words. On the slip: "$10 to win on #3 Early Ticket", "$1 exacta box 3, 5, 7: Early Ticket, Gold
+// Rush, Mud Pie" (an exacta or trifecta was numbers alone there, to be checked against the form). In the bar,
 // by name ("#3 Early Ticket to win"), and in a sentence after "You picked" ("#3 to win").
 const TO = { win: 'to win', place: 'to place', show: 'to show', wps: 'across the board' };
 const numbers = (race, bet) => bet.sel.map(i => race.entries[i].pp).join(bet.type.endsWith('box') ? ', ' : '-');
 const named = (race, bet) => { const e = race.entries[bet.sel[0]]; return `#${e.pp} ${horseOf(e).name}`; };
 function pickLine(race, bet) {
-  return TO[bet.type] ? `${stake(bet.amt)} ${TO[bet.type]} on ${named(race, bet)}` : `${stake(bet.amt)} ${BET_NAMES[bet.type].toLowerCase()} ${numbers(race, bet)}`;
+  if (TO[bet.type]) return `${stake(bet.amt)} ${TO[bet.type]} on ${named(race, bet)}`;
+  return `${stake(bet.amt)} ${BET_NAMES[bet.type].toLowerCase()} ${numbers(race, bet)}: ${bet.sel.map(i => horseOf(race.entries[i]).name).join(', ')}`;
 }
 function pickName(race, bet) {
   return TO[bet.type] ? `${named(race, bet)} ${TO[bet.type]}` : `${BET_NAMES[bet.type]} ${numbers(race, bet)}`;
@@ -609,6 +611,8 @@ function toteBoard(race) {
     const said = move === 'in' ? 'shorter than' : move === 'out' ? 'longer than' : 'the same as';
     grid.append(h('div', { class: `tote-cell${i === fav ? ' fav' : ''}`, data: { i } },
       h('div', { class: 'top' }, cloth(e.pp, 'sm'), i === fav ? h('span', { class: 'fav-tag', 'aria-hidden': 'true' }, 'FAV') : null),
+      // The horse's name, where the board has room for it (the stylesheet shows it from a tablet's width up).
+      h('div', { class: 'nm' }, horseOf(e).name),
       h('div', { class: 'odds' }, odds[i]),
       h('div', { class: `vs ${move}`.trim(), title: `${said[0].toUpperCase()}${said.slice(1)} its morning line` },
         h('span', { class: 'arrow', 'aria-hidden': 'true' }, move === 'in' ? '▼' : move === 'out' ? '▲' : ''),

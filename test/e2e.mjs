@@ -290,6 +290,18 @@ const vsLine = await page.evaluate(() => {
   };
 });
 assert.deepEqual(vsLine, { wrong: 0, fav: 0, tags: 1, key: 'ML is the morning line: ▼ shorter than it now, ▲ longer.' }, 'the board against the morning line');
+// The board names the horses under their numbers where it has room, from a tablet's width up, in two lines at
+// most and inside their cells; on a phone it's numbers.
+const names = async () => page.evaluate(() => [...document.querySelectorAll('.tote-cell')].map(c => {
+  const nm = c.querySelector('.nm'), r = nm.getBoundingClientRect(), cell = c.getBoundingClientRect();
+  return { shown: r.height > 0, text: nm.textContent, lines: Math.round(r.height / parseFloat(getComputedStyle(nm).lineHeight)), inside: r.left >= cell.left - 0.5 && r.right <= cell.right + 0.5 };
+}));
+assert.deepEqual((await names()).filter(n => n.shown), [], 'a phone has room on the board for the names');
+await page.setViewportSize({ width: 768, height: 1024 });
+const wideNames = await names();
+assert.deepEqual(wideNames.map(n => n.text), await page.evaluate(() => { const { game, nextRace } = window.postTime; return nextRace().entries.map(e => game.world.horses[e.hid].name); }));
+assert.ok(wideNames.every(n => n.shown && n.inside && n.lines <= 2), `the names on a tablet's board: ${JSON.stringify(wideNames)}`);
+await page.setViewportSize({ width: 390, height: 844 });
 // A pick that hasn't been bought. The bar at the bottom names it and offers to buy it, and To the gate
 // doesn't run the race on one tap (or on a double tap): the first tap says what's about to be left behind.
 const third = await page.evaluate(() => { const { game, nextRace } = window.postTime; const e = nextRace().entries[2]; return `#${e.pp} ${game.world.horses[e.hid].name}`; });
@@ -374,7 +386,9 @@ const leastFor = async type => {
 assert.deepEqual([await leastFor('Exacta'), await leastFor('Exacta box'), await leastFor('Trifecta'), await leastFor('Trifecta box')], ['$1', '$1', '50¢', '50¢'], "exotics don't start at a track's least amount");
 for (const k of [0, 1, 2]) await page.locator('.pick-row').nth(0).locator('button').nth(k).click();
 await page.locator('.seg.amounts button', { hasText: /^50¢$/ }).click();
-assert.match(await page.locator('.bet-foot .cost').textContent(), /^50¢ trifecta box \d+, \d+, \d+ · \$3\.00 \(6 bets of 50¢\) · you have \$196\.00$/);
+// (An exacta or trifecta is named on the slip, as a win ticket is: the numbers, then the horses.)
+const firstThree = await page.evaluate(() => { const { game, nextRace } = window.postTime; return nextRace().entries.slice(0, 3).map(e => game.world.horses[e.hid].name).join(', '); });
+assert.equal((await page.locator('.bet-foot .cost').textContent()).replace(/^50¢ trifecta box \d+, \d+, \d+: /, ''), `${firstThree} · $3.00 (6 bets of 50¢) · you have $196.00`);
 // A box pays what its combination that comes in pays: a low and a high.
 assert.match(await page.locator('.would-pay').textContent(), /^At these odds: between \$[\d,.]+ and \$[\d,.]+$/);
 assert.equal(await leastFor('Win'), '$2', 'a win ticket can be bought for less than $2');
@@ -606,7 +620,7 @@ await page.click('.builder .btn');
 // To the gate leaves the race where it is, and a second one, after a moment, goes without the pick.
 await page.locator('.seg button', { hasText: /^Exacta box$/ }).click();
 for (const n of [0, 1, 2]) await page.locator('.pick-row').nth(0).locator('button').nth(n).click();
-assert.match(await page.locator('.bet-foot .cost').textContent(), /^\$2 exacta box \d+, \d+, \d+ · \$12\.00 \(6 bets of \$2\) · you have /);
+assert.match(await page.locator('.bet-foot .cost').textContent(), /^\$2 exacta box \d+, \d+, \d+: .+, .+, .+ · \$12\.00 \(6 bets of \$2\) · you have /);
 assert.match(await page.locator('.post-bar .info').textContent(), /^Exacta box \d+, \d+, \d+, \$12: not bought yet$/);
 const barFits = await page.locator('.post-bar .btn').evaluateAll(bs => bs.map(b => { const r = b.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight && b.scrollWidth <= b.clientWidth; }));
 assert.deepEqual(barFits, [true, true], "the bar's two buttons don't fit a small phone");

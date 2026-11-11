@@ -416,6 +416,11 @@ a { color: var(--link); }
 .tote-cell .vs.in .arrow { color: #9fd38f; }
 .tote-cell .vs.out .arrow { color: #e3a08f; }
 .tote-key { font-size: 11px; color: #9f9884; padding: 8px 2px 0; }
+.tote-cell .nm { display: none; }
+/* From a tablet's width up, the board has room for each horse's name under its number, in two lines at most. */
+@media (min-width: 700px) {
+  .tote-cell .nm { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; font-size: 11px; line-height: 1.2; min-height: 2.4em; color: #cfc8b2; padding: 0 3px; margin-bottom: 4px; }
+}
 @keyframes flash { 0% { color: #fff; } 100% { color: var(--amber); } }
 .builder { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; box-shadow: var(--shadow); }
 .seg { display: flex; flex-wrap: wrap; gap: 6px; }
