@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { phonemizer, phonemeIds, sentencesOf, trimToSpeech, joinSentences, loudness, atLoudness, untar, isFile, soundManifest, LOUDNESS, CEILING } from '../js/joe-speech.js';
+import { JOE } from '../js/joe.js';
 
 const voice = path => readFileSync(new URL(`../voice/${path}`, import.meta.url));
 const manifest = JSON.parse(voice('manifest.json'));
@@ -64,6 +65,8 @@ test("the voice's files are the ones the list says, in parts small enough to pus
   assert.deepEqual([name, model.length, createHash('sha256').update(model).digest('hex')], ['joe/en_US-joe-medium.onnx', whole.bytes, whole.sha256]);
   assert.equal(whole.sha256, 'abf4b998e34045cbd00eaf050de2de620f81ded6eb8b85a24b022a1c2b3f08d2');
   assert.deepEqual(whole.parts, manifest.files.filter(f => f.of === name).map(f => f.path));
+  // What the page says without fetching anything is what the list says.
+  assert.deepEqual([JOE.cache, JOE.bytes], [manifest.cache, manifest.bytes], 'JOE in js/joe.js and voice/manifest.json disagree');
   // A file that arrives damaged, or cut short, is not taken.
   const one = manifest.files.find(f => f.path === 'joe/MODEL_CARD'), card = voice(one.path);
   const damaged = Buffer.from(card); damaged[10] ^= 1;
@@ -83,7 +86,7 @@ test("espeak-ng's data is English only, and the offline copy leaves the voice al
   const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
   assert.equal(/'voice\//.test(sw.match(/SHELL = \[([^\]]*)\]/)[1]), false, "sw.js's SHELL lists a file of the voice");
   const keeps = new RegExp(sw.match(/const VOICE = \/(.*)\/;/)[1]);
-  assert.deepEqual([keeps.test(manifest.cache), keeps.test('post-time-v5')], [true, false]);
+  assert.deepEqual([keeps.test(JOE.cache), keeps.test('post-time-v5')], [true, false]);
 });
 
 // A second of a 220 Hz tone at `level`, with `quiet` seconds of nothing before and after it.

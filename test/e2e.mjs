@@ -746,7 +746,10 @@ const offered = await page.locator('#optVoiceName option').allTextContents();
 // The first choice is "Best here", and the line under the list says which voice that is. (With the name in
 // the choice itself the closed list read "Best here (Chrome OS ...", the number cut off.)
 assert.equal(offered[0], 'Best here');
-assert.equal(offered[1], 'Google US English (needs the internet)');
+// Second is the voice the game can download (further down, with the download itself), then the browser's own.
+assert.equal(offered[1], 'Joe (a 76 MB download)');
+assert.equal(offered[2], 'Google US English (needs the internet)');
+assert.equal(await page.locator('#joeRow').isVisible(), false, "the downloaded voice's lines show before it's chosen");
 const reading = () => page.locator('#voiceNote').textContent();
 assert.equal(await reading(), 'Reading in Google US English');
 assert.deepEqual(await page.evaluate(() => { const row = document.getElementById('voiceRow').getBoundingClientRect(), note = document.getElementById('voiceNote').getBoundingClientRect(); return [note.width > 0 && note.left >= row.left && note.right <= row.right + 0.5, document.getElementById('voiceNone').hidden]; }), [true, true], "the line that says which voice is reading isn't inside the menu, or the no-voice line shows");
@@ -2227,6 +2230,14 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   }
   assert.equal(await page.evaluate(async () => (await (await caches.open('post-time-voice-joe-1')).match('kept'))?.text()), 'post-time-voice-joe-1', "the new release's worker deleted the caller's downloaded voice");
   assert.deepEqual(problems, [], 'problems while offline or on a stalled connection');
+  // The files of the caller's downloaded voice are not the offline worker's to keep: a request for one goes
+  // straight to the server, and no copy of it is put with the game's own files.
+  const keptVoice = await page.evaluate(async () => {
+    const got = (await fetch('voice/joe/MODEL_CARD')).ok;
+    await new Promise(r => setTimeout(r, 300));
+    return [got, !!(await caches.match('voice/joe/MODEL_CARD'))];
+  });
+  assert.deepEqual(keptVoice, [true, false], "the offline worker kept a copy of one of the voice's files");
   await ctx.close();
   server.close();
 
@@ -2239,6 +2250,263 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   for (const f of shell) all.update(createHash('sha1').update(await readFile(join(root, f.endsWith('/') ? f + 'index.html' : f))).digest());
   const files = all.digest('hex').slice(0, 8);
   assert.equal(sw.match(/const FILES = '([0-9a-f]*)'/)?.[1], files, `a file sw.js keeps for offline has changed: set FILES in sw.js to '${files}'`);
+}
+
+// The caller's downloaded voice, Joe (js/joe.js), with the real files in voice/. Nothing of him is fetched
+// until the player asks. A download that's cut off says so in plain words, leaves the browser's voice
+// reading, and carries on from the files that had arrived. Then the menu's Hear it is in his voice: made by
+// his worker from the cache, the numbers into his model the ones Python Piper feeds it, the sound as long
+// as Python Piper's of the same line (near enough: the model draws at random), with sound in it and none
+// of it clipped, and played through the game's own sound output at the pace it was made at. He works with
+// no connection, an update of the game leaves him where he is, a download that's damaged falls back to
+// the browser's voice, and he can be taken off the device again.
+{
+  const { createServer } = await import('node:http');
+  const { readFile } = await import('node:fs/promises');
+  const { join, extname } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const { createHash } = await import('node:crypto');
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const manifest = JSON.parse(await readFile(join(root, 'voice/manifest.json'), 'utf8'));
+  // What Python Piper made of the same line (tools/joe-reference.py).
+  const reference = JSON.parse(await readFile(join(root, 'test/joe.fixture.json'), 'utf8'));
+  const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json', '.json': 'application/json', '.wasm': 'application/wasm' };
+  // The server answers like GitHub Pages. `cut` is a file it sends the first megabyte of and then drops the
+  // connection on, `slow` one it never gets round to answering and `damaged` one it sends with a byte
+  // changed; `asked` is every file of the voice it has been asked for; with `release` it serves the next
+  // release of the game; with `net` 'down' it drops everything.
+  let net = 'up', release = false, cut = null, slow = null, damaged = null;
+  const asked = [], unanswered = [];
+  const server = createServer(async (req, res) => {
+    if (net === 'down') { req.socket.destroy(); return; }
+    let path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    if (path.endsWith('/')) path += 'index.html';
+    let body;
+    try { body = await readFile(join(root, path)); } catch { res.writeHead(404); res.end(); return; }
+    if (path.startsWith('/voice/')) asked.push(path.slice(7));
+    if (release && path === '/sw.js') body = Buffer.from(String(body).replace(/const FILES = '[0-9a-f]*'/, "const FILES = 'next'"));
+    if (release && path === '/index.html') body = Buffer.concat([body, Buffer.from('<!-- the next release -->\n')]);
+    const etag = `"${createHash('sha1').update(body).digest('hex').slice(0, 16)}"`;
+    const head = { etag, 'cache-control': 'max-age=600', 'content-type': TYPES[extname(path)] || 'application/octet-stream', 'content-length': body.length };
+    if (cut && path.endsWith(cut)) { res.writeHead(200, head); res.write(body.subarray(0, 1 << 20)); setTimeout(() => res.destroy(), 100); return; }
+    if (slow && path.endsWith(slow)) { unanswered.push(res); return; }
+    if (damaged && path.endsWith(damaged)) { body = Buffer.from(body); body[body.length >> 1] ^= 1; }
+    if (req.headers['if-none-match'] === etag) { res.writeHead(304, head); res.end(); return; }
+    res.writeHead(200, head);
+    res.end(body);
+  }).listen(0);
+  const base = `http://localhost:${server.address().port}/`;
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
+  // A browser's voice that notes what it's asked to say, a note of every sound output the page makes and
+  // of each clip of the downloaded voice it plays (his are the only ones at 22,050 samples a second), and
+  // of the page asking the browser to keep its storage.
+  await ctx.addInitScript(() => {
+    window.__said = []; window.__played = []; window.__outputs = []; window.__keep = 0;
+    window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+    const list = [{ name: 'Chrome OS US English 1', lang: 'en-US', localService: true }, { name: 'Chrome OS US English 4', lang: 'en-US', localService: true }];
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
+      getVoices: () => list, cancel() {}, addEventListener() {},
+      speak(u) { window.__said.push({ text: u.text, voice: u.voice ? u.voice.name : null, silent: u.volume === 0 }); setTimeout(() => u.onstart && u.onstart({}), 20); setTimeout(() => u.onend && u.onend({}), 150); },
+    } });
+    const Sound = window.AudioContext;
+    window.AudioContext = class extends Sound { constructor(...a) { super(...a); window.__outputs.push(this); } };
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (...a) { if (this.buffer && this.buffer.sampleRate === 22050) window.__played.push(this); return start.apply(this, a); };
+    const persist = StorageManager.prototype.persist;
+    StorageManager.prototype.persist = function () { window.__keep++; return persist.call(this); };
+  });
+  const page = await ctx.newPage();
+  const problems = [], left = [];
+  page.on('pageerror', e => problems.push(e.message));
+  ctx.on('request', r => { if (!/^(blob:|data:)/.test(r.url()) && !r.url().startsWith(base)) left.push(r.url()); });
+  const open = async () => {
+    await page.waitForSelector('.races', { timeout: 60000 });
+    await page.click('#menuBtn');
+  };
+  // What the menu's voice row says: the voice chosen, the line under the list, and Joe's own lines and buttons.
+  const menu = () => page.evaluate(() => {
+    const text = id => { const el = document.getElementById(id); return el.hidden || !el.getClientRects().length ? null : el.textContent; };
+    return { voice: document.getElementById('optVoiceName').selectedOptions[0].textContent, reading: text('voiceNote'), joe: text('joeNote'), get: text('joeGet'), stop: text('joeStop'), remove: text('joeRemove'), bar: text('joeBar') !== null };
+  });
+  const joeSays = (pattern, timeout = 60000) => page.waitForFunction(p => new RegExp(p).test(document.getElementById('joeNote').textContent), pattern, { timeout });
+  // Hear it, and what the browser's own voice was asked to say for it.
+  const browserSaid = async () => {
+    await page.evaluate(() => { window.__said.length = 0; });
+    await page.click('#hearIt');
+    await page.waitForFunction(() => window.__said.some(u => !u.silent), null, { timeout: 30000 });
+    return page.evaluate(() => window.__said.filter(u => !u.silent).map(u => [u.text, u.voice]));
+  };
+  const SAMPLE = 'They turn for home! Copper Detour by a length and a half!', BROWSER = 'Chrome OS US English 4', CACHE = 'post-time-voice-joe-1';
+  assert.deepEqual([reference.sample.text, manifest.cache], [SAMPLE, CACHE]);
+  const files = manifest.files.map(f => f.path);
+
+  await page.goto(base);
+  await open();
+  await page.waitForFunction(() => navigator.serviceWorker?.controller, null, { timeout: 15000 });
+  await page.check('#optVoice');
+  await page.selectOption('#optVoiceName', ':joe');
+  assert.deepEqual(await menu(), {
+    voice: 'Joe (a 76 MB download)', reading: `Reading in ${BROWSER} until Joe is here`,
+    joe: "Joe is a voice the game downloads and keeps on this device: 76 MB, once. He's the same on every phone and computer, where a browser's own voices differ.",
+    get: 'Download Joe', stop: null, remove: null, bar: false,
+  });
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('post-time/player')).settings.caller), 'joe', 'choosing the downloaded voice is not saved');
+  // Chosen and not asked for: nothing of him has been fetched, no cache has been made for him, and the
+  // browser's voice reads.
+  assert.deepEqual([asked, await page.evaluate(name => caches.has(name), CACHE)], [[], false], 'something of the voice was fetched before the player asked');
+  assert.deepEqual(await browserSaid(), [[SAMPLE, BROWSER]]);
+
+  // A file that arrives damaged is not kept: it's fetched once more, and if it's damaged again the
+  // download stops and says so.
+  damaged = 'joe/MODEL_CARD';
+  await page.click('#joeGet');
+  await joeSays('^The download stopped');
+  assert.deepEqual([(await menu()).joe, (await menu()).get], ['The download stopped: one of the files arrived damaged, twice.', 'Try again']);
+  assert.deepEqual(asked.splice(0), ['manifest.json', 'joe/en_US-joe-medium.onnx.json', 'joe/MODEL_CARD', 'joe/MODEL_CARD']);
+  assert.equal(await page.evaluate(name => caches.open(name).then(c => c.match(new URL('voice/joe/MODEL_CARD', document.baseURI).href)).then(r => !!r), CACHE), false, 'a damaged file was kept');
+  damaged = null;
+  await page.evaluate(name => caches.delete(name), CACHE);
+
+  // The download, on a connection that has gone quiet in the model's first part: it says how far it has
+  // got, with a bar, and Stop stops it. With next to nothing arrived he's simply still to be downloaded.
+  slow = 'joe/en_US-joe-medium.onnx.part0';
+  await page.click('#joeGet');
+  await joeSays('^Downloading Joe');
+  assert.deepEqual(await menu(), { voice: 'Joe (a 76 MB download)', reading: `Reading in ${BROWSER} until Joe is here`, joe: 'Downloading Joe: 0 of 76 MB.', get: null, stop: 'Stop', remove: null, bar: true });
+  await page.click('#joeStop');
+  await joeSays('^Joe is a voice');
+  assert.deepEqual([(await menu()).get, (await menu()).stop, (await menu()).remove], ['Download Joe', null, null]);
+  slow = null;
+  asked.length = 0;
+
+  // The download, cut off in the model's third part.
+  const at = files.indexOf('joe/en_US-joe-medium.onnx.part2');
+  cut = files[at];
+  await page.click('#joeGet');
+  await joeSays('^The download stopped');
+  assert.deepEqual(await menu(), { voice: 'Joe (a 76 MB download)', reading: `Reading in ${BROWSER} until Joe is here`, joe: 'The download stopped: the connection dropped. What arrived is kept.', get: 'Try again', stop: null, remove: 'Remove what arrived', bar: false });
+  // (The two small files that arrived before Stop are not fetched again either.)
+  assert.deepEqual(asked.splice(0), ['manifest.json', ...files.slice(files.indexOf('joe/en_US-joe-medium.onnx.part0'), at + 1)]);
+  assert.ok(await page.evaluate(() => window.__keep) >= 1, 'the browser was not asked to keep what the page stores');
+  assert.deepEqual(await browserSaid(), [[SAMPLE, BROWSER]], "after a download that failed, the browser's voice should read");
+  // On the next visit what arrived is still there, and the download carries on from it: the files that
+  // had arrived are not fetched again.
+  cut = null;
+  await page.reload();
+  await open();
+  await joeSays('^Part of Joe');
+  const arrived = manifest.files.slice(0, at).reduce((n, f) => n + f.bytes, 0);
+  assert.deepEqual(await menu(), { voice: 'Joe (a 76 MB download)', reading: `Reading in ${BROWSER} until Joe is here`, joe: `Part of Joe is here: ${Math.round(arrived / 1e6)} of 76 MB. The download carries on from there.`, get: 'Carry on', stop: null, remove: 'Remove what arrived', bar: false });
+  asked.length = 0;
+  await page.click('#joeGet');
+  await joeSays('on this device');
+  assert.deepEqual(asked.splice(0), ['manifest.json', ...files.slice(at)], 'a download that was cut off fetched again what had arrived, or left something out');
+  assert.deepEqual(await menu(), { voice: 'Joe', reading: 'Reading in Joe', joe: 'Joe is on this device (76 MB).', get: null, stop: null, remove: 'Remove Joe', bar: false });
+  // What's kept is every file on the list, each byte for byte the size it says.
+  const kept = await page.evaluate(async name => {
+    const store = await caches.open(name), sizes = {};
+    for (const request of await store.keys()) sizes[new URL(request.url).pathname.replace(/^\/voice\//, '')] = (await (await store.match(request)).arrayBuffer()).byteLength;
+    return sizes;
+  }, CACHE);
+  for (const f of manifest.files) assert.equal(kept[f.path], f.bytes, `${f.path} in the cache`);
+  assert.deepEqual(Object.keys(kept).sort(), [...files, 'manifest.json', 'complete'].sort());
+
+  // Hear it, in his voice.
+  await page.evaluate(() => { window.__said.length = 0; });
+  await page.click('#hearIt');
+  await page.waitForFunction(() => window.__played.length > 0, null, { timeout: 60000 });
+  const played = await page.evaluate(() => {
+    const clip = window.__played[0], d = clip.buffer.getChannelData(0);
+    let peak = 0, power = 0, flat = 0, wrong = 0;
+    for (const x of d) { const a = Math.abs(x); if (!(a <= 1)) wrong++; if (a >= 0.999) flat++; if (a > peak) peak = a; power += x * x; }
+    return {
+      seconds: clip.buffer.duration, pace: clip.playbackRate.value, detune: clip.detune.value, peak, rms: Math.sqrt(power / d.length), flat, wrong,
+      outputs: window.__outputs.length, through: clip.context === window.__outputs[0], going: clip.context.state,
+      clips: window.__played.length, browser: window.__said.filter(u => !u.silent).length,
+    };
+  });
+  // One clip, through the one sound output the page has (the bugle's and the bell's), played as it was
+  // made: not sped up, not retuned. The browser's voice said nothing.
+  assert.deepEqual([played.clips, played.outputs, played.through, played.going, played.pace, played.detune, played.browser], [1, 1, true, 'running', 1, 0, 0]);
+  // As long as Python Piper's own sound of the line at that speed, within a tenth.
+  assert.ok(Math.abs(played.seconds / reference.sample.seconds - 1) < 0.10, `Hear it ran ${played.seconds} s; Python Piper's runs ${reference.sample.seconds} s`);
+  // Sound in it, at about the level every line is brought to, and no sample at or over full scale (the
+  // ceiling is 1.5 dB under it).
+  assert.ok(played.rms > 0.05 && played.rms < 0.3 && played.peak > 0.4 && played.peak <= 0.8415, `Hear it's level: rms ${played.rms}, peak ${played.peak}`);
+  assert.deepEqual([played.flat, played.wrong], [0, 0], 'Hear it is clipped');
+  assert.equal((await menu()).reading, 'Reading in Joe');
+
+  // The worker itself: the numbers into the model are Python Piper's for the line; a clip's length is
+  // exactly its samples'; faster is the model talking faster (the same line at his own speed is longer);
+  // lines asked for together come back in the order asked; and it can be shut down and asked again.
+  const made = await page.evaluate(async text => {
+    const joe = await import('./js/joe.js');
+    const one = async speed => { const c = await joe.speak(text, speed, { ids: true }); return { seconds: c.seconds, exact: c.seconds === c.samples.length / c.rate && c.rate === 22050, ids: c.ids }; };
+    const own = await one(1), opens = await one(joe.JOE.opens);
+    const order = [];
+    await Promise.all(['A furlong out!', 'And down the stretch they come!', 'It is a photo!'].map((t, i) => joe.speak(t, 1.3).then(() => order.push(i))));
+    const was = joe.running();
+    joe.shutdown();
+    return { own, opens, order, was, after: joe.running() };
+  }, SAMPLE);
+  const theirs = reference.lines.find(l => l[0] === SAMPLE).slice(1).map(b => [...Buffer.from(b, 'base64')]);
+  assert.deepEqual(made.opens.ids, theirs, 'in the browser, the voice is fed other numbers than Python Piper feeds it');
+  assert.deepEqual([made.own.exact, made.opens.exact, made.order, made.was, made.after], [true, true, [0, 1, 2], true, false]);
+  assert.ok(Math.abs(made.opens.seconds / reference.sample.seconds - 1) < 0.10, `the line ran ${made.opens.seconds} s`);
+  const slower = made.own.seconds / made.opens.seconds;
+  assert.ok(slower > 1.05 && slower < 1.27, `at his own speed the line is ${slower} times as long as at 1.15 times it`);
+
+  // With no connection: he's still here, and still talks.
+  net = 'down';
+  await ctx.setOffline(true);
+  await page.reload();
+  await page.waitForSelector('.races', { timeout: 60000 });
+  asked.length = 0;
+  const offline = await page.evaluate(async text => {
+    const joe = await import('./js/joe.js');
+    return [(await joe.look()).state, (await joe.speak(text, joe.JOE.opens)).seconds > 2];
+  }, SAMPLE);
+  assert.deepEqual(offline, ['ready', true], 'the downloaded voice does not work offline');
+  await ctx.setOffline(false);
+  net = 'up';
+
+  // An update of the game: the offline worker clears its own old caches and leaves the voice's alone, and
+  // nothing of the voice is fetched again.
+  await page.evaluate(() => caches.open('post-time-v1').then(c => c.put('old', new Response('old'))));
+  release = true;
+  await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
+  for (const end = Date.now() + 15000; await page.evaluate(() => caches.has('post-time-v1'));) {
+    assert.ok(Date.now() < end, "the new release's worker left an old cache of its own");
+    await new Promise(r => setTimeout(r, 100));
+  }
+  assert.deepEqual([await page.evaluate(async () => (await (await import('./js/joe.js')).look()).state), asked], ['ready', []], 'an update of the game deleted the downloaded voice, or fetched it again');
+  release = false;
+
+  // A download that has been damaged since (a file gone from the cache): he can't be started, the menu
+  // says so, and the browser's voice reads.
+  await page.reload();
+  await open();
+  await page.evaluate(name => caches.open(name).then(c => c.delete(new URL('voice/phonemize/piper_phonemize.wasm', document.baseURI).href)), CACHE);
+  assert.deepEqual(await browserSaid(), [[SAMPLE, BROWSER]], "with the downloaded voice unable to start, the browser's voice should read");
+  const failed = await menu();
+  assert.deepEqual([failed.reading, failed.joe, failed.remove], [`Reading in ${BROWSER}`, `Joe couldn't be started on this device, so ${BROWSER} reads the call. (phonemize/piper_phonemize.wasm is missing from the download)`, 'Remove Joe']);
+
+  // Taking him off the device: two taps, the second not straight after the first. The browser's voice is
+  // the choice again, and he's offered as a download.
+  await page.click('#joeRemove');
+  assert.equal((await menu()).remove, 'Tap again to take Joe off this device');
+  await page.click('#joeRemove'); // a double tap: ignored
+  assert.equal(await page.evaluate(name => caches.has(name), CACHE), true, 'a double tap took the voice off the device');
+  await page.waitForTimeout(800);
+  await page.click('#joeRemove');
+  await page.waitForFunction(() => document.getElementById('optVoiceName').value === '');
+  await page.waitForFunction(name => caches.has(name).then(has => !has), CACHE);
+  assert.deepEqual(await menu(), { voice: 'Best here', reading: `Reading in ${BROWSER}`, joe: null, get: null, stop: null, remove: null, bar: false });
+  assert.deepEqual(await page.evaluate(() => ['caller' in JSON.parse(localStorage.getItem('post-time/player')).settings, document.querySelector('#optVoiceName option[value=":joe"]').textContent]), [false, 'Joe (a 76 MB download)']);
+  assert.deepEqual([problems, left], [[], []], 'problems with the downloaded voice, or something fetched from another site');
+  await ctx.close();
+  for (const res of unanswered) res.destroy();
+  server.close();
 }
 
 // The copies of the game that aren't the site, and the things beside the game that nothing above opens.
@@ -2269,6 +2537,14 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
     return on.evaluate(() => ({ tickets: document.querySelectorAll('.official .ticket').length, next: document.querySelector('.post-bar .btn').textContent, bank: document.getElementById('bank').textContent }));
   };
   const saving = async on => { await on.evaluate(() => window.postTime.nav.go('help')); return on.locator('.help .saving').textContent(); };
+  // The caller's downloaded voice needs its files beside the page and somewhere to keep them. These copies
+  // have neither, so with the call read aloud the menu is as it was: no Joe in the list, none of his lines.
+  const noJoe = on => on.evaluate(() => {
+    document.getElementById('menuBtn').click();
+    const tick = document.getElementById('optVoice');
+    if (!tick.checked) tick.click();
+    return [!!document.querySelector('#optVoiceName option[value=":joe"]'), document.getElementById('joeRow').hidden];
+  });
   const ctx8 = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, colorScheme: 'light' });
 
   // The one-file build and the Artifact's page are made by the bundler, so they're checked when it's
@@ -2290,6 +2566,7 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
     await file.reload();
     await file.waitForSelector('.races');
     assert.deepEqual([await file.locator('.race-row.done').count(), await file.locator('#bank').textContent()], [1, played.bank], 'the one-file build lost its meet over a reload');
+    assert.deepEqual(await noJoe(file), [false, true], 'the one-file build offers the downloaded voice, which it has no files for');
     await file.close();
 
     // dist/artifact.html, the page without its wrapper, put in a document the way an Artifact viewer does
@@ -2314,6 +2591,7 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
     assert.deepEqual([framed.tickets, framed.next], [1, 'Race 2 ▸'], 'a race played in the Artifact copy');
     assert.deepEqual([await viewer.locator('.unsaved').isVisible(), await viewer.locator('.unsaved').textContent()], [true, "This browser isn't keeping your meet, so it will be gone when you close the page."]);
     assert.equal(await saving(viewer), "This browser isn't keeping anything, so this meet lasts until you close the page. Nothing is sent anywhere.");
+    assert.deepEqual(await noJoe(viewer), [false, true], 'the Artifact copy offers the downloaded voice, which it has nowhere to keep');
     await host.emulateMedia({ colorScheme: 'dark' });
     await viewer.evaluate(() => { document.documentElement.dataset.theme = 'light'; });
     assert.equal(await ground(), 'rgb(245, 238, 220)', "the Artifact copy isn't light when its viewer is, on a system set to dark");

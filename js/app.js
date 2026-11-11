@@ -9,6 +9,7 @@ import { renderResult, renderCircle } from './ui/results.js';
 import { renderBook, renderHelp } from './ui/book.js';
 import { SAMPLE, pace } from './call.js';
 import * as audio from './audio.js';
+import * as joe from './joe.js';
 
 const app = document.getElementById('app');
 const watchEl = document.getElementById('watch');
@@ -158,9 +159,18 @@ optVoice.addEventListener('change', () => { game.player.settings.voice = optVoic
 // (settings.voiceName), so it's still the choice after a spell on a device that doesn't have it. In a
 // browser with no voice to read with, one line says so in place of all that; the tick stays, since the
 // same meet may be played where there is one, and the line goes if a voice turns up.
+//
+// Second in the list, where it can work, is Joe: a voice the game downloads when asked and keeps (js/joe.js).
+// Choosing him is a setting of its own (settings.caller), beside the browser's voice chosen by name, which
+// goes on reading until he's on the device and whenever he can't be started. Chosen, he has a few lines
+// of his own under the list: what he is and how big, the download with its progress and a way to stop it,
+// and a way to take him off the device again.
 const voiceRow = document.getElementById('voiceRow');
 const optVoiceName = document.getElementById('optVoiceName');
 const voiceNote = document.getElementById('voiceNote');
+const JOE = ':joe'; // his place in the list: no browser's voice has a name like it
+const mb = bytes => Math.round(bytes / 1e6);
+const joeChosen = () => joe.offered() && game.player?.settings?.caller === 'joe';
 let voicesShown = '';
 function showVoices() {
   voiceRow.hidden = !optVoice.checked;
@@ -169,14 +179,19 @@ function showVoices() {
   voiceRow.classList.toggle('none', none);
   document.getElementById('voiceNone').hidden = !none;
   if (none) return;
-  const saved = savedVoice();
+  const saved = savedVoice(), his = joe.status(), chosen = joeChosen(), voice = audio.downloadedVoice();
   const names = [...new Set(offered.map(v => v.name))];
   const options = [
     ['', 'Best here'],
+    ...(joe.offered() ? [[JOE, his.state === 'ready' ? joe.JOE.name : `${joe.JOE.name} (a ${mb(his.total)} MB download)`]] : []),
     ...names.map(n => [n, `${n}${offered.find(v => v.name === n).localService === false ? ' (needs the internet)' : ''}`]),
     ...(saved && !names.includes(saved) ? [[saved, `${saved} (not here now)`]] : []),
   ];
-  voiceNote.textContent = using ? `Reading in ${using.name}` : '';
+  const browsers = using ? using.name : "the browser's voice";
+  voiceNote.textContent = !chosen ? (using ? `Reading in ${using.name}` : '')
+    : voice.preparing ? `Getting ${joe.JOE.name} ready`
+      : voice.reading ? `Reading in ${joe.JOE.name}`
+        : voice.problem ? `Reading in ${browsers}` : `Reading in ${browsers} until ${joe.JOE.name} is here`;
   // Built again only when the list has changed, so a list that arrives late doesn't shut one that's open.
   const shows = JSON.stringify(options);
   if (shows !== voicesShown) {
@@ -184,17 +199,71 @@ function showVoices() {
     clear(optVoiceName);
     for (const [value, text] of options) optVoiceName.append(h('option', { value }, text));
   }
-  optVoiceName.value = saved || '';
+  optVoiceName.value = chosen ? JOE : saved || '';
+  showJoe(chosen, his, voice, browsers);
 }
 const savedVoice = () => { const n = game.player?.settings?.voiceName; return typeof n === 'string' && n ? n : null; };
 optVoiceName.addEventListener('change', () => {
-  if (optVoiceName.value) game.player.settings.voiceName = optVoiceName.value;
-  else delete game.player.settings.voiceName;
-  audio.setVoiceName(savedVoice());
+  if (optVoiceName.value === JOE) game.player.settings.caller = 'joe';
+  else {
+    delete game.player.settings.caller;
+    if (optVoiceName.value) game.player.settings.voiceName = optVoiceName.value;
+    else delete game.player.settings.voiceName;
+  }
+  applyVoice();
   showVoices();
   save();
 });
-// Hear it: a line of a call in that voice, at the pace of one about twenty seconds from the wire.
+function applyVoice() {
+  audio.setVoiceName(savedVoice());
+  audio.setDownloadedVoice(joeChosen());
+  if (joeChosen()) joe.look();
+}
+
+// Joe's own lines in the menu, while he's the one chosen (or on his way down).
+const joeRow = document.getElementById('joeRow'), joeNote = document.getElementById('joeNote'), joeBar = document.getElementById('joeBar');
+const joeGet = document.getElementById('joeGet'), joeStop = document.getElementById('joeStop'), joeRemove = document.getElementById('joeRemove');
+function showJoe(chosen, his, voice, browsers) {
+  const coming = his.state === 'downloading', size = `${mb(his.total)} MB`, have = `${mb(his.have)} of ${size}`;
+  const some = his.state === 'partial' && mb(his.have) > 0; // less than that of him is as good as none
+  joeRow.hidden = !(chosen || coming);
+  if (joeRow.hidden) return;
+  joeNote.textContent = coming ? `Downloading ${joe.JOE.name}: ${have}.`
+    : his.problem ? `The download stopped: ${his.problem}.${some ? ' What arrived is kept.' : ''}`
+      : some ? `Part of ${joe.JOE.name} is here: ${have}. The download carries on from there.`
+        : his.state === 'ready' ? (voice.problem ? `${joe.JOE.name} couldn't be started on this device, so ${browsers} reads the call. (${voice.problem})` : `${joe.JOE.name} is on this device (${size}).`)
+          : `${joe.JOE.name} is a voice the game downloads and keeps on this device: ${size}, once. He's the same on every phone and computer, where a browser's own voices differ.`;
+  joeBar.hidden = !coming;
+  joeBar.firstElementChild.style.width = `${Math.round(100 * his.have / his.total)}%`;
+  joeGet.hidden = coming || his.state === 'ready';
+  joeGet.textContent = his.problem ? 'Try again' : some ? 'Carry on' : `Download ${joe.JOE.name}`;
+  joeStop.hidden = !coming;
+  joeRemove.hidden = !(his.state === 'ready' || some);
+  if (!removing) joeRemove.textContent = his.state === 'ready' ? `Remove ${joe.JOE.name}` : 'Remove what arrived';
+}
+joeGet.addEventListener('click', e => { e.stopPropagation(); joe.download(); });
+joeStop.addEventListener('click', e => { e.stopPropagation(); joe.stopDownload(); });
+// Taking him off the device takes two taps, like starting a new meet: it's 76 MB to fetch again.
+let removing = null, removingAt = 0;
+joeRemove.addEventListener('click', e => {
+  e.stopPropagation();
+  if (!removing) {
+    joeRemove.textContent = `Tap again to take ${joe.JOE.name} off this device`;
+    removingAt = performance.now();
+    removing = setTimeout(() => { removing = null; showVoices(); }, 4000);
+    return;
+  }
+  if (performance.now() - removingAt < DOUBLE_TAP) return;
+  clearTimeout(removing); removing = null;
+  // He goes, and the browser's voice is the choice again.
+  delete game.player.settings.caller;
+  applyVoice();
+  save();
+  joe.remove().then(showVoices);
+});
+joe.onChange(showVoices);
+// Hear it: a line of a call in that voice, at the pace of one about twenty seconds from the wire (or, in
+// the downloaded voice, at the pace his call opens at: audio.js).
 document.getElementById('hearIt').addEventListener('click', () => audio.hearIt(SAMPLE, pace(SAMPLE, 20)));
 audio.onVoicesChanged(showVoices);
 // Starting over takes two taps: the first says what it will do, and the second has four seconds to come.
@@ -270,7 +339,7 @@ function applySettings() {
   optVoice.checked = s.voice;
   audio.setSound(s.sound);
   audio.setVoice(s.voice);
-  audio.setVoiceName(savedVoice());
+  applyVoice();
   audio.refreshVoices(); // Chrome's list is empty until it's asked for: ask now, so it's there by the first race
   showVoices();
 }

@@ -7,15 +7,15 @@
 // refreshed only when a page that loads it is visited online, and the copy could mix two releases. So FILES is a
 // fingerprint of every file in SHELL: change any of them and test/e2e.mjs fails until FILES is changed to match (it
 // says what to), which changes this file, so every copy is made whole again at once.
-const CACHE = 'post-time-v5'; // bump the number when the file list changes (npm test checks the list)
-const FILES = '48d688bf'; // test/e2e.mjs checks this
+const CACHE = 'post-time-v6'; // bump the number when the file list changes (npm test checks the list)
+const FILES = 'b6fd8b99'; // test/e2e.mjs checks this
 const SHELL = [
   './', 'index.html', 'carry.js', 'icon.svg', 'icon-192.png', 'manifest.webmanifest',
   'css/app.css',
   'fonts/oswald.woff2', 'fonts/plex-condensed-400-italic.woff2', 'fonts/plex-condensed-400.woff2',
   'fonts/plex-condensed-600.woff2',
   'js/app.js', 'js/audio.js', 'js/call.js', 'js/chart.js', 'js/data.js', 'js/forum.js', 'js/game.js',
-  'js/handicap.js', 'js/joe-speech.js', 'js/rng.js', 'js/sim.js', 'js/tote.js', 'js/track.js', 'js/world.js',
+  'js/handicap.js', 'js/joe-speech.js', 'js/joe-worker.js', 'js/joe.js', 'js/rng.js', 'js/sim.js', 'js/tote.js', 'js/track.js', 'js/world.js',
   'js/draw/circle.js', 'js/draw/horse.js', 'js/draw/photo.js', 'js/draw/scene.js',
   'js/ui/book.js', 'js/ui/card.js', 'js/ui/dom.js', 'js/ui/race.js', 'js/ui/results.js', 'js/ui/watch.js',
 ];
@@ -30,8 +30,10 @@ self.addEventListener('install', e => {
 
 // The caller's downloaded voice (js/joe.js) is the player's, like their meet: about 76 MB they asked for, in a
 // cache of its own with a name like this. An update of the game clears this worker's old caches and never
-// those.
+// those. Its files, under voice/, are no part of the copy kept here either: the page fetches them when the
+// player asks and keeps them itself, so requests for them are left alone (a second copy would be kept here).
 const VOICE = /^post-time-voice-/;
+const voiceFiles = new URL('voice/', self.registration.scope).pathname;
 
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys()
@@ -48,7 +50,7 @@ const fromCopy = new Set();
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith(voiceFiles)) return;
   if (e.request.mode === 'navigate') e.respondWith(page(e));
   else if (fromCopy.has(e.clientId)) e.respondWith(kept(e.request).then(r => r || network(e)));
   else e.respondWith(network(e).catch(() => offline(e.request)));

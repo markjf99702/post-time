@@ -1,5 +1,7 @@
 // Sound, all synthesised: the bugle's call to the post, the starting bell, the crowd, hooves,
-// the ticket printer and the cash window. Nothing is downloaded.
+// the ticket printer and the cash window. Nothing is downloaded, but for the caller's voice when the
+// player asks for it (js/joe.js).
+import * as joe from './joe.js';
 
 let ac = null;
 let master = null;
@@ -16,13 +18,17 @@ export function soundOn() { return enabled; }
 
 // Browsers only allow audio after a tap; call this from one.
 export function wake() {
-  if (!enabled) return null;
+  return enabled ? output() : null;
+}
+// The sound output itself, whether or not the effects are on: the caller's downloaded voice plays through
+// it too, and that has a setting of its own.
+function output() {
   if (!ac) {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
     ac = new AC();
     master = ac.createGain();
-    master.gain.value = 0.8;
+    master.gain.value = enabled ? 0.8 : 0;
     master.connect(ac.destination);
   }
   if (ac.state !== 'running') ac.resume(); // suspended, or "interrupted" on an iPhone after a call or a lock
@@ -664,14 +670,94 @@ export function say(line, opts) {
 }
 // One line in the chosen voice, for the menu's Hear it. A second tap starts it again.
 export function hearIt(line, opts) {
-  if (!voiceEnabled()) return;
+  if (!voiceOn) return;
   primeVoice();
   caller.stop();
-  caller.speak(line, opts);
+  quiet();
+  if (downloadedReads()) { hearDownloaded(line, opts); return; }
+  if (canSpeak()) caller.speak(line, opts);
 }
 // Stops the caller mid-line. With `finish`, the line being said is let finish, and nothing follows it.
 export function hush({ finish = false } = {}) {
-  if (finish) caller.settle(); else caller.stop();
+  if (finish) caller.settle(); else { caller.stop(); quiet(); }
+}
+
+// ---------------------------------------------------------------- the caller's downloaded voice
+
+// Joe (js/joe.js), when he's the voice chosen in the menu and he's on this device. His sound is made in a
+// worker and played here, through the same output as the bugle and the bell (woken by the same taps), on
+// a line of its own so that it's heard with the effects off. It is played as it was made, never faster:
+// his pace is the model's (the speed asked of joe.speak). If he can't be started on this device, the
+// browser's voice reads for the rest of the visit and the menu says why.
+const JOE_LEVEL = 1; // his lines come at one loudness (LOUDNESS in joe-speech.js), and are played at this gain
+let downloaded = false;  // chosen in the menu
+let downloadedFailed = ''; // why he couldn't be started this visit, if he couldn't
+let preparing = 0;       // lines being made for Hear it
+let voiceOut = null;
+let playing = null;      // the clip being played
+let hearing = 0;         // the latest Hear it: an older one's sound is not played when it arrives
+
+export function setDownloadedVoice(on) {
+  if (downloaded === !!on) return;
+  downloaded = !!on;
+  downloadedFailed = ''; // chosen again, he's tried again
+  if (!downloaded) { quiet(); joe.shutdown(); }
+  tell();
+}
+// For the menu: is he chosen, is he the one reading, is a line of his being made, and what went wrong.
+export function downloadedVoice() {
+  return { chosen: downloaded, reading: downloadedReads(), preparing: preparing > 0, problem: downloadedFailed };
+}
+const downloadedReads = () => downloaded && !downloadedFailed && joe.status().state === 'ready';
+
+// Plays a clip from joe.speak() ({ samples, rate }) and returns a function that stops it. `onstart` is
+// called as it begins and `onend` when it's over, stopped or played out. The clip is played at its own
+// rate (the output does the sums if its own is different): that changes neither its pace nor its pitch.
+export function playClip(clip, { onstart = null, onend = null } = {}) {
+  const ctx = output();
+  if (!ctx || !clip.samples.length) { if (onend) onend(); return () => {}; }
+  if (!voiceOut) { voiceOut = ctx.createGain(); voiceOut.gain.value = JOE_LEVEL; voiceOut.connect(ctx.destination); }
+  const buffer = ctx.createBuffer(1, clip.samples.length, clip.rate);
+  buffer.getChannelData(0).set(clip.samples);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(voiceOut);
+  const me = { source, over: false };
+  const end = () => { if (me.over) return; me.over = true; if (playing === me) playing = null; if (onend) onend(); };
+  source.onended = end;
+  quiet();
+  playing = me;
+  source.start();
+  if (onstart) onstart();
+  return () => { try { source.stop(); } catch { /* not started, or over */ } end(); };
+}
+// Stops the downloaded voice mid-line.
+function quiet() {
+  hearing++;
+  if (!playing) return;
+  const was = playing;
+  playing = null;
+  try { was.source.stop(); } catch { /* over already */ }
+}
+
+// Hear it, in the downloaded voice: the line is made (the first takes a second or two longer, while the
+// voice is loaded) and played when it's ready, unless Hear it has been tapped again by then.
+function hearDownloaded(line, opts) {
+  output(); // inside the tap, so the sound is allowed when the line is ready
+  const mine = hearing;
+  preparing++;
+  tell();
+  joe.speak(line.say || line.text, joe.JOE.opens).then(clip => {
+    preparing--;
+    tell();
+    if (mine === hearing && !out) playClip(clip);
+  }, error => {
+    preparing--;
+    if (!joe.running()) downloadedFailed = String((error && error.message) || error); // he couldn't be started
+    tell();
+    // The browser's voice carries on.
+    if (mine === hearing && !out && canSpeak() && !downloadedReads()) caller.speak(line, opts);
+  });
 }
 
 // A phone only lets a page speak once it has spoken inside a tap, and the call's first line comes a few
@@ -703,6 +789,7 @@ const quietly = promise => { if (promise && promise.catch) promise.catch(() => {
 function away() {
   out = true;
   caller.stop();
+  quiet();
   if (ac && ac.state === 'running') { soundHeld = true; quietly(ac.suspend()); }
 }
 function back() {

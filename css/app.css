@@ -168,6 +168,14 @@ a { color: var(--link); }
 .menu .voice-note { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
 .menu .voice-note:empty { display: none; }
 .menu .voice-row.none > :not(#voiceNone) { display: none; }
+/* The downloaded voice's own lines, while it's the one chosen: what it is, the download, taking it off. */
+.menu .joe { width: 100%; display: grid; gap: 6px; justify-items: start; }
+.menu .joe[hidden] { display: none; }
+.menu .joe .bar { width: 100%; height: 8px; border-radius: 4px; background: var(--paper-2); overflow: hidden; }
+.menu .joe .bar i { display: block; height: 100%; width: 0; background: var(--brass); transition: width .2s; }
+.menu .joe-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.menu .joe-btns button[hidden] { display: none; }
+.menu .joe-btns button { line-height: 1.25; }
 
 /* Said under the header while the browser is refusing to save. */
 .unsaved { margin: 0; padding: 8px max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left)); background: var(--paper-2); border-bottom: 2px solid var(--red); font-size: 14.5px; line-height: 1.3; text-align: center; }
