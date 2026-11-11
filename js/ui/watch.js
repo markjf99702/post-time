@@ -6,7 +6,7 @@ import { RaceScene } from '../draw/scene.js';
 import { photoFinish } from '../draw/photo.js';
 import { stateAt, runningOrder } from '../sim.js';
 import { FURLONG } from '../track.js';
-import { marginShort, fmtTime, fmtClock } from '../chart.js';
+import { marginShort, marginText, fmtTime, fmtClock } from '../chart.js';
 import { game, save, goToGate, callFor, runnersFor, raceLabel, horseOf, myBets } from '../game.js';
 import { BET_NAMES } from '../tote.js';
 import { clockText } from '../world.js';
@@ -288,7 +288,7 @@ export function renderWatch(el, nav, params) {
         // The official sign goes up under the caption, clear of the photo. Its room is there from the start,
         // so the photo doesn't move when it does.
         const sign = h('div', { class: 'w-flash official under' }, 'OFFICIAL');
-        const short = `#${first.number} ${first.name} by a ${marginWord(run.results[1].toPrev)} over #${second.number}`;
+        const short = `#${first.number} ${first.name} by a ${marginText(run.results[1].toPrev)} over #${second.number}`;
         const cap = h('div', { class: 'cap' }, `${short} ${second.name}`);
         const box = h('div', { class: 'w-photo' }, pc, cap, sign);
         stage.append(box);
@@ -364,10 +364,4 @@ function myTickets(race) {
 function fracName(at) {
   const q = Math.round(at / (FURLONG * 2));
   return { 1: '¼', 2: '½', 3: '¾', 4: 'Mile', 5: '1¼' }[q] || '';
-}
-function marginWord(l) {
-  if (l < 0.06) return 'nose';
-  if (l < 0.18) return 'head';
-  if (l < 0.32) return 'neck';
-  return `${marginShort(l)} length${l > 1.1 ? 's' : ''}`;
 }

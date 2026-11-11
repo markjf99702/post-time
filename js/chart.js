@@ -3,27 +3,33 @@
 
 import { LENGTH } from './track.js';
 
+// A margin the way a chart prints it: a nose, a head, a neck, then half a length, three quarters, a length,
+// a length and a quarter and on by quarters. No chart has a bare quarter of a length: a neck runs up to
+// three eighths, where half a length begins. (It used to stop at 0.32, and anything from there to 0.375
+// printed as "¼".)
+const NOSE = 0.06, HEAD = 0.18, NECK = 0.375;
 export function marginText(l) {
-  if (l < 0.06) return 'nose';
-  if (l < 0.18) return 'head';
-  if (l < 0.32) return 'neck';
+  if (l < NOSE) return 'nose';
+  if (l < HEAD) return 'head';
+  if (l < NECK) return 'neck';
   return lengthsText(l);
 }
 export function marginShort(l) {
-  if (l < 0.06) return 'no';
-  if (l < 0.18) return 'hd';
-  if (l < 0.32) return 'nk';
+  if (l < NOSE) return 'no';
+  if (l < HEAD) return 'hd';
+  if (l < NECK) return 'nk';
   return lengthsShort(l);
 }
+// Lengths to the nearest quarter, and never less than half a length.
+const quarters = l => Math.max(0.5, Math.round(l * 4) / 4);
 function lengthsShort(l) {
-  const q = Math.round(l * 4) / 4;
+  const q = quarters(l);
   const whole = Math.floor(q);
-  const frac = { 0: '', 0.25: '¼', 0.5: '½', 0.75: '¾' }[q - whole];
-  return `${whole || ''}${frac}` || '¼';
+  return `${whole || ''}${{ 0: '', 0.25: '¼', 0.5: '½', 0.75: '¾' }[q - whole]}`;
 }
+// "1 length", "1¼ lengths": the plural goes with the number as printed.
 export function lengthsText(l) {
-  const s = lengthsShort(l);
-  return l > 1.1 ? `${s} lengths` : `${s} length`;
+  return `${lengthsShort(l)} length${quarters(l) > 1 ? 's' : ''}`;
 }
 
 // Positions at each call, and lengths behind the horse in front (for the leader: lengths in front).

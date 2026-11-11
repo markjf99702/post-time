@@ -9,7 +9,7 @@ import { runRace, figureFor, stateAt, runningOrder } from '../js/sim.js';
 import { coursePath, FURLONG, COURSES } from '../js/track.js';
 import { createWorld, simulateRace, buildCard, applyResult, nextDay, ageOf } from '../js/world.js';
 import { makeTote, board, settle, ticketReturn, cost, TAKEOUT } from '../js/tote.js';
-import { fmtTime, fmtClock } from '../js/chart.js';
+import { fmtTime, fmtClock, marginShort, marginText, lengthsText } from '../js/chart.js';
 import { timeWords, timeSay, aloud, raceCall } from '../js/call.js';
 import { forumPosts } from '../js/forum.js';
 import { angles, newcomer, freshBullet } from '../js/handicap.js';
@@ -463,6 +463,31 @@ test('your win money stays in the win pool', () => {
   const b = board(tote, 1, [{ type: 'win', sel: [5], amt: 100 }]);
   assert.equal(Math.round(b.pools.win), 3100);
   assert.equal(Math.round(b.pools.place), Math.round(3000 * 0.46));
+});
+
+test('margins read the way a chart prints them: nose, head, neck, a half, three quarters, a length', () => {
+  // A neck stopped at 0.32 of a length, and from there to 0.375 the margin printed as a bare "¼", which no
+  // chart has: 45 of 1,251 finish margins in one meet, and 191 running lines.
+  const value = s => ({ no: -3, hd: -2, nk: -1, nose: -3, head: -2, neck: -1 })[s]
+    ?? [...s.replace(/ lengths?$/, '')].reduce((n, c) => n + ({ '¼': 0.25, '½': 0.5, '¾': 0.75 }[c] ?? 0), parseInt(s, 10) || 0);
+  for (const say of [marginShort, marginText]) {
+    const seen = [];
+    let before = -Infinity;
+    for (let k = 0; k <= 3000; k++) {
+      const l = k / 100, s = say(l);
+      assert.ok(!/^¼/.test(s), `${l} lengths prints as "${s}"`);
+      assert.ok(value(s) >= before, `the scale goes backwards at ${l} lengths: "${s}"`);
+      // From half a length up, what's printed is the margin to the nearest quarter.
+      if (value(s) > 0) assert.ok(Math.abs(value(s) - l) <= 0.125 + 1e-9, `${l} lengths prints as "${s}"`);
+      before = value(s);
+      if (seen[seen.length - 1] !== s) seen.push(s);
+    }
+    assert.deepEqual(seen.slice(0, 8), say === marginShort ? ['no', 'hd', 'nk', '½', '¾', '1', '1¼', '1½'] : ['nose', 'head', 'neck', '½ length', '¾ length', '1 length', '1¼ lengths', '1½ lengths']);
+    assert.equal(seen.length, 3 + 119, 'a step for every quarter from a half to thirty lengths');
+  }
+  // A neck ends where half a length begins, and the plural goes with the number as printed.
+  assert.deepEqual([0.059, 0.06, 0.179, 0.18, 0.374, 0.375].map(marginShort), ['no', 'hd', 'hd', 'nk', 'nk', '½']);
+  assert.deepEqual([1.1, 1.12, 1.13, 0.9, 2].map(lengthsText), ['1 length', '1 length', '1¼ lengths', '1 length', '2 lengths']);
 });
 
 test('times round up into the next minute instead of reading 60 seconds', () => {
