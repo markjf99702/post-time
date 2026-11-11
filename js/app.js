@@ -4,7 +4,7 @@ import { h, clear, money } from './ui/dom.js';
 import { game, load, save, notSaved, newMeet, card, nextRace } from './game.js';
 import { renderCard, upNextInView } from './ui/card.js';
 import { renderRace } from './ui/race.js';
-import { renderWatch } from './ui/watch.js';
+import { renderWatch, rehearse } from './ui/watch.js';
 import { renderResult, renderCircle } from './ui/results.js';
 import { renderBook, renderHelp } from './ui/book.js';
 import { SAMPLE, pace } from './call.js';
@@ -151,7 +151,7 @@ document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', 
 const optSound = document.getElementById('optSound');
 const optVoice = document.getElementById('optVoice');
 optSound.addEventListener('change', () => { game.player.settings.sound = optSound.checked; audio.setSound(optSound.checked); if (optSound.checked) audio.wake(); save(); });
-optVoice.addEventListener('change', () => { game.player.settings.voice = optVoice.checked; audio.setVoice(optVoice.checked); audio.primeVoice(); showVoices(); save(); });
+optVoice.addEventListener('change', () => { game.player.settings.voice = optVoice.checked; audio.setVoice(optVoice.checked); audio.primeVoice(); showVoices(); rehearseNow(); save(); });
 
 // Under "Read the race call aloud" while it's ticked: which voice reads it, and a button to hear it. "Best
 // here" is the best voice this browser has just now, and the line under the list says which that is (in
@@ -207,6 +207,7 @@ optVoiceName.addEventListener('change', () => {
   if (optVoiceName.value === JOE) game.player.settings.caller = 'joe';
   else {
     delete game.player.settings.caller;
+    delete game.player.settings.callerBehind;
     if (optVoiceName.value) game.player.settings.voiceName = optVoiceName.value;
     else delete game.player.settings.voiceName;
   }
@@ -219,7 +220,16 @@ optVoiceName.addEventListener('change', () => {
 function applyVoice() {
   audio.setVoiceName(savedVoice());
   audio.setDownloadedVoice(joeChosen());
+  audio.setBehind(joeChosen() && game.player.settings.callerBehind === true);
   if (joe.offered()) joe.look();
+  rehearseNow();
+}
+// With the form of the race that's up already on the screen when he's chosen, ticked or has just arrived:
+// its call starts being made now, as it would have when the page was opened (js/ui/watch.js).
+function rehearseNow() {
+  if (view.screen !== 'race' || waiting || !game.world) return;
+  const race = card().races.find(r => r.no === view.params.no);
+  if (race && race === nextRace()) rehearse(race);
 }
 
 // Joe's own lines in the menu, while he's the one chosen (or on his way down).
@@ -233,7 +243,10 @@ function showJoe(chosen, his, voice, browsers) {
   joeNote.textContent = coming ? `Downloading ${joe.JOE.name}: ${have}.`
     : his.problem ? `The download stopped: ${his.problem}.${some ? ' What arrived is kept.' : ''}`
       : some ? `Part of ${joe.JOE.name} is here: ${have}. The download carries on from there.`
-        : his.state === 'ready' ? (voice.problem ? `${joe.JOE.name} couldn't be started on this device, so ${browsers} reads the call. (${voice.problem})` : `${joe.JOE.name} is on this device (${size}).`)
+        : his.state === 'ready' ? (voice.problem ? `${joe.JOE.name} couldn't be started on this device, so ${browsers} reads the call. (${voice.problem})`
+          // A race's lines are made ahead of it, and this device didn't make the last race's in time.
+          : voice.behind ? `${joe.JOE.name} couldn't keep up on this device last time, so ${browsers} called the race. He'll try again at the next one.`
+            : `${joe.JOE.name} is on this device (${size}).`)
           : `${joe.JOE.name} is a voice the game downloads and keeps on this device: ${size}, once. He's the same on every phone and computer, where a browser's own voices differ.`;
   joeBar.hidden = !coming;
   joeBar.firstElementChild.style.width = `${Math.round(100 * his.have / his.total)}%`;
@@ -259,11 +272,12 @@ joeRemove.addEventListener('click', e => {
   clearTimeout(removing); removing = null;
   // He goes, and the browser's voice is the choice again.
   delete game.player.settings.caller;
+  delete game.player.settings.callerBehind;
   applyVoice();
   save();
   joe.remove().then(showVoices);
 });
-joe.onChange(showVoices);
+joe.onChange(() => { showVoices(); if (joe.status().state === 'ready') rehearseNow(); });
 // Hear it: a line of a call in that voice, at the pace of one about twenty seconds from the wire (or, in
 // the downloaded voice, at the pace his call opens at: audio.js).
 document.getElementById('hearIt').addEventListener('click', () => audio.hearIt(SAMPLE, pace(SAMPLE, 20)));

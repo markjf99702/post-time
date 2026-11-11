@@ -15,7 +15,7 @@ from piper.phonemize_espeak import EspeakPhonemizer
 from piper.phoneme_ids import phonemes_to_ids
 
 folder, lines_path, out_path = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
-SPEED, GOES = 1.15, 15  # JOE.opens in js/joe.js
+SPEED, GOES = 1.3, 15  # JOE.opens in js/joe.js
 src = json.load(open(lines_path, encoding='utf-8'))
 voice = PiperVoice.load(folder / 'en_US-joe-medium.onnx')
 cfg = voice.config

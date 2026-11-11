@@ -2,6 +2,7 @@
 // the ticket printer and the cash window. Nothing is downloaded, but for the caller's voice when the
 // player asks for it (js/joe.js).
 import * as joe from './joe.js';
+import { raceClips, clipVoice, makingRate } from './joe-call.js';
 
 let ac = null;
 let master = null;
@@ -462,6 +463,7 @@ export function gauge() {
 
 const GAP = 250;       // ms between a cancel and the next line: Safari drops a line spoken sooner than that
 const NO_START = 1500; // ms a voice gets to say it has started a line
+const OVER = 0.2;      // seconds past the call at the wire's time that a line of known length may run
 // The fastest the browser's voice is ever asked to go, whatever is asked of the queue. Sped up, a device's
 // voice gets higher as well as faster: by 1.4 times its own speed it's a chipmunk. (See pace() in call.js.)
 const FASTEST = 1.2;
@@ -484,13 +486,23 @@ const FASTEST = 1.2;
 // goes quiet is cancelled and the call carries on. A voice with a `fastest` is never asked to go faster.
 // `heard(line, seconds, rate)` is told how long each line really took, from the voice's word that it had
 // started to its word that it had ended.
+//
+// A voice whose sound is made ahead (Joe: js/joe-call.js) can say more. With `seconds(line)` it gives a
+// line's exact length, which is used in place of the estimate. With `ready(line)` it says whether the
+// line's sound is there: a line whose sound isn't there when its turn comes is left out, not said late
+// (stats().unmade). And a line said with `room`, a function giving the real seconds until the call at the
+// wire, is left out if its exact length is more than that and a fifth of a second (stats().unfit): it
+// would have to be cut off. (The call at the wire waits that long for a line to end sooner than lose it.)
 export function callQueue(voice, { now = () => performance.now(), later = (fn, ms) => setTimeout(fn, ms), never = id => clearTimeout(id), heard = null } = {}) {
   let cur = null;       // the line being said
   let held = null;      // the one line waiting for it to end
   let quietUntil = 0;   // no line before this, after a cancel
   let gapTimer = null;
   let proven = false;   // this voice has said when a line started, so silence from it means it's stuck
-  const count = { said: 0, dropped: 0, cut: 0 }; // lines begun, lines left out as too old or for a newer one, lines cut off
+  // Lines begun, lines left out as too old or for a newer one, lines cut off; and, of a voice whose sound
+  // is made ahead, lines left out because their sound wasn't made in time, or would have run into the wire.
+  const count = { said: 0, dropped: 0, cut: 0, unmade: 0, unfit: 0 };
+  const exact = line => (voice.seconds ? voice.seconds(line) : null);
 
   // The call at the wire is never too old: it's said as soon as the voice is free.
   const inTime = h => !!h.line.wire || h.clock() - h.due <= (h.line.late ?? 1.5);
@@ -510,14 +522,17 @@ export function callQueue(voice, { now = () => performance.now(), later = (fn, m
     }
     const h = held;
     held = null;
-    if (inTime(h)) begin(h); else count.dropped++;
+    if (!inTime(h)) { count.dropped++; return; }
+    if (voice.ready && !voice.ready(h.line)) { count.unmade++; return; }
+    if (!h.line.wire && h.room && exact(h.line) > h.room() + OVER) { count.unfit++; return; }
+    begin(h);
   }
 
   function begin(item) {
     const text = item.line.say || item.line.text;
     const rate = Math.min(voice.fastest || 1.7, Math.max(0.9, item.rate));
     // The plan's own figure for the line when it has one (line.d), which knows this voice's pace.
-    const me = cur = { item, at: now(), started: null, real: false, est: item.line.d || sayTime(text, rate), timer: null };
+    const me = cur = { item, at: now(), started: null, real: false, est: exact(item.line) || item.line.d || sayTime(text, rate), timer: null };
     if (!item.tried) count.said++;
     const patience = (2 * me.est + 2) * 1000; // no line takes twice its time and two seconds more
     me.timer = later(() => {
@@ -579,14 +594,14 @@ export function callQueue(voice, { now = () => performance.now(), later = (fn, m
     prepare(lines) { voice.prepare(lines); },
     // opts: rate and pitch (and volume), and `clock`, a function giving the time, in seconds, that the
     // line's lateness is counted on: the race's own clock while it runs. Without one it's real time.
-    speak(line, { rate = 1.15, pitch = 1, volume, clock = () => now() / 1000 } = {}) {
+    speak(line, { rate = 1.15, pitch = 1, volume, clock = () => now() / 1000, room = null } = {}) {
       if (cur && line.wire) {
         const was = cur, left = cur.est - (now() - (cur.started ?? cur.at)) / 1000;
         if (left > 0.5) cut();
         // "Nearly done" is a guess. If the line is still going in half a second, it's cut off then.
         else later(() => { if (cur === was) { cut(); next(); } }, 500);
       }
-      hold({ line, rate, pitch, volume, clock, due: clock(), tried: false });
+      hold({ line, rate, pitch, volume, clock, room, due: clock(), tried: false });
       next();
     },
     // Stops the line being said, if there is one, and forgets the one waiting.
@@ -660,26 +675,33 @@ const caller = callQueue(browserVoice, {
 // long it takes over a line asked for at `pace`. The race call is planned with these.
 export function voiceFactor() { return voiceEnabled() ? gaugeNow().factor() : 1; }
 export function voiceSeconds(text, pace) { return lineTime(text, pace, { engine, factor: voiceFactor() }); }
-// What has happened to the lines of the call so far this visit: { said, dropped, cut }.
-export function callStats() { return caller.stats(); }
+// What has happened to the lines of the call so far this visit, by the browser's voice and by the
+// downloaded one: { said, dropped, cut, unmade, unfit } (see callQueue).
+export function callStats() {
+  const a = caller.stats(), b = joeCaller.stats();
+  return Object.fromEntries(Object.keys(a).map(k => [k, a[k] + b[k]]));
+}
 // A race's lines, at the gate: the browser's voice only looks at its list of voices again.
-export function prepareCall(lines) { if (voiceEnabled()) caller.prepare(lines); }
+export function prepareCall(lines) { if (!calling && voiceEnabled()) caller.prepare(lines); }
 // Says a line of the call ({ text, say, late, rank, wire }, or just the words), when the voice is free.
+// One voice calls a race from the gate to the official sign: the downloaded one if it took the race
+// (joeTakes below), the browser's otherwise.
 export function say(line, opts) {
-  if (voiceEnabled()) caller.speak(typeof line === 'string' ? { text: line } : line, opts);
+  line = typeof line === 'string' ? { text: line } : line;
+  if (calling) { if (voiceOn) joeCaller.speak(line, opts); } else if (voiceEnabled()) caller.speak(line, opts);
 }
 // One line in the chosen voice, for the menu's Hear it. A second tap starts it again.
 export function hearIt(line, opts) {
   if (!voiceOn) return;
   primeVoice();
-  caller.stop();
-  quiet();
+  hush();
   if (downloadedReads()) { hearDownloaded(line, opts); return; }
   if (canSpeak()) caller.speak(line, opts);
 }
-// Stops the caller mid-line. With `finish`, the line being said is let finish, and nothing follows it.
+// Stops the caller mid-line, whichever voice it is. With `finish`, the line being said is let finish, and
+// nothing follows it.
 export function hush({ finish = false } = {}) {
-  if (finish) caller.settle(); else { caller.stop(); quiet(); }
+  if (finish) { caller.settle(); joeCaller.settle(); } else { caller.stop(); joeCaller.stop(); quiet(); }
 }
 
 // ---------------------------------------------------------------- the caller's downloaded voice
@@ -689,26 +711,122 @@ export function hush({ finish = false } = {}) {
 // a line of its own so that it's heard with the effects off. It is played as it was made, never faster:
 // his pace is the model's (the speed asked of joe.speak). If he can't be started on this device, the
 // browser's voice reads for the rest of the visit and the menu says why.
-const JOE_LEVEL = 1; // his lines come at one loudness (LOUDNESS in joe-speech.js), and are played at this gain
+// His lines come at one loudness, none of them over 0.84 of full scale (LOUDNESS and CEILING in
+// joe-speech.js), and are played at this gain: no sample over 0.68. The crowd at its roar, the hooves and
+// the bell, rendered together as the page plays them, peak at 0.31 at the most, so the two together stay
+// under full scale, which the output would clip at. At this gain his speech is 6 dB over the roar at the
+// wire and over the bell, and 9 dB over the crowd and the hooves in the running (rms against rms).
+const JOE_LEVEL = 0.8;
 let downloaded = false;  // chosen in the menu
 let downloadedFailed = ''; // why he couldn't be started this visit, if he couldn't
 let preparing = 0;       // lines being made for Hear it
 let voiceOut = null;
 let playing = null;      // the clip being played
 let hearing = 0;         // the latest Hear it: an older one's sound is not played when it arrives
+let behind = false;      // he couldn't have made the last race's lines in time, so the browser's voice called it
+let rehearsed = null;    // the race whose call is made or being made: { key, clips } (raceClips in joe-call.js)
+let calling = false;     // he is calling the race that's on
+let resting = null;      // the timer that ends his worker once it has nothing to do
 
 export function setDownloadedVoice(on) {
   if (downloaded === !!on) return;
   downloaded = !!on;
   downloadedFailed = ''; // chosen again, he's tried again
-  if (!downloaded) { quiet(); joe.shutdown(); }
+  if (!downloaded) { joeCaller.stop(); quiet(); forget(); joe.shutdown(); }
   tell();
 }
-// For the menu: is he chosen, is he the one reading, is a line of his being made, and what went wrong.
+// For the menu: is he chosen, is he the one reading, is a line of his being made, what went wrong, and
+// whether the browser's voice had to call the last race because he couldn't keep up.
 export function downloadedVoice() {
-  return { chosen: downloaded, reading: downloadedReads(), preparing: preparing > 0, problem: downloadedFailed };
+  return { chosen: downloaded, reading: downloadedReads(), preparing: preparing > 0, problem: downloadedFailed, behind };
 }
 const downloadedReads = () => downloaded && !downloadedFailed && joe.status().state === 'ready';
+
+// ---------------------------------------------------------------- the downloaded voice calling a race
+
+// A race's result is fixed before it's run, and so is its call. With Joe the voice, the lines are made
+// ahead (raceClips in js/joe-call.js): from when the race's page is opened, each in the order it will be
+// said, and kept in memory for that race only. The worker that makes them holds some hundreds of megabytes
+// while it's up, so it is ended as soon as the last of them is made, and started again when there are
+// more to make (the next race; this one, watched at another speed or skipped ahead).
+//
+// Whether he calls a race is decided once, as it goes to the gate: he does if every line is made, or if
+// each will be made before it's needed at the rate this device has been making them. If not, the
+// browser's voice calls the whole race, and the menu says he couldn't keep up. Never two voices in one
+// race. Once he has a race, a line whose sound isn't there when its time comes is left out (the written
+// call still shows it), and if his worker fails the rest of the race goes unspoken.
+const LOAD = 2;      // seconds his worker is taken to need to start, until it has been timed on this device
+const REST = 15000;  // ms the worker is kept after a Hear it, in case of another
+const TYPICAL = 3;   // seconds: about what a line of the call runs
+let loadSeconds = null;
+
+// Can he call a race now? Chosen and on the device, with the call read aloud, and not failed this visit.
+export function joeCanCall() { return voiceOn && downloadedReads() && !out; }
+// The lines a race's call needs, in the order they'll be said ({ say, speed, room, wire, at }): made if
+// they aren't, kept if they are. Asked again as often as the plan changes.
+export function rehearse(key, jobs) {
+  if (!joeCanCall()) return false;
+  if (!rehearsed || rehearsed.key !== key) {
+    forget();
+    rehearsed = { key, clips: raceClips({ make: makeLine, idle: () => rest(0) }) };
+  }
+  clearTimeout(resting);
+  rehearsed.clips.want(jobs);
+  return true;
+}
+function makeLine(text, speed) {
+  const cold = !joe.running(), began = performance.now();
+  if (cold) joe.ready().then(() => { loadSeconds = (performance.now() - began) / 1000; }, () => {});
+  return joe.speak(text, speed);
+}
+// Ends his worker once it has nothing to do: at once when a race's lines are all made, a little after a
+// Hear it. (Never while a line is being made.)
+function rest(ms) {
+  clearTimeout(resting);
+  resting = setTimeout(() => {
+    resting = null;
+    if (rehearsed && rehearsed.clips.broken() && !downloadedFailed) { downloadedFailed = rehearsed.clips.broken(); tell(); }
+    if (joe.busy()) { rest(Math.max(ms, 1000)); return; } // something is still being made: look again later
+    joe.shutdown();
+  }, ms);
+}
+function forget() {
+  if (rehearsed) rehearsed.clips.drop();
+  rehearsed = null;
+  calling = false;
+}
+// The decision, as a race goes to the gate. True if he calls it. `jobs` is his plan of it, as for rehearse().
+export function joeTakes(key, jobs) {
+  calling = false;
+  if (!rehearse(key, jobs)) return false;
+  const clips = rehearsed.clips;
+  calling = clips.ready() || clips.keepsUp(joe.running() ? 0 : loadSeconds ?? LOAD);
+  if (behind === calling) { behind = !calling; tell(); }
+  // Not his race: what was made of it is let go, and the worker with it.
+  if (!calling) endCall();
+  return calling;
+}
+// About how long before he can say a line that has only just been planned, in seconds: the worker
+// started if it isn't up, and one line made.
+export function joeLead() {
+  return Math.min(5, (joe.running() ? 0 : loadSeconds ?? LOAD) + TYPICAL * (makingRate() ?? 0.5) + 0.2);
+}
+// The race is over, or left: its clips are let go, and the next line said is the browser's again.
+export function endCall() {
+  forget();
+  rest(0);
+}
+// For the menu, which keeps it with the settings: did the browser's voice have to call the last race?
+export function setBehind(was) { behind = !!was; }
+// For the tests and for measuring: the race being rehearsed, as numbers.
+export function rehearsal() {
+  return rehearsed ? { key: rehearsed.key, calling, ready: rehearsed.clips.ready(), ...rehearsed.clips.measures(), rate: makingRate(), up: joe.running() } : null;
+}
+const joeVoice = clipVoice({
+  clipFor: line => (rehearsed ? rehearsed.clips.clip(line.say || line.text) : null),
+  play: (clip, handlers) => playClip(clip, handlers),
+});
+const joeCaller = callQueue(joeVoice);
 
 // Plays a clip from joe.speak() ({ samples, rate }) and returns a function that stops it. `onstart` is
 // called as it begins and `onend` when it's over, stopped or played out. The clip is played at its own
@@ -747,10 +865,12 @@ function hearDownloaded(line, opts) {
   const mine = hearing;
   preparing++;
   tell();
+  clearTimeout(resting);
   joe.speak(line.say || line.text, joe.JOE.opens).then(clip => {
     preparing--;
     tell();
     if (mine === hearing && !out) playClip(clip);
+    rest(REST);
   }, error => {
     preparing--;
     // He couldn't be started. (Not when the page itself shut him down while the line was being made.)
@@ -766,6 +886,7 @@ function hearDownloaded(line, opts) {
 // tick, Hear it, To the gate) each call this, and the first of them says one word at no volume.
 let primed = false;
 export function primeVoice() {
+  if (voiceOn && downloaded) output(); // the downloaded voice plays through the sound output, which a tap has to wake
   if (primed || !voiceEnabled()) return;
   primed = true;
   try {
@@ -790,6 +911,7 @@ const quietly = promise => { if (promise && promise.catch) promise.catch(() => {
 function away() {
   out = true;
   caller.stop();
+  joeCaller.stop();
   quiet();
   joe.shutdown(); // the downloaded voice's worker holds some hundreds of megabytes: a page out of sight gives them back
   if (ac && ac.state === 'running') { soundHeld = true; quietly(ac.suspend()); }
@@ -798,6 +920,7 @@ function back() {
   if (!out) return;
   out = false;
   if (voiceEnabled()) caller.unstick();
+  if (rehearsed) rehearsed.clips.resume(); // the lines still to be made for the race that's on
   if (!ac || !soundHeld) return;
   soundHeld = false;
   quietly(ac.resume());

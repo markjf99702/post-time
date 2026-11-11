@@ -21,6 +21,8 @@ export const game = { world: null, player: null };
 // settings: `sound` and `voice` are the menu's two ticks. `voiceName` is there only when a voice has been
 // chosen by name; without it the call is read by the best voice the browser has. `caller` is there, as
 // 'joe', only when the downloaded voice is the one chosen (js/joe.js); the browser's reads where he isn't.
+// `callerBehind` is there, as true, while the last race he was to call went to the browser's voice because
+// this device couldn't make his lines in time: the menu says so.
 function freshPlayer() {
   return {
     v: 1, bank: START_BANK, bets: {}, settled: {}, ledger: [], book: [], atm: 0, opened: {},
@@ -246,9 +248,19 @@ export function runnersFor(race) {
   });
 }
 
+// A race as it will be run, or was: it comes only from the race's own seed and entries, so it can be
+// worked out before the race goes to the gate. The caller's downloaded voice has the call made by then
+// (js/ui/watch.js rehearse). Nothing is settled or shown by this, and the one race kept is the last asked for.
+let recorded = { key: '', run: null };
+export function recordingOf(race) {
+  const key = `${memoKey(race)}:${race.seed}`;
+  if (recorded.key !== key) recorded = { key, run: simulateRace(race, game.world, { record: true }) };
+  return recorded.run;
+}
+
 // Off they go: run the race, settle every ticket, and write it all down.
 export function goToGate(race) {
-  const run = simulateRace(race, game.world, { record: true });
+  const run = recordingOf(race);
   if (race.status === 'official') return { run, replay: true };
   const bets = myBets(race);
   // (A thread nobody has opened is made here without a save of its own: the whole meet, half a million

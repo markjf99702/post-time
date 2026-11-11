@@ -16,8 +16,14 @@ export const JOE = {
   // a cache with a different name, and this one is cleared once that one is whole.
   cache: 'post-time-voice-joe-1',
   bytes: 76448447,
-  // How fast it talks when the call opens, in times its own speed, and so for the menu's Hear it.
-  opens: 1.15,
+  // How fast it talks, in times its own speed: when the call opens (and so for the menu's Hear it), which is
+  // the faster of the two speeds it was listened to and chosen at; and at the wire, the top of a climb that
+  // starts about half a minute out (js/joe-call.js). Asked to talk faster, the model shortens a line by less
+  // than the speed asked: at 1.3 a line takes about a seventh less time than at its own speed, at 1.5 nearly a
+  // quarter less.
+  opens: 1.3,
+  top: 1.5,
+  step: 0.05,
 };
 const OURS = /^post-time-voice-joe-/; // every cache this voice has ever been kept in
 const DONE = 'complete';              // kept in the cache once every file is in it
@@ -216,3 +222,5 @@ export function shutdown(reason = Object.assign(new Error('the voice was shut do
   waiting.clear();
 }
 export const running = () => !!worker;
+// Is anything being made, or waiting to be?
+export const busy = () => waiting.size > 0;

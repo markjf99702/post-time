@@ -115,10 +115,14 @@ const LATE = { off: 0.3, wire: 0.3, change: 1.0, other: 1.5, placings: 6 };
 // climbs the little it can from there, through the far turn and the stretch; before the start, and for
 // the placings and the time after the wire, it's the steady pace. `toWire` is seconds to the wire.
 export const STEADY = 1.15, FASTEST = 1.2;
+// How far up that climb a line is, from 0 (the steady pace) to 1 (the call at the wire). A voice with more
+// room to speed up than a device's own takes its pace from this: see joeSpeed() in js/joe-call.js.
+export function climb(line, toWire) {
+  if (line.kind === 'pre' || (line.kind === 'finish' && !line.wire)) return 0;
+  return line.wire ? 1 : Math.max(0, Math.min(1, 1 - (toWire - 3) / 30));
+}
 export function pace(line, toWire) {
-  if (line.kind === 'pre' || (line.kind === 'finish' && !line.wire)) return { rate: STEADY, pitch: 1 };
-  const k = line.wire ? 1 : Math.max(0, Math.min(1, 1 - (toWire - 3) / 30));
-  return { rate: +(STEADY + (FASTEST - STEADY) * k).toFixed(3), pitch: 1 };
+  return { rate: +(STEADY + (FASTEST - STEADY) * climb(line, toWire)).toFixed(3), pitch: 1 };
 }
 // About how long a voice takes over a line, when nothing better is known: the model in audio.js at the
 // pace the line is asked for. A voice that has been timed, or sound made ahead with a known length, gives
@@ -1102,7 +1106,13 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
 // the rest again when something changes. `factor()` is how the voice's real pace compares with what the
 // plan took it to be (1 until it has been timed): when that moves by more than 8%, the rest of the race
 // is planned again. All times given to it are the race's clock and real seconds.
-export function liveCall(race, run, names, { lineSeconds, factor = () => 1, bugle = 0 } = {}) {
+//
+// A voice whose sound is made ahead of time (js/joe-call.js) needs two more things. `lead()` is the real
+// seconds it needs before it can say a line that has only just been planned, so a plan made in the middle
+// of a race starts no sooner than that. And timetable() is the plan as that voice needs it: for each line,
+// the real seconds from the screen opening until it comes up (at the speed the race is being watched at
+// now), how long it has before the next line does, and whether that next line is the call at the wire.
+export function liveCall(race, run, names, { lineSeconds, factor = () => 1, bugle = 0, lead = () => 0 } = {}) {
   let speed = 1;
   let madeFor = factor();
   let upLine = null, upAt = 0;  // the line that's up, and when it came up
@@ -1115,10 +1125,23 @@ export function liveCall(race, run, names, { lineSeconds, factor = () => 1, bugl
     const said = live.lines.filter(l => l.t <= seen);
     if (said.some(l => l.wire)) return; // the call at the wire has been made: what's left follows it
     madeFor = factor();
-    const left = wait ?? (upLine ? Math.max(0, upLine.d - (now - upAt)) : 0);
+    const left = Math.max(wait ?? (upLine ? Math.max(0, upLine.d - (now - upAt)) : 0), lead());
     live.lines = raceCall(race, run, names, { lineSeconds, speed, from: clock, wait: left, said, jumped }).lines;
     live.plans++;
   }
+  live.timetable = () => {
+    const { wall } = raceClock(run, speed), opened = wall(-live.gate - run.t0);
+    return live.lines.map((line, k) => {
+      const next = live.lines[k + 1];
+      return { line, at: wall(line.t) - opened, room: next ? wall(next.t) - wall(line.t) : Infinity, wire: !!(next && next.wire) };
+    });
+  };
+  // The real seconds from `clock` until the call at the wire comes up, at the speed the race is being
+  // watched at; none to wait for once it has.
+  live.toWire = clock => {
+    const { wall } = raceClock(run, speed), wire = live.lines.find(l => l.wire);
+    return wire && clock < wire.t ? wall(wire.t) - wall(clock) : Infinity;
+  };
   // The line that has come up by `clock`, if it's a new one. `now` is the time in real seconds.
   live.next = (clock, now) => {
     if (Math.abs(factor() / madeFor - 1) > 0.08) again(clock, now);

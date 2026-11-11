@@ -60,7 +60,10 @@ globalThis.speechSynthesis = voice;
 globalThis.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
 const audio = await import('../js/audio.js');
 const { pickVoice, offeredVoices, callQueue, sayTime, lineTime, gauge, engineOf, engineRate, engineSpeed } = audio;
-const { raceCall, liveCall, pace, officialLine, SLOW } = await import('../js/call.js');
+const { raceCall, liveCall, pace, climb, officialLine, SLOW } = await import('../js/call.js');
+const { raceClips, clipVoice, joeSpeed, joeSeconds, planSeconds, jobsFor, makingRate, madeClip, forgetRate, SPARE } = await import('../js/joe-call.js');
+const { JOE } = await import('../js/joe.js');
+const { rng } = await import('../js/rng.js');
 const { createWorld, simulateRace, applyResult, nextDay } = await import('../js/world.js');
 const { STAKES, BIG_STAKES } = await import('../js/data.js');
 const last = () => spoken[spoken.length - 1];
@@ -406,7 +409,8 @@ test('the roar at the wire is not taken back by the next frame, and the crowd se
 // or slower or quicker than it expects. It says when it starts and ends (while `events` is true), and
 // notes everything it's asked to do. `stamp` is filled in by a test that wants the race's clock noted,
 // and `heard` by one that wants to know how long each line really took.
-function rig({ syllablesASecond = 4.3, startAfter = 20, events = true } = {}) {
+// With `voice`, a function that makes one from the clock and the log, the test brings its own.
+function rig({ syllablesASecond = 4.3, startAfter = 20, events = true, voice: own = null } = {}) {
   let t = 0, id = 0, saying = null;
   const timers = new Map(), log = [];
   const clock = {
@@ -441,7 +445,7 @@ function rig({ syllablesASecond = 4.3, startAfter = 20, events = true } = {}) {
     },
     stop(why) { log.push({ ev: 'stop', t, T: r.stamp(), why: why || null, cut: saying ? saying.text : null }); saying = null; },
   };
-  r.queue = callQueue(voice, { ...clock, heard: (line, seconds, rate) => { if (r.heard) r.heard(line, seconds, rate); } });
+  r.queue = callQueue(own ? own({ clock, log, r }) : voice, { ...clock, heard: (line, seconds, rate) => { if (r.heard) r.heard(line, seconds, rate); } });
   return r;
 }
 const texts = (log, ev = 'speak') => log.filter(x => x.ev === ev).map(x => x.text);
@@ -620,21 +624,24 @@ test('a voice that never says when it starts or ends still reads the call, a lin
 // slow motion and all. `timed` is a gauge (see gauge() in js/audio.js) for a voice whose lines are timed
 // and the call planned to its pace, as the page does; `each(frame)` is called every frame, to change the
 // speed or skip. Returns the call, when each line came up, and what the queue made of them.
-function replay(r, race, { timed = null, bugle = 0, each = null } = {}) {
+// `plan` is for a voice with a plan of its own (the downloaded one): it makes the call, and `planned` is
+// told whenever that call is made or made again.
+function replay(r, race, { timed = null, bugle = 0, each = null, plan = null, planned = null } = {}) {
   const factor = () => (timed ? timed.factor() : 1);
-  const live = liveCall(race.race, race.run, race.names, { lineSeconds: (line, toWire) => lineTime(line.say, pace(line, toWire).rate, { factor: factor() }), factor, bugle });
+  const live = plan ? plan({ bugle }) : liveCall(race.race, race.run, race.names, { lineSeconds: (line, toWire) => lineTime(line.say, pace(line, toWire).rate, { factor: factor() }), factor, bugle });
+  if (planned) planned(live);
   let T = -live.gate, ended = false, endedAt = 0, speed = 1, signed = false;
   const clock = () => (ended ? race.endT + (r.now() - endedAt) / 1000 : T);
   const cameUp = new Map();
-  const say = line => { cameUp.set(line, { clock: clock(), now: r.now() }); r.queue.speak(line, { ...pace(line, race.winT - T), clock }); };
+  const say = line => { cameUp.set(line, { clock: clock(), now: r.now() }); r.queue.speak(line, { ...pace(line, race.winT - T), clock, room: () => live.toWire(clock() - race.t0) }); };
   const before = r.queue.stats();
   r.stamp = clock;
   r.heard = timed ? (line, seconds, rate) => timed.heard(seconds, lineTime(line.say || line.text, rate) - 0.12) : null;
   r.queue.prepare(live.lines);
   const frame = {
     get T() { return T; }, get clock() { return clock() - race.t0; },
-    setSpeed(to) { if (to !== speed) live.setSpeed(to, clock() - race.t0, r.now() / 1000); speed = to; },
-    skip() { r.queue.stop(); T = Math.max(T, race.winT - 12); live.skip(T - race.t0, r.now() / 1000); },
+    setSpeed(to) { if (to !== speed) { live.setSpeed(to, clock() - race.t0, r.now() / 1000); if (planned) planned(live); } speed = to; },
+    skip() { r.queue.stop(); T = Math.max(T, race.winT - 12); live.skip(T - race.t0, r.now() / 1000); if (planned) planned(live); },
   };
   for (;;) {
     r.advance(1000 / 30);
@@ -956,4 +963,305 @@ test('the call is read at 2x and 4x: no line is cut off for a change of speed, a
   }
   assert.ok(checked >= 20, `only ${checked} changes of speed came in the middle of a line`);
   assert.ok(photos >= 2, `only ${photos} photo finishes to check the winner's line with`);
+});
+
+// ---------------------------------------------------------------- the downloaded voice calling a race
+
+// His own clips of 438 lines of the game's calls, timed in his worker at three speeds (tools/joe-times.mjs).
+const timed = JSON.parse(readFileSync(new URL('./joe-times.fixture.json', import.meta.url), 'utf8'));
+// How far out the model of his time is, line by line, at the speed the call opens at: the tests below
+// make their clips that far out.
+const OUT = timed.lines.map(l => l[2] - joeSeconds(l[0], 1.3));
+
+test("Joe's pace opens at 1.3 times his own speed and climbs to 1.5 at the wire, and the model of his time is as close as it says", () => {
+  assert.deepEqual([JOE.opens, JOE.top], [1.3, 1.5]);
+  const line = { kind: 'call' };
+  assert.deepEqual([40, 33, 25, 18, 10, 3, 0].map(toWire => joeSpeed(climb(line, toWire))), [1.3, 1.3, 1.35, 1.4, 1.45, 1.5, 1.5]);
+  assert.deepEqual([joeSpeed(climb({ kind: 'pre' }, 60)), joeSpeed(climb({ kind: 'finish', wire: true }, 0)), joeSpeed(climb({ kind: 'finish' }, -3))], [1.3, 1.5, 1.3], 'before the start, at the wire, and the placings');
+  // The model against his clips. (He draws at random: these are one go at each line.)
+  assert.ok(timed.lines.length >= 400 && timed.races >= 40, 'too few lines to hold the model to');
+  const spread = (xs, label, { sd, most, mean = 0.02 }) => {
+    const m = xs.reduce((a, b) => a + b, 0) / xs.length, dev = Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length), worst = Math.max(...xs.map(Math.abs));
+    const within = d => xs.filter(x => Math.abs(x) <= d).length / xs.length;
+    if (process.env.NUMBERS) console.log(`${label}: ${xs.length} lines, mean ${m.toFixed(3)} s, sd ${dev.toFixed(3)} s, worst ${worst.toFixed(3)} s, within 0.15 s ${(within(0.15) * 100).toFixed(0)}%, within 0.25 s ${(within(0.25) * 100).toFixed(0)}%`);
+    assert.ok(Math.abs(m) <= mean && dev <= sd && worst <= most, `${label}: mean ${m.toFixed(3)}, sd ${dev.toFixed(3)}, worst ${worst.toFixed(3)}`);
+    return within;
+  };
+  const at13 = spread(OUT, 'at 1.3', { sd: 0.15, most: 0.47 });
+  assert.ok(at13(0.15) >= 0.68 && at13(0.25) >= 0.9, 'the model is further out than the comment in js/joe-call.js says');
+  spread(timed.lines.map(l => l[4] - joeSeconds(l[0], 1.5)), 'at 1.5', { sd: 0.14, most: 0.47 });
+  spread(timed.lines.filter(l => l[3] !== null).map(l => l[3] - joeSeconds(l[0], 1.4)), 'at 1.4', { sd: 0.14, most: 0.47 });
+  // Faster is the model talking faster, and by less than the speed asked: a line at 1.5 is nine tenths of
+  // its length at 1.3.
+  const ratio = timed.lines.reduce((a, l) => a + l[4] / l[2], 0) / timed.lines.length;
+  assert.ok(Math.abs(ratio - 0.895) < 0.005 && Math.abs(joeSeconds('x'.repeat(60), 1.5) / joeSeconds('x'.repeat(60), 1.3) - 0.895) < 0.002, `at 1.5 a line is ${ratio.toFixed(3)} of its length at 1.3`);
+  assert.ok(SPARE >= 0.1 && SPARE <= 0.2);
+});
+
+// Joe in the queue, with the clock turned by hand. His clips have known lengths: the model's figure for
+// the line, out by as much as one of his real clips was (drawn for each line from the 438 above), and
+// shorter when it's made faster by what the model says. `rate` is the seconds this device takes to make a
+// second of his speech (none: every clip is there the moment it's asked for), and `fails(n)` says whether
+// the worker fails on the nth clip it's asked for. With `ahead`, the lines of the plan made at the gate
+// are there before the race starts, as when the form has been read first, and only later ones take time.
+function joeRig(race, { rate = 0, fails = () => false, ahead = false } = {}) {
+  const R = rng(`clips:${race.race.seed}`), out = new Map(), asked = [];
+  let line = null, playing = null, clips = null;
+  const rigged = { early: ahead };
+  const r = rig({ voice: ({ clock, log, r: me }) => {
+    clips = raceClips({ make(say, speed) {
+      if (!out.has(say)) out.set(say, OUT[Math.floor(R() * OUT.length)]);
+      const seconds = Math.max(0.3, joeSeconds(say, speed) + out.get(say) * joeSeconds(say, speed) / joeSeconds(say, 1.3));
+      const clip = { seconds, ms: seconds * rate * 1000 };
+      asked.push({ say, speed, seconds, at: clock.now() });
+      const failed = fails(asked.length);
+      if ((!rate || rigged.early) && !failed) return clip;
+      return { then(done, wrong) { clock.later(() => (failed ? wrong(new Error('out of memory')) : done(clip)), clip.ms); } };
+    } });
+    return clipVoice({
+      clipFor(l) { line = l; return clips.clip(l.say || l.text); },
+      play(clip, { onstart, onend }) {
+        const text = line.say || line.text, mine = playing = { text };
+        log.push({ ev: 'speak', t: clock.now(), T: me.stamp(), line, text, seconds: clip.seconds, speed: clip.speed });
+        onstart();
+        clock.later(() => { if (playing === mine) { playing = null; log.push({ ev: 'end', t: clock.now(), T: me.stamp(), text }); onend(); } }, clip.seconds * 1000);
+        return () => { if (playing === mine) { playing = null; log.push({ ev: 'stop', t: clock.now(), T: me.stamp(), cut: text }); onend(); } };
+      },
+    });
+  } });
+  return Object.assign(rigged, { r, clips, asked });
+}
+// A race called by him, as the page does it: his plan of it, its lines asked for before the gate (and
+// again whenever the plan changes), and the race replayed. `wireAt` is the moment on the clock on the wall
+// that the winner reaches the wire.
+function joeReplay(race, { each = null, ...device } = {}) {
+  const rigged = joeRig(race, device);
+  const lead = () => (device.rate ? 3 * device.rate + 0.2 : 0);
+  let wireAt = null;
+  const result = replay(rigged.r, race, {
+    plan: ({ bugle }) => liveCall(race.race, race.run, race.names, { lineSeconds: planSeconds(climb), bugle, lead }),
+    planned(live) { rigged.clips.want(jobsFor(live, race.run.finalTime, climb, live.official ? officialLine(live.official).say : null)); rigged.early = false; },
+    each(frame) { if (wireAt === null && frame.T >= race.winT) wireAt = rigged.r.now(); if (each) each(frame, rigged); },
+  });
+  return { ...result, ...rigged, wireAt, stats: rigged.r.queue.stats() };
+}
+
+test("called by Joe, every line of 24 races starts on schedule, none overlaps another or is cut off, and the call at the wire is on time", () => {
+  // The call is planned with a guess at how long he takes over each line, and held to the clips he really
+  // makes: one too long for its room is made again faster, and a line that comes up while another is
+  // being said waits for it. Three race days, each line's clip out from the guess as his real clips are.
+  const races = recorded('test-joe', 3);
+  let lines = 0, waited = 0, longest = 0, again = 0, quiet = 0, running = 0, photos = 0, slowed = 0;
+  for (const race of races) {
+    const { live, cameUp, r, clips, asked, wireAt, stats } = joeReplay(race);
+    const at = `${race.no}`;
+    const said = r.log.filter(x => x.ev === 'speak'), ends = r.log.filter(x => x.ev === 'end');
+    // Every clip was there before the gate, and every line of the plan was said, once. Nothing was cut
+    // off, left out or cancelled.
+    assert.ok(clips.ready(), `${at}: the clips were not all made`);
+    assert.equal(cameUp.size, live.lines.length + (live.official ? 1 : 0), `${at}: lines of the plan never came up`);
+    assert.deepEqual(said.map(x => x.line), [...cameUp.keys()], `${at}: the lines said are not the lines that came up, in order`);
+    assert.deepEqual([stats.said, stats.dropped, stats.cut, stats.unmade, stats.unfit, r.log.filter(x => x.ev === 'stop').length], [said.length, 0, 0, 0, 0, 0], `${at}: the queue's count`);
+    assert.equal(ends.length, said.length, `${at}: a line never ended`);
+    said.forEach((x, k) => {
+      // None starts while another is being said, and each runs exactly the length of its clip.
+      if (k) assert.ok(x.t >= ends[k - 1].t, `${at}: "${x.text}" started ${(ends[k - 1].t - x.t).toFixed(0)} ms before "${said[k - 1].text}" ended`);
+      assert.ok(Math.abs(ends[k].t - x.t - x.seconds * 1000) < 1e-6, `${at}: "${x.text}" ran other than its clip's length`);
+      // On schedule: as it comes up, or as soon as the line before it has ended, never more than four
+      // tenths of a second on.
+      const wait = (x.t - cameUp.get(x.line).now) / 1000;
+      assert.ok(wait <= 0.4, `${at}: "${x.text}" started ${wait.toFixed(2)} s after it came up`);
+      lines++; if (wait > 0.05) waited++; longest = Math.max(longest, wait);
+      // His pace: never under the speed the call opens at or over the top speed.
+      assert.ok(x.speed >= JOE.opens && x.speed <= JOE.top, `${at}: "${x.text}" was made at ${x.speed}`);
+    });
+    // The call at the wire: at his top speed, within a quarter of a second of the winner getting there.
+    const wire = said.find(x => x.line.wire);
+    assert.ok(wire && wire.speed === JOE.top && wire.t - wireAt <= 250 && wire.t >= wireAt, `${at}: the call at the wire came ${wire && ((wire.t - wireAt) / 1000).toFixed(2)} s after it`);
+    assert.deepEqual([said[0].line.kind, said[0].speed, said[1].line.kind], ['pre', JOE.opens, 'off'], at);
+    const placings = said.find(x => x.line.placings);
+    assert.ok(placings.speed === JOE.opens || asked.filter(a => a.say === placings.text).length > 1, `${at}: the placings at ${placings.speed}`);
+    if (live.official) { photos++; assert.equal(said[said.length - 1].text, officialLine(live.official).say, `${at}: after the photo, who won was never said`); }
+    if (race.close) slowed++;
+    // What it cost: clips made again faster, and the quiet between lines from the off to the wire.
+    again += asked.length - new Set(asked.map(a => a.say)).size;
+    const during = said.filter(x => x.T >= 0 && x.T <= race.winT);
+    during.forEach((x, k) => { if (k) quiet += Math.max(0, x.t - ends[said.indexOf(x) - 1].t) / 1000; });
+    running += (during[during.length - 1].t - during[0].t) / 1000;
+  }
+  if (process.env.NUMBERS) console.log(`Joe, clips of known lengths: ${lines} lines in ${races.length} races, ${waited} waited for the line before (the longest ${longest.toFixed(2)} s), ${again} clips made again faster, quiet between lines ${(100 * quiet / running).toFixed(0)}% of the running, ${photos} photos, ${slowed} finishes in slow motion`);
+  assert.ok(lines > 500 && photos >= 2 && slowed >= 3, `${lines} lines, ${photos} photos, ${slowed} close finishes`);
+  assert.ok(waited <= lines / 20, `${waited} of ${lines} lines had to wait for the line before`);
+  assert.ok(again <= lines / 8, `${again} of ${lines} clips had to be made again`);
+});
+
+test("a clip too long for its room is made again faster, as far as Joe's top speed, and the clips are kept for one race only", () => {
+  const made = [];
+  const lengths = { 'One.': [2.0], 'Two.': [3.4, 3.1, 2.9], 'Three.': [2.6, 2.7], 'Four.': [1.0] };
+  let rested = 0;
+  const clips = raceClips({ make(say, speed) { const k = made.filter(m => m[0] === say).length; made.push([say, speed]); return { seconds: lengths[say][k], ms: 500 }; }, idle: () => { rested++; } });
+  const job = (say, speed, room) => ({ say, speed, room, wire: false, at: 0 });
+  clips.want([job('One.', 1.3, 2.5), job('Two.', 1.3, 3.0), job('Three.', 1.45, 2.6), job('Four.', 1.5, 0.9)]);
+  // In the order they'll be said; the second twice more (1.4, then the top speed) until it has 0.05 s to
+  // spare; the third once more, and the first clip of it kept, since the faster one came out longer; the
+  // fourth is at the top speed already, so it stays as it is.
+  assert.deepEqual(made, [['One.', 1.3], ['Two.', 1.3], ['Two.', 1.4], ['Two.', 1.5], ['Three.', 1.45], ['Three.', 1.5], ['Four.', 1.5]]);
+  assert.deepEqual(['One.', 'Two.', 'Three.', 'Four.'].map(say => clips.clip(say).seconds), [2.0, 2.9, 2.6, 1.0]);
+  assert.deepEqual([clips.ready(), rested, clips.measures().clips], [true, 1, 4], 'when the last clip is made the worker can be ended');
+  // The plan changes (another speed, a skip): what's still wanted is kept and not made again, what isn't
+  // is let go, and only the new line is made.
+  made.length = 0;
+  lengths['Five.'] = [1.5];
+  clips.want([job('One.', 1.3, 2.5), job('Five.', 1.3, 4), job('Four.', 1.5, 3)]);
+  assert.deepEqual([made, clips.clip('Two.'), clips.clip('Three.'), clips.clip('One.').seconds, clips.measures().clips, rested], [[['Five.', 1.3]], null, null, 2.0, 3, 2]);
+  // Let go at the end of the race.
+  clips.drop();
+  assert.deepEqual([clips.clip('One.'), clips.ready()], [null, false]);
+});
+
+test('whether Joe calls a race is decided by whether his clips are made, or will be in time at the rate this device makes them', () => {
+  forgetRate();
+  const waiting = [];
+  const clips = raceClips({ make: (say, speed) => ({ then(done, wrong) { waiting.push({ say, speed, done, wrong }); } }) });
+  // Ten lines, three seconds apart from five seconds in, each about 2.7 s of speech.
+  const SAY = k => `Copper Detour leads by a length and a half, number ${k}.`;
+  const jobs = Array.from({ length: 10 }, (_, k) => ({ say: SAY(k), speed: 1.3, room: 3, wire: false, at: 5 + 3 * k }));
+  clips.want(jobs);
+  assert.deepEqual([waiting.length, waiting[0].say, clips.busy()], [1, SAY(0), true], 'one line is made at a time, the first to be said first');
+  // Nothing made yet on this device, so nothing to go by: he doesn't take the race.
+  assert.deepEqual([makingRate(), clips.ready(), clips.keepsUp(0)], [null, false, false]);
+  // The first clip comes back: 2.7 s of speech in 0.9 s. At that rate the rest are made well before they're
+  // needed, with the worker up or still to start; he takes the race.
+  const give = (seconds, ms) => waiting.shift().done({ seconds, ms });
+  give(2.7, 900);
+  assert.ok(Math.abs(makingRate() - 1 / 3) < 1e-9);
+  assert.deepEqual([clips.ready(), clips.keepsUp(0), clips.keepsUp(2)], [false, true, true]);
+  // If the worker couldn't start for seven seconds, the second line would come up before its clip was made.
+  assert.equal(clips.keepsUp(7), false);
+  // A device that takes longer to make a line than to say it falls behind: he doesn't take the race.
+  forgetRate();
+  madeClip(5, 2.7);
+  assert.equal(clips.keepsUp(0), false, 'a device slower than speech was taken to keep up');
+  // One that makes them a little faster than they're said keeps up, since the lines are three seconds apart...
+  forgetRate();
+  madeClip(2.4, 2.7);
+  assert.equal(clips.keepsUp(0), true);
+  // ...but not if the worker takes six seconds to start.
+  assert.equal(clips.keepsUp(6), false);
+  // With every clip made there's nothing to work out, however slow the device.
+  forgetRate();
+  while (waiting.length) give(2.7, 9000);
+  assert.deepEqual([clips.ready(), clips.keepsUp(0), clips.keepsUp(60), clips.busy()], [true, true, true, false]);
+  assert.ok(Math.abs(makingRate() - 9 / 2.7) < 1e-9, 'the rate is not the last clips made');
+
+  // The page going out of sight ends the worker: the clip being made is lost, nothing more is asked for,
+  // and it isn't the voice failing. Back in sight, the making carries on from that line.
+  const again = raceClips({ make: (say, speed) => ({ then(done, wrong) { waiting.push({ say, speed, done, wrong }); } }) });
+  again.want(jobs);
+  give(2.7, 900);
+  waiting.shift().wrong(Object.assign(new Error('the voice was shut down'), { shutdown: true }));
+  assert.deepEqual([waiting.length, again.broken(), again.busy()], [0, null, false]);
+  again.resume();
+  assert.deepEqual([waiting.length, waiting[0].say], [1, SAY(1)]);
+  // The worker failing (out of memory, an error) is another matter: nothing more is made, he doesn't take
+  // a race, and the page is told there's nothing more coming.
+  let told = 0;
+  const failing = raceClips({ make: (say, speed) => ({ then(done, wrong) { waiting.push({ say, speed, done, wrong }); } }), idle: () => { told++; } });
+  waiting.length = 0;
+  failing.want(jobs);
+  give(2.7, 900);
+  waiting.shift().wrong(new Error('out of memory'));
+  assert.deepEqual([failing.broken(), failing.keepsUp(0), failing.ready(), waiting.length, told], ['out of memory', false, false, 0, 1]);
+  forgetRate();
+});
+
+test("a line whose clip isn't made by its time is left out, not said late, and if the worker fails the race runs on in silence", () => {
+  const races = recorded('test-joe', 1);
+  // A device that takes one and a half times as long to make a line as to say it, with nothing made
+  // before the gate. (The page would have given this race to the browser's voice: this is what happens to
+  // one he has taken when the making falls behind.)
+  let said = 0, unmade = 0;
+  for (const race of races.slice(0, 4)) {
+    const { cameUp, r, stats } = joeReplay(race, { rate: 1.5 });
+    const spoken = r.log.filter(x => x.ev === 'speak');
+    assert.equal(stats.said + stats.unmade + stats.dropped + stats.unfit, cameUp.size, `${race.no}: lines unaccounted for`);
+    assert.ok(stats.unmade > 0 && stats.cut === 0 && r.log.filter(x => x.ev === 'stop').length === 0, `${race.no}: ${stats.unmade} left out, ${stats.cut} cut`);
+    // What is said is said when it comes up: a clip that arrives late is not played late.
+    for (const x of spoken) assert.ok(x.t - cameUp.get(x.line).now <= 400, `${race.no}: "${x.text}" was said ${x.t - cameUp.get(x.line).now} ms after it came up`);
+    spoken.forEach((x, k) => { if (k) assert.ok(x.t >= spoken[k - 1].t + spoken[k - 1].seconds * 1000 - 1e-6, `${race.no}: "${x.text}" started over the line before`); });
+    said += spoken.length; unmade += stats.unmade;
+  }
+  assert.ok(said > 20 && unmade > 20, `${said} said, ${unmade} left out`);
+  // The worker fails on its eighth clip: the seven made are said, nothing after them is, nothing is said
+  // twice or by anyone else, and the race is replayed to its end.
+  for (const race of races.slice(4, 8)) {
+    const { cameUp, r, clips, stats } = joeReplay(race, { rate: 0.3, fails: n => n >= 8 });
+    const spoken = r.log.filter(x => x.ev === 'speak');
+    assert.equal(clips.broken(), 'out of memory');
+    assert.ok(spoken.length >= 5 && spoken.length <= 7 && stats.unmade >= cameUp.size - 7 && stats.cut === 0, `${race.no}: ${spoken.length} said, ${stats.unmade} left out of ${cameUp.size}`);
+    assert.ok([...cameUp.keys()].some(l => l.wire), `${race.no}: the race stopped short of the wire`);
+  }
+});
+
+test('a line that would still be going when the call at the wire is due is left out, not cut off', () => {
+  // The queue asks a voice that knows its lengths. Clips: a line of 2 s with 1.5 s to the wire is left out;
+  // with 1.9 s to go it's said, and the call at the wire waits the tenth of a second for it.
+  for (const [room, saidIt] of [[1.5, false], [1.9, true], [2.5, true]]) {
+    const lengths = { 'Copper Detour by a length!': 2, 'Copper Detour wins it by a length!': 2.4 };
+    let line = null, playing = null;
+    const r = rig({ voice: ({ clock, log }) => clipVoice({
+      clipFor(l) { line = l; return { seconds: lengths[l.text] }; },
+      play(clip, { onstart, onend }) {
+        const mine = playing = { text: line.text };
+        log.push({ ev: 'speak', t: clock.now(), text: line.text });
+        onstart();
+        clock.later(() => { if (playing === mine) { playing = null; log.push({ ev: 'end', t: clock.now(), text: mine.text }); onend(); } }, clip.seconds * 1000);
+        return () => { if (playing === mine) { playing = null; log.push({ ev: 'stop', t: clock.now(), cut: mine.text }); onend(); } };
+      },
+    }) });
+    const wireAt = room * 1000;
+    r.queue.speak({ text: 'Copper Detour by a length!' }, { room: () => (wireAt - r.now()) / 1000 });
+    r.advance(wireAt);
+    r.queue.speak({ text: 'Copper Detour wins it by a length!', wire: true, rank: 1 }, { room: () => Infinity });
+    r.advance(10000);
+    const speaks = r.log.filter(x => x.ev === 'speak');
+    assert.deepEqual(speaks.map(x => x.text), [...(saidIt ? ['Copper Detour by a length!'] : []), 'Copper Detour wins it by a length!'], `with ${room} s to the wire`);
+    assert.deepEqual([r.log.filter(x => x.ev === 'stop').length, r.queue.stats().cut, r.queue.stats().unfit], [0, 0, saidIt ? 0 : 1], `with ${room} s to the wire`);
+    assert.ok(speaks[speaks.length - 1].t - wireAt <= 200, `with ${room} s to the wire, the call at the wire came ${speaks[speaks.length - 1].t - wireAt} ms late`);
+  }
+});
+
+test('watched at 2x and 4x, Joe says what he has had time to make: nothing is cut off for it, and the winner is always called', () => {
+  // A change of speed or a skip plans the rest of the race again, in new words: their clips are made as the
+  // race goes on (here at a third of the time they take to say), each planned no sooner than it can be
+  // made. The lines at the wire are the same however the race is planned, so they're made already, with
+  // the rest of the plan made at the gate.
+  const races = recorded('test-joe', 2);
+  let after = 0, unmade = 0, checked = 0;
+  for (const [k, race] of races.entries()) {
+    for (const speed of [2, 4]) {
+      const skips = k % 4 === 1;
+      let changedAt = null, skipped = false;
+      const { live, cameUp, r, stats } = joeReplay(race, { rate: 1 / 3, ahead: true, each(frame, { r: me }) {
+        if (changedAt === null && frame.clock > 4) { changedAt = me.now(); frame.setSpeed(speed); }
+        if (skips && !skipped && frame.clock > 30) { skipped = true; frame.skip(); }
+      } });
+      const at = `${race.no} at ${speed}x${skips ? ', skipped' : ''}`;
+      const said = r.log.filter(x => x.ev === 'speak'), stops = r.log.filter(x => x.ev === 'stop');
+      // Nothing is cut off but by Skip (and by the call at the wire, if a line said before the change of
+      // speed is still going: a change of speed doesn't cut it off).
+      assert.ok(stops.length <= (skips ? 2 : 1), `${at}: ${stops.length} lines cut off: ${stops.map(x => x.cut).join(' / ')}`);
+      for (const stop of stops) { const then = said.find(x => x.t >= stop.t); assert.ok(skips || (then && then.line.wire), `${at}: "${stop.cut}" was cut off`); }
+      assert.ok(said.some(x => x.line.kind === 'off') && said.some(x => x.line.wire) && said.some(x => x.line.placings), `${at}: the off, the winner's line or the placings were never said`);
+      if (live.official) assert.ok(said.some(x => x.line.slot === 'official'), `${at}: after the photo, who won was never said`);
+      const later = said.filter(x => x.t > changedAt + 100);
+      assert.ok(later.some(x => x.line.lead !== undefined || x.line.pair), `${at}: nobody was said to lead after the change`);
+      for (const x of said) assert.ok(x.t - cameUp.get(x.line).now <= (x.line.placings || x.line.slot === 'official' ? 6000 : 1500), `${at}: "${x.text}" was said ${x.t - cameUp.get(x.line).now} ms after it came up`);
+      said.forEach((x, j) => { if (j) assert.ok(x.t >= said[j - 1].t + said[j - 1].seconds * 1000 - 1e-6 || stops.some(s => s.cut === said[j - 1].text), `${at}: "${x.text}" started over the line before`); });
+      assert.equal(stats.said + stats.unmade + stats.dropped + stats.unfit, cameUp.size, `${at}: lines unaccounted for`);
+      after += later.length; unmade += stats.unmade; checked++;
+    }
+  }
+  if (process.env.NUMBERS) console.log(`Joe at 2x and 4x: ${checked} races, ${after} lines said after the change, ${unmade} left out because their clip wasn't made in time`);
+  assert.ok(unmade <= after / 4, `${unmade} lines left out for ${after} said`);
 });

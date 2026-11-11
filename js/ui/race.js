@@ -11,6 +11,7 @@ import { BET_NAMES, cost as betCost, BASE } from '../tote.js';
 import { drawHorse } from '../draw/horse.js';
 import { oddsText, angles, newcomer } from '../handicap.js';
 import * as audio from '../audio.js';
+import { rehearse } from './watch.js';
 import { atmLine } from './card.js';
 
 const COND = { fast: 'ft', good: 'gd', sloppy: 'sly', muddy: 'my', firm: 'fm', yielding: 'yl', soft: 'sf' };
@@ -26,6 +27,9 @@ export function renderRace(root, nav, params) {
   const isNext = nxt && nxt.no === race.no;
   const tab = params.tab || (race.status === 'official' ? 'form' : 'form');
   let timer = null;
+  // With the downloaded voice calling, the lines of this race's call begin to be made while its form is
+  // read (once the page is up: working the race out takes a moment).
+  const early = isNext ? setTimeout(() => rehearse(race), 300) : null;
 
   const mtpBox = h('div', { class: 'mtp', 'aria-label': 'Minutes to post' });
   const head = h('div', { class: 'rhead' },
@@ -154,7 +158,7 @@ export function renderRace(root, nav, params) {
   tick();
   timer = setInterval(tick, 1000);
   show(current);
-  return () => { clearInterval(timer); if (stopPanel) stopPanel(); document.documentElement.style.removeProperty('--bar'); };
+  return () => { clearInterval(timer); clearTimeout(early); if (stopPanel) stopPanel(); document.documentElement.style.removeProperty('--bar'); };
 }
 
 // Who the race is for, under its name. A stakes isn't by invitation (only an invitational is): it's open to

@@ -7,15 +7,15 @@
 // refreshed only when a page that loads it is visited online, and the copy could mix two releases. So FILES is a
 // fingerprint of every file in SHELL: change any of them and test/e2e.mjs fails until FILES is changed to match (it
 // says what to), which changes this file, so every copy is made whole again at once.
-const CACHE = 'post-time-v6'; // bump the number when the file list changes (npm test checks the list)
-const FILES = 'a30b2c7f'; // test/e2e.mjs checks this
+const CACHE = 'post-time-v7'; // bump the number when the file list changes (npm test checks the list)
+const FILES = 'f5173f1b'; // test/e2e.mjs checks this
 const SHELL = [
   './', 'index.html', 'carry.js', 'icon.svg', 'icon-192.png', 'manifest.webmanifest',
   'css/app.css',
   'fonts/oswald.woff2', 'fonts/plex-condensed-400-italic.woff2', 'fonts/plex-condensed-400.woff2',
   'fonts/plex-condensed-600.woff2',
   'js/app.js', 'js/audio.js', 'js/call.js', 'js/chart.js', 'js/data.js', 'js/forum.js', 'js/game.js',
-  'js/handicap.js', 'js/joe-speech.js', 'js/joe-worker.js', 'js/joe.js', 'js/rng.js', 'js/sim.js', 'js/tote.js', 'js/track.js', 'js/world.js',
+  'js/handicap.js', 'js/joe-call.js', 'js/joe-speech.js', 'js/joe-worker.js', 'js/joe.js', 'js/rng.js', 'js/sim.js', 'js/tote.js', 'js/track.js', 'js/world.js',
   'js/draw/circle.js', 'js/draw/horse.js', 'js/draw/photo.js', 'js/draw/scene.js',
   'js/ui/book.js', 'js/ui/card.js', 'js/ui/dom.js', 'js/ui/race.js', 'js/ui/results.js', 'js/ui/watch.js',
 ];

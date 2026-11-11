@@ -7,16 +7,51 @@ import { photoFinish } from '../draw/photo.js';
 import { stateAt, runningOrder } from '../sim.js';
 import { FURLONG } from '../track.js';
 import { marginShort, marginText, fmtTime, fmtClock } from '../chart.js';
-import { game, save, goToGate, callFor, runnersFor, raceLabel, horseOf, myBets, betCost } from '../game.js';
+import { game, save, goToGate, recordingOf, memoKey, callFor, runnersFor, raceLabel, horseOf, myBets, betCost } from '../game.js';
 import { BET_NAMES } from '../tote.js';
 import { clockText } from '../world.js';
-import { pace, officialLine, SLOW } from '../call.js';
+import { pace, climb, officialLine, SLOW } from '../call.js';
+import { planSeconds, jobsFor } from '../joe-call.js';
 import * as audio from '../audio.js';
+
+// ---------------------------------------------------------------- the call in the downloaded voice
+
+// With Joe the caller's voice (js/joe.js), a race's call is planned for him: at his pace, which opens
+// quicker than a browser's voice is ever asked to go and climbs through the stretch, and with his own
+// time over each line. His plan of a race is the same whenever it's made, so its lines can be made into
+// sound ahead of the race (js/joe-call.js).
+const joePlan = (race, run, opts) => callFor(race, run, { lineSeconds: planSeconds(climb), ...opts });
+// What that plan asks of him: each line as he's given it, with its speed, its time and the room it has.
+const joeJobs = (call, run) => jobsFor(call, run.finalTime, climb, call.official ? officialLine(call.official).say : null);
+// The race that's up next, while its form is being read: the call is planned and its lines begin to be
+// made. Nothing of the result is shown, kept or settled by it.
+export function rehearse(race) {
+  if (!audio.joeCanCall() || race.status === 'official') return;
+  const run = recordingOf(race);
+  audio.rehearse(memoKey(race), joeJobs(joePlan(race, run), run));
+}
 
 export function renderWatch(el, nav, params) {
   const race = game.world.cards[game.world.day].races.find(r => r.no === params.no);
+  // The race as it will be run. Which voice calls it is decided here, before it's settled, so that the
+  // one save a race makes as it goes to the gate keeps that too.
+  const run = recordingOf(race);
+  // The gate has an order to it with the sound and the voice both on: the bugle, then the caller's first
+  // line, then the bell. The caller waits for the bugle to end and the gates wait for the caller, so a
+  // race with a name stands in the gate a little longer.
+  const bugle = game.player.settings.sound ? audio.bugle() / 1000 : 0;
+  // Joe calls it if he's the voice chosen and its lines are made, or will be made in time on this device
+  // (audio.joeTakes); the browser's voice calls it otherwise, all of it. If he couldn't keep up, the menu
+  // says so until he has called a race again.
+  let joeCalls = false;
+  let call = null;
+  audio.primeVoice(); // this is inside the tap that started the race, from the form or from Watch again
+  if (audio.joeCanCall()) {
+    const his = joePlan(race, run, { bugle, lead: () => (joeCalls ? audio.joeLead() : 0) });
+    joeCalls = audio.joeTakes(memoKey(race), joeJobs(his, run));
+    if (joeCalls) { call = his; delete game.player.settings.callerBehind; } else game.player.settings.callerBehind = true;
+  }
   const result = goToGate(race);
-  const run = result.run;
   const runners = runnersFor(race);
   const t0 = run.t0;
   const endT = run.frames.length * run.dt;
@@ -78,15 +113,14 @@ export function renderWatch(el, nav, params) {
   const scene = new RaceScene(canvas, { race, run, runners, wx: game.world.cards[game.world.day].wx });
   // The call is planned here, at the gate, for the voice that will read it: how long this voice takes over
   // a line decides which lines fit where. (With the voice off it's planned the same way, so the call box
-  // shows the same lines either way.) With the sound and the voice both on, the gate has an order to it:
-  // the bugle, then the caller's first line, then the bell. The caller waits for the bugle to end and the
-  // gates wait for the caller, so a race with a name stands in the gate a little longer.
-  const bugle = game.player.settings.sound ? audio.bugle() / 1000 : 0;
-  const call = callFor(race, run, {
+  // shows the same lines either way.)
+  if (!call) call = callFor(race, run, {
     lineSeconds: (line, toWire) => audio.voiceSeconds(line.say, pace(line, toWire).rate),
     factor: audio.voiceFactor,
     bugle: audio.voiceEnabled() ? bugle : 0,
   });
+  // His lines for the rest of the race, when the plan has changed under him (another speed, a skip).
+  const rehearseAgain = () => { if (joeCalls) audio.rehearse(memoKey(race), joeJobs(call, run)); };
   let T = -call.gate;      // sim time; negative is the wait in the gate
   let speed = 1;
   let last = performance.now();
@@ -111,7 +145,7 @@ export function renderWatch(el, nav, params) {
   // The call is read at every speed. A change of speed doesn't cut off the line being said: the rest of
   // the race is planned again from where it is, in shorter lines at 2x and only the headlines at 4x.
   function setSpeed(s) {
-    if (s !== speed) call.setSpeed(s, callClock() - t0, seconds());
+    if (s !== speed) { call.setSpeed(s, callClock() - t0, seconds()); rehearseAgain(); }
     speed = s;
     speedBtns.forEach((b, i) => b.setAttribute('aria-pressed', String([1, 2, 4][i] === s)));
   }
@@ -131,6 +165,7 @@ export function renderWatch(el, nav, params) {
     }
     // The caller picks the race up from there.
     call.skip(T - t0, seconds());
+    rehearseAgain();
   }
 
   function frame(tNow) {
@@ -205,7 +240,9 @@ export function renderWatch(el, nav, params) {
     now.textContent = line.text;
     fitCall();
     now.style.animation = 'none'; void now.offsetWidth; now.style.animation = '';
-    if (!quiet) audio.say(line, { ...pace(line, winT - T), clock: callClock });
+    // (`room` is for a voice that knows a line's length to the sample: one that would still be going when
+    // the call at the wire is due is left out, not cut off.)
+    if (!quiet) audio.say(line, { ...pace(line, winT - T), clock: callClock, room: () => call.toWire(callClock() - t0) });
   }
 
   // A long line on a narrow screen gets a smaller size rather than spilling out of the box. The line
@@ -465,6 +502,7 @@ export function renderWatch(el, nav, params) {
     cancelAnimationFrame(raf);
     audio.stopRace();
     audio.hush({ finish: toResults });
+    audio.endCall();
     stopResizing();
     el.hidden = true;
     clear(el);

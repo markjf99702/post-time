@@ -2260,6 +2260,10 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
 // of it clipped, and played through the game's own sound output at the pace it was made at. He works with
 // no connection, an update of the game leaves him where he is, a download that's damaged falls back to
 // the browser's voice, and he can be taken off the device again.
+//
+// And he calls a race: one whole race at 1x, its lines made ahead while its form is up, every line said
+// as it comes up and none over another, the call at the wire on time. A race he can't have the lines
+// ready for, and one his worker fails on, are called by the browser's voice, all of them.
 {
   const { createServer } = await import('node:http');
   const { readFile } = await import('node:fs/promises');
@@ -2306,18 +2310,21 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
     const list = [{ name: 'Chrome OS US English 1', lang: 'en-US', localService: true }, { name: 'Chrome OS US English 4', lang: 'en-US', localService: true }];
     Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
       getVoices: () => list, cancel() {}, addEventListener() {},
-      speak(u) { window.__said.push({ text: u.text, voice: u.voice ? u.voice.name : null, silent: u.volume === 0 }); setTimeout(() => u.onstart && u.onstart({}), 20); setTimeout(() => u.onend && u.onend({}), 150); },
+      speak(u) { window.__said.push({ text: u.text, voice: u.voice ? u.voice.name : null, silent: u.volume === 0, at: performance.now() }); setTimeout(() => u.onstart && u.onstart({}), 20); setTimeout(() => u.onend && u.onend({}), 150); },
     } });
     const Sound = window.AudioContext;
     window.AudioContext = class extends Sound { constructor(...a) { super(...a); window.__outputs.push(this); } };
     const start = AudioBufferSourceNode.prototype.start;
-    AudioBufferSourceNode.prototype.start = function (...a) { if (this.buffer && this.buffer.sampleRate === 22050) window.__played.push(this); return start.apply(this, a); };
+    AudioBufferSourceNode.prototype.start = function (...a) {
+      if (this.buffer && this.buffer.sampleRate === 22050) { window.__played.push(this); this.__at = performance.now(); this.__T = window.__watch ? window.__watch.T : null; this.addEventListener('ended', () => { this.__ended = performance.now(); }); }
+      return start.apply(this, a);
+    };
     const persist = StorageManager.prototype.persist;
     StorageManager.prototype.persist = function () { window.__keep++; return persist.call(this); };
     // And the speed each line is asked of the downloaded voice's worker at.
-    window.__speeds = [];
+    window.__speeds = []; window.__asked = [];
     const post = Worker.prototype.postMessage;
-    Worker.prototype.postMessage = function (message, ...rest) { if (message && message.type === 'speak') window.__speeds.push(message.speed); return post.call(this, message, ...rest); };
+    Worker.prototype.postMessage = function (message, ...rest) { if (message && message.type === 'speak') { window.__speeds.push(message.speed); window.__asked.push([message.text, message.speed]); } return post.call(this, message, ...rest); };
   });
   const page = await ctx.newPage();
   const problems = [], left = [];
@@ -2450,10 +2457,11 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   //
   // The model draws each sound's length at random, and asked to talk faster it shortens a line by less than
   // the speed asked. Python Piper's own sound of this line, forty goes at each speed: 3.08 s at his own speed,
-  // 2.85 s at 1.15 times it and 2.39 s at 1.5 times it, each give or take 0.05 s. So his own speed is told
-  // from 1.5 times it, where one go against another came out between 1.20 and 1.39 times as long (1.29 in
-  // the middle). It used to be told from 1.15 times it, expecting 1.05 to 1.27: those are 1.08 apart in the
-  // middle and anything from 1.01 to 1.14 in one go, so the check failed one run in six.
+  // 2.85 s at 1.15 times it and 2.39 s at 1.5 times it, each give or take 0.05 s (and 2.64 s at 1.3, the speed
+  // his call opens at, in fifteen goes). So his own speed is told from 1.5 times it, where one go against
+  // another came out between 1.20 and 1.39 times as long (1.29 in the middle). It used to be told from 1.15
+  // times it, expecting 1.05 to 1.27: those are 1.08 apart in the middle and anything from 1.01 to 1.14 in
+  // one go, so the check failed one run in six.
   const made = await page.evaluate(async text => {
     const joe = await import('./js/joe.js');
     const one = async speed => { const c = await joe.speak(text, speed, { ids: true }); return { seconds: c.seconds, exact: c.seconds === c.samples.length / c.rate && c.rate === 22050, ids: c.ids }; };
@@ -2505,6 +2513,132 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   await page.click('#hearIt');
   await page.waitForFunction(() => window.__played.length === 1, null, { timeout: 60000 });
 
+  // ------------------------------------------------------------ he calls a race
+  //
+  // A meet whose first race is five furlongs with a photo at the end of it, so the whole of a call is
+  // here in a minute and a half: the gate, the running, slow motion to the wire, the placings, and the
+  // winner's line when the sign goes up.
+  await page.evaluate(async () => {
+    const { createWorld } = await import('./js/world.js');
+    const { game, save } = window.postTime;
+    game.world = createWorld('joe-e2e-31', '2026-11-14');
+    Object.assign(game.player, { bank: 200, bets: {}, settled: {}, ledger: [], book: [], opened: {} });
+    game.player.settings.sound = true;
+    save();
+  });
+  await page.reload();
+  await page.waitForSelector('.races', { timeout: 60000 });
+  await page.evaluate(async () => { window.__audio = await import('./js/audio.js'); window.__joe = await import('./js/joe.js'); });
+  await page.waitForFunction(() => window.__joe.status().state === 'ready', null, { timeout: 15000 });
+  // The race's page: with nothing asked of the player, the lines of its call begin to be made. Nothing of
+  // the result is shown, kept or settled by that.
+  await page.evaluate(() => { window.__asked.length = 0; window.__played.length = 0; window.__said.length = 0; window.postTime.nav.go('race', { no: 1 }); });
+  await page.waitForFunction(() => { const r = window.__audio.rehearsal(); return r && r.ready && !r.up; }, null, { timeout: 120000 });
+  const rehearsed = await page.evaluate(() => {
+    const { game, nextRace } = window.postTime, kept = JSON.parse(localStorage.getItem('post-time/world')).cards[game.world.day].races[0];
+    return { ...window.__audio.rehearsal(), asked: window.__asked.slice(), status: [nextRace().no, kept.status, 'result' in kept, game.player.bank, Object.keys(game.player.settled).length], played: window.__played.length, shown: document.getElementById('watch').hidden };
+  });
+  assert.deepEqual([rehearsed.status, rehearsed.played, rehearsed.shown, rehearsed.calling], [[1, 'upcoming', false, 200, 0], 0, true, false], "making the call ahead settled the race, or showed or said something of it");
+  // Every line is made once (one that came out too long for its room, once more, faster), each at a speed
+  // between the one the call opens at and his top speed; and with the last of them made the worker is ended.
+  assert.ok(rehearsed.clips >= 20 && rehearsed.clips === rehearsed.wanted && rehearsed.asked.length >= rehearsed.clips && rehearsed.asked.length <= rehearsed.clips + 6, `${rehearsed.asked.length} clips made for ${rehearsed.wanted} lines`);
+  assert.ok(rehearsed.asked.every(([, speed]) => speed >= 1.3 && speed <= 1.5) && rehearsed.asked[0][1] === 1.3, `the speeds asked of him: ${rehearsed.asked.map(a => a[1])}`);
+  assert.equal(rehearsed.up, false, 'with the race rehearsed, his worker is still holding its memory');
+
+  // To the gate. He takes the race, and the plan is his: its lines are the ones that were made.
+  await page.evaluate(() => { window.__watch = null; });
+  await page.click('.post-bar .btn.brass');
+  await page.waitForFunction(() => window.__watch, null, { timeout: 15000 });
+  const plan = await page.evaluate(() => {
+    const w = window.__watch;
+    // The moment the winner reaches the wire, on the page's clock.
+    window.__wire = null;
+    const look = () => { if (w.T >= w.winT) window.__wire = performance.now(); else requestAnimationFrame(look); };
+    look();
+    return { photo: w.call.photo, official: w.call.official, t0: w.t0, calling: window.__audio.rehearsal().calling, lines: w.call.timetable().map(x => ({ say: x.line.say, t: x.line.t, wire: !!x.line.wire })) };
+  });
+  assert.deepEqual([plan.calling, plan.photo, plan.lines.every(l => rehearsed.asked.some(a => a[0] === l.say))], [true, true, true], "the race's plan at the gate is not the one that was rehearsed");
+  await page.waitForFunction(() => { const b = [...document.querySelectorAll('.w-ctl button')].find(x => /Results/.test(x.textContent)); return b && !b.hidden; }, null, { timeout: 180000 });
+  // ...and the winner's line, which comes with the official sign, to its end.
+  await page.waitForFunction(n => window.__played.length === n && window.__played[n - 1].__ended, plan.lines.length + 1, { timeout: 30000 });
+  const called = await page.evaluate(() => ({
+    clips: window.__played.map(c => ({ at: c.__at, T: c.__T, ended: c.__ended, seconds: c.buffer.duration, pace: c.playbackRate.value, through: c.context === window.__outputs[0] })),
+    browser: window.__said.filter(u => !u.silent).length, wire: window.__wire, stats: window.__audio.callStats(), asked: window.__asked.length, up: window.__joe.running(),
+    outputs: window.__outputs.length, behind: 'callerBehind' in JSON.parse(localStorage.getItem('post-time/player')).settings,
+  }));
+  // One voice: his. Every line of the plan and then the winner's, once each, through the game's one sound
+  // output, played as made. Nothing more was asked of his worker, which stayed down.
+  assert.deepEqual([called.browser, called.clips.length, called.outputs, called.clips.every(c => c.through && c.pace === 1), called.asked, called.up, called.behind],
+    [0, plan.lines.length + 1, 1, true, rehearsed.asked.length, false, false]);
+  assert.deepEqual([called.stats.cut, called.stats.dropped, called.stats.unmade, called.stats.unfit], [0, 0, 0, 0], 'lines of his call were cut off or left out');
+  called.clips.forEach((clip, k) => {
+    const line = plan.lines[k], ran = (clip.ended - clip.at) / 1000;
+    // Each line starts as it comes up on the plan, by the race's own clock (within three tenths of a second:
+    // a frame or two, and a moment's wait if the line before ran long), runs the length of its clip, and
+    // is over before the next starts.
+    if (line) {
+      const late = clip.T - plan.t0 - line.t;
+      assert.ok(late > -0.02 && late < 0.3, `"${line.say}" started ${late.toFixed(2)} s from its time on the plan`);
+    }
+    assert.ok(Math.abs(ran - clip.seconds) < 0.25, `"${line ? line.say : plan.official}" ran ${ran.toFixed(2)} s; its clip is ${clip.seconds.toFixed(2)} s long`);
+    if (k) assert.ok(clip.at >= called.clips[k - 1].ended - 20, `"${line ? line.say : plan.official}" started ${(called.clips[k - 1].ended - clip.at).toFixed(0)} ms before the line before it had ended`);
+  });
+  // The call at the wire, within a quarter of a second of the winner getting there.
+  const wireCall = called.clips[plan.lines.findIndex(l => l.wire)];
+  assert.ok(wireCall.at - called.wire >= 0 && wireCall.at - called.wire < 250, `the call at the wire came ${((wireCall.at - called.wire) / 1000).toFixed(2)} s after the wire`);
+  assert.deepEqual(await page.evaluate(() => { const v = window.__audio.downloadedVoice(); return [v.reading, v.behind, v.problem]; }), [true, false, '']);
+
+  // Watch again, in the same visit. The race's clips went with it, so nothing is made; but this device has
+  // been timed by now, and at its rate each line will be made before it's needed, so he takes the race
+  // and makes them as it runs. The Sound button stops him in the middle of a line, at once, and he says
+  // nothing more until it's on again; leaving the race stops him too, lets the clips go and ends his worker.
+  // (On a machine too busy to have kept up just now he doesn't take it, and there's nothing to check.)
+  await page.evaluate(() => { window.__watch.leave('result'); window.__watch = null; window.__played.length = 0; window.__said.length = 0; });
+  await page.click('text=Watch again');
+  await page.waitForFunction(() => window.__watch, null, { timeout: 15000 });
+  if (await page.evaluate(() => { const r = window.__audio.rehearsal(); return !!r && r.calling && !r.ready; })) {
+    const midLine = () => page.waitForFunction(() => { const c = window.__played[window.__played.length - 1]; return c && c.buffer.duration > 1.8 && !c.__ended && performance.now() - c.__at > 400; }, null, { timeout: 60000, polling: 50 });
+    const stopped = () => page.evaluate(async () => {
+      const n = window.__played.length, c = window.__played[n - 1];
+      await new Promise(r => setTimeout(r, 250));
+      return { early: !!c.__ended && (c.__ended - c.__at) / 1000 < c.buffer.duration - 0.5, n };
+    });
+    await midLine();
+    await page.evaluate(() => [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === 'Sound').click());
+    const hushed = await stopped();
+    await page.waitForTimeout(3500);
+    assert.deepEqual([hushed.early, await page.evaluate(() => window.__played.length)], [true, hushed.n], 'the Sound button did not stop him at once, or he went on with the call');
+    await page.evaluate(() => [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === 'Sound').click());
+    await page.waitForFunction(n => window.__played.length > n, hushed.n, { timeout: 30000 });
+    await midLine();
+    await page.evaluate(() => window.__watch.leave('card'));
+    const left = await stopped();
+    await page.waitForFunction(() => !window.__joe.running(), null, { timeout: 15000 });
+    assert.deepEqual([left.early, await page.evaluate(() => [window.__audio.rehearsal(), window.__played.length, window.__said.filter(u => !u.silent).length]), await page.evaluate(() => window.postTime.game.player.settings.sound)],
+      [true, [null, left.n, 0], true], 'leaving the race did not stop him at once and let his clips go');
+  } else console.log("  (this machine was too busy for Joe to take a race with nothing made: stopping him mid-line wasn't checked)");
+
+  // A race he can't have ready: on a new visit, Watch again is tapped before anything of the call has been
+  // made on this device. The browser's voice calls all of it, he says nothing, his worker is let go, and
+  // the menu says why.
+  await page.evaluate(() => { if (!document.getElementById('watch').hidden) window.__watch.leave('card'); });
+  await page.reload();
+  await page.waitForSelector('.races', { timeout: 60000 });
+  await page.evaluate(async () => { window.__audio = await import('./js/audio.js'); window.__joe = await import('./js/joe.js'); });
+  await page.waitForFunction(() => window.__joe.status().state === 'ready', null, { timeout: 15000 });
+  await page.evaluate(() => window.postTime.nav.go('result', { no: 1 }));
+  await page.click('text=Watch again');
+  await page.waitForFunction(() => window.__watch, null, { timeout: 15000 });
+  await page.waitForFunction(() => window.__said.filter(u => !u.silent).length >= 2, null, { timeout: 30000 });
+  await page.evaluate(() => { const w = window.__watch; w.setT(w.winT - 3); });
+  await page.waitForFunction(() => { const b = [...document.querySelectorAll('.w-ctl button')].find(x => /Results/.test(x.textContent)); return b && !b.hidden; }, null, { timeout: 60000 });
+  const cold = await page.evaluate(() => ({ browser: window.__said.filter(u => !u.silent).map(u => u.voice), joe: window.__played.length, up: window.__joe.running(), rehearsal: window.__audio.rehearsal(), behind: window.postTime.game.player.settings.callerBehind }));
+  assert.ok(cold.browser.length >= 4 && cold.browser.every(v => v === BROWSER), `the browser's voice said ${cold.browser.length} lines`);
+  assert.deepEqual([cold.joe, cold.up, cold.rehearsal, cold.behind], [0, false, null, true], 'a race he could not have ready was not left to the browser\'s voice');
+  await page.evaluate(() => window.__watch.leave('result'));
+  await page.click('#menuBtn');
+  assert.deepEqual([(await menu()).reading, (await menu()).joe], ['Reading in Joe', `Joe couldn't keep up on this device last time, so ${BROWSER} called the race. He'll try again at the next one.`]);
+
   // With another voice chosen he's still on the device, and on the next visit the list says so: "Joe", not
   // a download to make again. Looking for him fetches nothing. (The list said "Joe (a 76 MB download)".)
   await page.selectOption('#optVoiceName', '');
@@ -2535,6 +2669,21 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   assert.deepEqual(await browserSaid(), [[SAMPLE, BROWSER]], "with the downloaded voice unable to start, the browser's voice should read");
   const failed = await menu();
   assert.deepEqual([failed.reading, failed.joe, failed.remove], [`Reading in ${BROWSER}`, `Joe couldn't be started on this device, so ${BROWSER} reads the call. (phonemize/piper_phonemize.wasm is missing from the download)`, 'Remove Joe']);
+  // The same when it's a race that finds it out: on a new visit, the next race's page starts on its call,
+  // his worker fails, and the race is called by the browser's voice, with nothing said by him.
+  await page.reload();
+  await page.waitForSelector('.races', { timeout: 60000 });
+  await page.evaluate(async () => { window.__audio = await import('./js/audio.js'); window.postTime.nav.go('race', { no: 2 }); });
+  await page.waitForFunction(() => window.__audio.downloadedVoice().problem !== '', null, { timeout: 30000 });
+  await page.click('.post-bar .btn.brass');
+  await page.waitForFunction(() => window.__watch && window.__said.filter(u => !u.silent).length >= 2, null, { timeout: 30000 });
+  await page.evaluate(() => { const w = window.__watch; w.setT(w.winT - 3); });
+  await page.waitForFunction(() => { const b = [...document.querySelectorAll('.w-ctl button')].find(x => /Results/.test(x.textContent)); return b && !b.hidden; }, null, { timeout: 60000 });
+  const broken = await page.evaluate(() => ({ browser: window.__said.filter(u => !u.silent).map(u => u.voice), joe: window.__played.length, problem: window.__audio.downloadedVoice().problem, official: window.postTime.nextRace().no }));
+  assert.ok(broken.browser.length >= 4 && broken.browser.every(v => v === BROWSER), `with his worker failing, the browser's voice said ${broken.browser.length} lines`);
+  assert.deepEqual([broken.joe, broken.problem, broken.official], [0, 'phonemize/piper_phonemize.wasm is missing from the download', 3]);
+  await page.evaluate(() => window.__watch.leave('card'));
+  await open();
 
   // Taking him off the device: two taps, the second not straight after the first. The browser's voice is
   // the choice again, and he's offered as a download.
