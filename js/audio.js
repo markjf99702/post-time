@@ -223,6 +223,15 @@ const APPLE = /^(Samantha|Ava|Zoe|Allison|Evan|Nathan|Tom|Joelle|Karen|Daniel|Mo
 // A voice's language the way the standard writes it. Android gives "en_US", and Firefox there "eng-US-f000".
 const langOf = v => String(v.lang || '').replace(/_/g, '-').toLowerCase().replace(/^eng(?=-|$)/, 'en');
 const needsNet = v => v.localService === false;
+// The language a line is sent in: the voice's own, as the standard writes it ("en-GB"), and American
+// English when no voice is picked. Chrome on Android hands its speech engine the line's language and never
+// a voice by name (TtsPlatformImpl.java sets the engine's language from the utterance's), so a line sent as
+// en-US was read by the American voice whichever "voice" was chosen in the menu.
+export function langFor(v) {
+  const [lang, region] = v ? langOf(v).split('-') : [];
+  if (!lang) return 'en-US';
+  return /^([a-z]{2}|\d{3})$/.test(region || '') ? `${lang}-${region.toUpperCase()}` : lang;
+}
 
 // How good a voice is for the call, or -1 for one that can't be used. The better kinds first: the two of a
 // Chromebook's own voices that were picked by ear, the natural voices in Edge and on a Chromebook, the ones
@@ -560,8 +569,8 @@ const browserVoice = {
   speak(line, { rate, pitch, volume, onstart, onend, onerror }) {
     const u = new SpeechSynthesisUtterance(line.say || line.text);
     if (pickedOnline !== online()) pick(); // gone offline, or back: a voice that needs the internet comes and goes with it
-    // The language is always set: Android speaks by language, not by a named voice.
-    u.lang = 'en-US';
+    // The language is always set, and it's the voice's own: Android speaks by language, not by a named voice.
+    u.lang = langFor(picked);
     if (picked) u.voice = picked;
     u.rate = engineRate(rate, engine); // the number this engine needs for that pace
     u.pitch = Math.min(1, pitch); // never higher than the voice's own pitch: see FASTEST
@@ -635,7 +644,7 @@ export function primeVoice() {
     const u = new SpeechSynthesisUtterance('a');
     u.volume = 0;
     u.rate = engineRate(FASTEST, engine);
-    u.lang = 'en-US';
+    u.lang = langFor(picked);
     if (picked) u.voice = picked;
     synth().speak(u);
   } catch { /* a browser that won't: the tap carries on, and the call's own lines find out */ }

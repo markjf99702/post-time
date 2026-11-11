@@ -752,6 +752,11 @@ assert.ok(sample[0].rate > 1.15 && sample[0].rate <= 1.2 && sample[0].pitch === 
 await page.selectOption('#optVoiceName', 'Samantha');
 assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('post-time/player')).settings.voiceName), 'Samantha', "the voice chosen isn't saved");
 assert.deepEqual((await hearIt()).map(u => u.voice), ['Samantha'], 'Hear it should say one line, in the voice chosen');
+// The line goes out in the language of the voice chosen: on an Android phone that is what picks the voice.
+await page.selectOption('#optVoiceName', 'Daniel');
+assert.deepEqual((await hearIt()).map(u => [u.voice, u.lang]), [['Daniel', 'en-GB']], 'Hear it should be sent in the language of the voice chosen');
+await page.selectOption('#optVoiceName', 'Samantha');
+assert.deepEqual((await hearIt()).map(u => [u.voice, u.lang]), [['Samantha', 'en-US']]);
 await page.reload();
 await page.waitForSelector('.races');
 await page.click('#menuBtn');

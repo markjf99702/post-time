@@ -156,6 +156,37 @@ test('a voice chosen in the menu is used while it is there, and kept while it is
   assert.equal(last().voice.name, 'Ava (Premium)');
 });
 
+test("a line is sent in the language of the voice that reads it, which is how an Android phone picks its voice", () => {
+  // Every line went out as en-US whatever voice was chosen. Chrome on Android hands its engine the line's
+  // language and never a voice by name (TtsPlatformImpl.java, speak(): setLanguage from the utterance's lang),
+  // so all six of the "voices" its menu offered were read by the American one.
+  audio.setVoice(true);
+  const android = lists['Chrome, Android (United States first)'];
+  arrive(android);
+  audio.setVoiceName(null);
+  audio.say('Down the backstretch.');
+  assert.deepEqual([last().voice.name, last().lang], ['English United States', 'en-US'], 'the best voice there, in its own language written the standard way');
+  audio.setVoiceName('English United Kingdom');
+  audio.say('Around the far turn.');
+  assert.deepEqual([last().voice.name, last().lang], ['English United Kingdom', 'en-GB'], 'a British voice chosen in the menu is sent as American English');
+  audio.setVoiceName('English');
+  audio.say('Turning for home.');
+  assert.deepEqual([last().voice.name, last().lang], ['English', 'en']);
+  // Firefox there writes it "eng-GB-f000".
+  arrive(lists['Firefox, Android']);
+  audio.setVoiceName('English (United Kingdom)');
+  audio.say('A furlong to go.');
+  assert.deepEqual([last().voice.name, last().lang], ['English (United Kingdom)', 'en-GB']);
+  // A voice by name on an iPhone, the same.
+  arrive(IPHONE);
+  audio.setVoiceName('Daniel');
+  audio.say('At the sixteenth pole.');
+  assert.deepEqual([last().voice.name, last().lang], ['Daniel', 'en-GB']);
+  audio.setVoiceName(null);
+  // The standard form of each way a browser writes it, and American English when there's no voice to go by.
+  assert.deepEqual([null, { lang: '' }, { lang: 'en_AU' }, { lang: 'eng-US-f000' }, { lang: 'en' }, { lang: 'EN-gb' }].map(audio.langFor), ['en-US', 'en-US', 'en-AU', 'en-US', 'en', 'en-GB']);
+});
+
 test('a list of voices that arrives late is used from then on, and the language is always set', () => {
   // Chrome's list is empty until it has loaded. Nothing listened for it arriving, so the first lines
   // went out in whatever voice the browser fell back on.
@@ -168,7 +199,7 @@ test('a list of voices that arrives late is used from then on, and the language 
   arrive(IPHONE);
   audio.say('Copper Detour goes right to the front.');
   assert.deepEqual([last().voice.name, last().lang], ['Samantha', 'en-US']);
-  // Android speaks by language, and writes it en_US: the utterance's own language is still en-US.
+  // Android speaks by language, and writes it en_US: the line goes out in the voice's language, written en-US.
   arrive(lists['Chrome, Android (list in alphabetical order)']);
   audio.say('The quarter in twenty-two and three.');
   assert.deepEqual([last().voice.name, last().lang], ['English United States', 'en-US']);
