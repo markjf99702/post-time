@@ -14,6 +14,8 @@ import { makeTote, board, settle } from './tote.js';
 export const HISTORY_DAYS = 10;
 export const BARN = 210;
 export const CARD_SIZE = 8;
+// The fewest maidens the barn is let run down to: enough for two maiden races a week.
+const MAIDENS = 44;
 
 export const CLASSES = {
   MCL: { par: 60, purse: 24000, maiden: true, claim: 20000, short: 'MdClm', long: 'Maiden Claiming' },
@@ -183,12 +185,25 @@ function endOfDay(world, day) {
       h.pps = h.pps.slice(-1); h.works = []; // keep the save small
     }
   }
+  // The two maiden races on every card turn two maidens into winners every week, and horses shipped in only
+  // to fill the places of the ones retired: after about twenty race days the barn ran short of horses that
+  // had never won, and the maiden races were opened to winners as $10,000 claimers (race 1 was a maiden
+  // race on 20% of race days 41 to 60). So when fewer than 44 horses in the barn are maidens, up to three of
+  // the slowest winners of five or older that didn't run today go home, and the horses that ship in that
+  // day are three-year-olds, most of them maidens.
+  const running = world.horses.filter(h => !h.retired);
+  const short = Math.max(0, MAIDENS - running.filter(h => h.maiden).length);
+  if (short) {
+    const old = running.filter(h => !h.maiden && h.last !== day && ageOf(world, h, day) >= 5).sort((a, b) => a.ability - b.ability);
+    for (const h of old.slice(0, Math.min(3, Math.ceil(short / 8)))) { h.retired = true; h.pps = h.pps.slice(-1); h.works = []; }
+  }
   // They first run on the next race day, and are three, four or five then. (Their foaling year used to
   // be counted from the meet's first race day, so after a New Year they arrived a year older than drawn,
   // and no three-year-old ever came again. Horses already in a barn keep the age they've been shown at.)
   const active = world.horses.filter(h => !h.retired).length;
   for (let i = active; i < BARN; i++) {
-    const h = newHorse(world, R, { age: R.weighted([[3, 70], [4, 20], [5, 10]]), id: world.horses.length, day: day + 1 });
+    const age = R.weighted([[3, 70], [4, 20], [5, 10]]);
+    const h = newHorse(world, R, { age: short ? 3 : age, id: world.horses.length, day: day + 1 });
     world.horses.push(h);
     addWork(world, h, day + 1, R); addWork(world, h, day + 1, R);
   }

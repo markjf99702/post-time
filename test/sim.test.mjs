@@ -165,6 +165,24 @@ test('a stakes is weighted from the top down: 124 for the best, 126 in a Handica
   assert.ok(floor < all.length / 3, `${floor} of ${all.length} stakes starters carried the 114 floor`);
 });
 
+// Two maiden races a week turned two maidens into winners, and horses shipped in only to replace the ones
+// retired: in one meet race 1 was a maiden claimer on 45% of race days 21 to 40 and 20% of days 41 to 60.
+test('the card keeps its two maiden races all meet: races 1 and 3 are for maidens on nine cards in ten', () => {
+  const w = createWorld('maidens', '2026-09-26');
+  let both = 0, cards = 0, late = 0;
+  for (let d = 0; d < 60; d++) {
+    const races = w.cards[w.day].races;
+    const ok = races[0].cls === 'MCL' && races[2].cls === 'MSW';
+    cards++; if (ok) both++;
+    if (d >= 40 && ok) late++;
+    for (const r of races) applyResult(w, r, simulateRace(r, w, { record: false }), r.entries.map(() => 5));
+    nextDay(w);
+  }
+  assert.ok(both >= 0.9 * cards, `races 1 and 3 were maiden races on ${both} of ${cards} cards`);
+  assert.ok(late >= 18, `and on ${late} of race days 41 to 60`);
+  assert.ok(JSON.stringify(w).length < 1_500_000, 'the save stays small');
+});
+
 test('horses that ship in are three, four or five on the day they arrive, whatever year the meet began', () => {
   // A newcomer's foaling year was counted from the meet's first race day, so one drawn at three after a
   // New Year arrived at four, after two New Years at five, and so on: no three-year-old ever came
