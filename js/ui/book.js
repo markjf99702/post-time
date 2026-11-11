@@ -6,6 +6,7 @@ import { TIPSTERS } from '../data.js';
 import { longDate, dayDate, dateISO } from '../world.js';
 import { photoCard } from './results.js';
 import { MOVING } from './race.js';
+import { JOE, offered as joeOffered } from '../joe.js';
 
 export function renderBook(root, nav) {
   const p = game.player;
@@ -92,6 +93,8 @@ export function renderHelp(root, nav) {
       h('h3', {}, 'The race'),
       h('p', {}, 'The camera follows the leaders. Tap a number in the running order to follow one horse instead. The little map shows the whole field on the oval. In a close finish the placing judges read the photo. It comes from a finish-line camera that only sees the line, so the horses in it are stretched and squashed by their speed.'),
       h('p', {}, "The caller's lines are written out as the race is run, under the picture or beside it. Tick Read the race call aloud in the menu to have them spoken."),
+      // Where the downloaded voice can work (not in the one-file copy, or a viewer with nowhere to keep him).
+      joeOffered() ? h('p', {}, `The list of voices there has ${JOE.name}, the track's own caller. He's a download, ${Math.round(JOE.bytes / 1e6)} MB, once, kept on this device, and he's the same wherever you play. He calls quicker than a browser's voice does, and quicker still down the stretch. His lines for a race are made while you read its form. If they aren't ready when the race goes to the gate, the browser's voice calls that one.`) : null,
       h('p', {}, "Back the winner and you're in the winner's circle photo. It goes in your scrapbook."),
       h('h3', {}, 'Saving'),
       h('p', { class: 'saving' }, savingText()),
