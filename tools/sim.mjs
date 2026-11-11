@@ -9,7 +9,7 @@
 import { createWorld, simulateRace, applyResult, nextDay } from '../js/world.js';
 import { makeTote, board, publicWin, settle, ticketReturn, cost, TAKEOUT } from '../js/tote.js';
 import { forumPosts, runStyle, favouriteAtTheOff } from '../js/forum.js';
-import { publicRating } from '../js/handicap.js';
+import { publicRating, angles } from '../js/handicap.js';
 import { TIPSTERS } from '../js/data.js';
 import { rng } from '../js/rng.js';
 
@@ -36,6 +36,14 @@ const WAYS = [
     return move[argmax(move)] > 1.15 ? win(argmax(move)) : [];
   }],
   ['Every horse that looks good in the paddock, to win', c => c.race.entries.flatMap((e, i) => (e.pdk.kind === 'good' ? win(i) : []))],
+  ['The only good-looker in the paddock, to win', c => {
+    const good = c.race.entries.map((e, i) => i).filter(i => c.race.entries[i].pdk.kind === 'good');
+    return good.length === 1 ? win(good[0]) : [];
+  }],
+  ['Favourite at 3-5 or shorter, to place', c => (c.late[byOdds(c)[0]] <= 0.6 ? [{ type: 'place', sel: [byOdds(c)[0]], amt: 2 }] : [])],
+  ['Favourite at 3-5 or shorter, to show', c => (c.late[byOdds(c)[0]] <= 0.6 ? [{ type: 'show', sel: [byOdds(c)[0]], amt: 2 }] : [])],
+  ['Post 1, to win', c => win(0)],
+  ['Posts 1 and 2 in races of a mile or more, to win', c => (c.race.f >= 8 ? [...win(0), ...win(1)] : [])],
   ['The only horse that needs the lead, to win', c => {
     const speed = c.race.entries.map((e, i) => i).filter(i => runStyle(c.world.horses[c.race.entries[i].hid]) === 'E');
     return speed.length === 1 ? win(speed[0]) : [];
@@ -51,6 +59,19 @@ const bands = [[0, 1], [1, 2], [2, 5], [5, 10], [10, 20], [20, 35], [35, Infinit
 const big = { win: 0, exacta: 0, trifecta: 0 };
 const moves = { keep: 0, keepLate: 0, halves: 0, logs: [] }; // how much the board moves before the off
 let races = 0, short = 0, overPool = 0, winPaid = 0, winBet = 0;
+// Winners by post: starts, wins, the wins it would have with every horse in the race an equal chance, and
+// what $2 to win on every runner from it got back. Sprints (one turn) and races of a mile or more (two).
+const posts = { sprint: [], route: [] };
+const postRow = (kind, k) => posts[kind][k] || (posts[kind][k] = { n: 0, won: 0, fair: 0, back: 0 });
+// What trouble costs in the race itself, and what the Troubled trip chip is worth the next time.
+const TROUBLES = [['Stumbled start', r => r.stumble], ['Broke slowly', r => r.slow], ['Bumped start', r => r.bumped && !r.stumble && !r.slow],
+  ['Checked', r => r.checked > 0], ['Blocked (no check)', r => !r.checked && r.blocked > 3.5], ['None of these', r => !r.stumble && !r.slow && !r.bumped && !r.checked && r.blocked <= 3.5]];
+const trouble = TROUBLES.map(() => ({ n: 0, won: 0, fair: 0, place: 0 }));
+const chip = { with: { n: 0, won: 0, fair: 0, back: 0 }, without: { n: 0, won: 0, fair: 0, back: 0 } };
+// Place and show on every horse, by its odds at 2 minutes to post.
+const pbands = [[0, 0.6], [0.6, 1], [1, 2], [2, 5], [5, 10], [10, Infinity]].map(b => ({ b, n: 0, place: 0, show: 0 }));
+// The fractions of six furlongs on a fast dirt track.
+const six = { n: 0, q: 0, h: 0, fin: 0, lastFaster: 0 };
 const tipsters = {};
 const t0 = Date.now();
 
@@ -69,6 +90,24 @@ for (let m = 0; m < MEETS; m++) {
       const order = run.results.map(r => r.h);
       const [a, b, c] = order;
       const pay = settle(tote, order);
+      const kind = race.f >= 8 ? 'route' : 'sprint';
+      race.entries.forEach((e, i) => {
+        const P = postRow(kind, e.pp - 1);
+        P.n++; P.fair += 1 / n;
+        if (i === a) { P.won++; P.back += pay.win[a]; }
+        const res = run.results.find(r => r.h === i);
+        TROUBLES.forEach(([, has], k) => { if (has(res)) { const T = trouble[k]; T.n++; T.fair += 1 / n; T.place += (res.pos - 1) / Math.max(1, n - 1); if (i === a) T.won++; } });
+        const C = angles(race, world.horses[e.hid]).some(x => x[0] === 'Troubled trip last time') ? chip.with : chip.without;
+        C.n++; C.fair += 1 / n;
+        if (i === a) { C.won++; C.back += pay.win[a]; }
+        const B = pbands.find(x => late[i] >= x.b[0] && late[i] < x.b[1]);
+        B.n++; B.place += pay.place[i] || 0; B.show += pay.show[i] || 0;
+      });
+      if (race.surface === 'dirt' && race.cond === 'fast' && race.f === 6 && run.fractions.length >= 3) {
+        const [q, h] = run.fractions;
+        six.n++; six.q += q.t; six.h += h.t; six.fin += run.finalTime;
+        if (run.finalTime - h.t < h.t - q.t) six.lastFaster++;
+      }
       const ctx = { race, world, open, late };
       WAYS.forEach(([, pick], k) => {
         const bets = pick(ctx);
@@ -159,6 +198,20 @@ out.push(row('A straight win ticket picked at random', random.win.length, averag
 out.push(row('A straight exacta picked at random', random.exacta.length, averaged(random.exacta)));
 out.push(row('A straight trifecta picked at random', random.trifecta.length, averaged(random.trifecta)));
 out.push(`  The track keeps ${Math.round(100 * TAKEOUT.win)}% of win, place and show, ${Math.round(100 * TAKEOUT.exacta)}% of the exacta and ${Math.round(100 * TAKEOUT.trifecta)}% of the trifecta.`);
+const ratio = (won, fair) => (fair ? (won / fair).toFixed(2) : '-');
+out.push('', `${'Winners by post'.padEnd(54)}starts     won   x fair share   back per $1`);
+for (const kind of ['sprint', 'route']) {
+  out.push(`  ${kind === 'sprint' ? 'Sprints (under a mile)' : 'A mile or more'}`);
+  posts[kind].forEach((P, k) => { if (P && P.n >= 20) out.push(row(`  post ${k + 1}`, P.n, `${share(P.won / P.n).padStart(6)}   ${ratio(P.won, P.fair).padStart(6)}       ${pct(P.back / (2 * P.n) - 1).padStart(7)}`)); });
+}
+out.push('', `${'What trouble costs in the race'.padEnd(54)}starts     won   x fair share   finished (0 first, 1 last)`);
+TROUBLES.forEach(([name], k) => { const T = trouble[k]; if (T.n) out.push(row(name, T.n, `${share(T.won / T.n).padStart(6)}   ${ratio(T.won, T.fair).padStart(6)}       ${(T.place / T.n).toFixed(2)}`)); });
+out.push('', `${'The Troubled trip last time chip, next time out'.padEnd(54)}starts     won   x fair share   back per $1`);
+for (const [name, C] of [['with the chip', chip.with], ['without it', chip.without]]) if (C.n) out.push(row(name, C.n, `${share(C.won / C.n).padStart(6)}   ${ratio(C.won, C.fair).padStart(6)}       ${pct(C.back / (2 * C.n) - 1).padStart(7)}`));
+out.push('', `${'Place and show on every horse, by odds at 2 minutes'.padEnd(54)}horses   place    show`);
+for (const B of pbands) if (B.n) out.push(row(B.b[1] === Infinity ? `${B.b[0]}-1 or longer` : B.b[1] === 0.6 ? '3-5 or shorter' : B.b[1] === 1 ? '3-5 to even money' : `${B.b[0]}-1 to ${B.b[1]}-1`, B.n, `${pct(B.place / (2 * B.n) - 1).padStart(7)} ${pct(B.show / (2 * B.n) - 1).padStart(7)}`));
+const secs = t => `${t >= 60 ? `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}` : `:${t.toFixed(1)}`}`;
+if (six.n) out.push('', `Six furlongs on a fast dirt track, ${plural(six.n, 'race')}: ${secs(six.q / six.n)}, ${secs(six.h / six.n)}, ${secs(six.fin / six.n)} on average; the last quarter faster than the second in ${share(six.lastFaster / six.n)}`);
 out.push('', `${'The forum regulars, $2 to win on each top pick'.padEnd(54)} picks     won   won or lost per $1`);
 for (const t of TIPSTERS) {
   const r = tipsters[t.id];
