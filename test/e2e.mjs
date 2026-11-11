@@ -3180,6 +3180,10 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   const dollars = t => +t.replace(/[$,]/g, '');
   assert.equal(willPay.includes('.') ? dollars(paid) : Math.floor(dollars(paid)), dollars(willPay), `the double paid ${paid}, its will-pay ${willPay}`);
   assert.equal(await day.locator('.summary .ticket.cashed').count(), 2, "the double and the Pick 3 aren't on race 8's results as paid");
+  // Race 6's results, with no ticket of its own but the Pick 3, say what the Pick 3 paid (they said "No luck
+  // this time").
+  await day.evaluate(() => window.postTime.nav.go('result', { no: 6 }));
+  assert.match(await day.locator('.post-bar .info').textContent(), /^Your Pick 3 paid \$[\d,.]+$/, "race 6's results don't say its Pick 3 paid");
   await ctx10.close();
 }
 

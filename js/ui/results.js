@@ -144,11 +144,17 @@ export function renderResult(root, nav, params) {
   // did for you on the left, and the next race (the card, after the last one) as the button. (It was the
   // third button of the row above, at the end of the page: 1,700 px down a phone's 664 after an ordinary
   // race and 2,250 after one with six tickets, two and a half to three and a half screens.)
-  const cashed = settled && (bets.length || multi.some(t => t.back !== undefined)) ? settled.back : null;
-  const alive = [...new Set(multi.filter(t => multiState(t) === 'alive').map(t => (t.type === 'dd' ? 'daily double' : 'Pick 3')))];
+  // (What was settled here is this race's tickets and a double or Pick 3 that ends in it. One that ends in a
+  // later race is said by where it stands: alive, paid, or torn up, which is no luck.)
+  const name = t => (t.type === 'dd' ? 'daily double' : 'Pick 3');
+  const cashed = settled && (bets.length || multi.some(t => t.back !== undefined && t.legs[t.legs.length - 1] === race.no)) ? settled.back : null;
+  const alive = [...new Set(multi.filter(t => multiState(t) === 'alive').map(name))];
+  const paidLater = multi.filter(t => t.back > 0);
   root.append(h('div', { class: 'post-bar' },
     h('div', { class: 'info' }, cashed > 0 ? ['You cashed ', h('b', { class: 'money' }, money(cashed))] : cashed === 0 ? 'No luck this time'
-      : alive.length ? `Your ${alive.join(' and ')} ${alive.length > 1 ? 'are' : 'is'} alive` : h('span', { class: 'muted' }, 'No tickets')),
+      : alive.length ? `Your ${alive.join(' and ')} ${alive.length > 1 ? 'are' : 'is'} alive`
+        : paidLater.length ? [`Your ${[...new Set(paidLater.map(name))].join(' and ')} paid `, h('b', { class: 'money' }, money(paidLater.reduce((s, t) => s + t.back, 0)))]
+          : multi.length ? 'No luck this time' : h('span', { class: 'muted' }, 'No tickets')),
     nxt ? h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('race', { no: nxt.no }) }, `Race ${nxt.no} ▸`) : h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('card') }, 'The card ▸'),
   ));
 }
