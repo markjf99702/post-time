@@ -8,7 +8,9 @@ const SKIN = ['#f3cfb3', '#e0b08c', '#c68c64', '#9a6443', '#6d4430', '#f0c19c'];
 const HAIR = ['#2b1d14', '#5a3a22', '#8c6239', '#c9a26b', '#1a1a1a', '#b8b2a6', '#7a2e1d'];
 const CLOTHES = ['#1f3b5a', '#7a1f2b', '#2e5d3a', '#e8d9b5', '#3c3c44', '#6a4c93', '#c75b39', '#f2efe6', '#355c7d', '#b88a2e', '#e4a6b8', '#4f7f8a'];
 
-export function drawCircle(canvas, { horse, silks, number, stakes, you, seed, width = 360, height = 250 }) {
+// `seed` is the race's, and everything in the picture but you comes from it. `meet` is the meet's seed: you
+// are drawn from that, so you're the same person in every photo of a meet.
+export function drawCircle(canvas, { horse, silks, number, stakes, you, seed, meet, width = 360, height = 250 }) {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
@@ -117,7 +119,11 @@ export function drawCircle(canvas, { horse, silks, number, stakes, you, seed, wi
   drawPerson(ctx, M, k, R, { x: 1.75, scale: 1, groom: true });
   const front = R.int(2, 3);
   for (let i = 0; i < front; i++) drawPerson(ctx, M, k, R, { x: -1.9 + i * 0.75, scale: 1.03, trophy: stakes && i === front - 1 });
-  if (you) drawPerson(ctx, M, k, R, { x: 2.9, scale: 1, you: true });
+  // You, on the right, with your ticket up. Your skin, hair, hat and trousers used to come from the race's own
+  // random numbers, so "That's you on the right" was a different person in every photo in the scrapbook.
+  // You have a generator of your own now, from the meet's seed. You're drawn last, so nothing else in a
+  // picture has changed.
+  if (you) drawPerson(ctx, M, k, rng(`you:${meet}`), { x: 2.9, scale: 1, you: true });
 
   // A little photographer's vignette.
   const v = ctx.createRadialGradient(width / 2, height / 2, height * 0.3, width / 2, height / 2, width * 0.75);

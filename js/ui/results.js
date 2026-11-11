@@ -145,7 +145,7 @@ export function photoCard(rec, you) {
   );
   requestAnimationFrame(() => {
     const w = c.getBoundingClientRect().width || 360;
-    drawCircle(c, { horse: rec.horse, silks: ownerSilks(rec.owner), number: rec.number, stakes: rec.stakes, you, seed: rec.seed, width: w, height: w * 25 / 36 });
+    drawCircle(c, { horse: rec.horse, silks: ownerSilks(rec.owner), number: rec.number, stakes: rec.stakes, you, seed: rec.seed, meet: game.world.seed, width: w, height: w * 25 / 36 });
   });
   return frame;
 }

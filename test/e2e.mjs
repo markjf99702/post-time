@@ -1542,6 +1542,33 @@ await page.waitForSelector('.races');
     return [stats['Biggest ticket'], stats['Best day']];
   });
   assert.deepEqual(none, ['None yet', 'None yet'], 'with nothing won, the record should say so (it said "Biggest ticket $0.00" and "Best day −$10.00")');
+
+  // "That's you on the right" is the same person in every photo of a meet. Each photo in the scrapbook is
+  // drawn again here, and the strip of it you stand in (nobody else does, and the wall behind is the same in
+  // every photo) comes out the same to the pixel, though the races and the winners differ. (Your skin, hair,
+  // hat and trousers came from each race's own random numbers.) Another meet's you is somebody else.
+  const you = await shop.evaluate(async () => {
+    const { drawCircle } = await import('./js/draw/circle.js');
+    const { ownerSilks } = await import('./js/world.js');
+    const { game } = window.postTime, W = 360, H = 250, from = W / 2 + 2.4 * W / 7.4;
+    const strip = (rec, meet, you = true) => {
+      const c = document.createElement('canvas');
+      drawCircle(c, { horse: rec.horse, silks: ownerSilks(rec.owner), number: rec.number, stakes: rec.stakes, you, seed: rec.seed, meet, width: W, height: H });
+      const x = Math.round(from * c.width / W);
+      return c.getContext('2d').getImageData(x, 0, c.width - x, c.height).data;
+    };
+    const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+    const book = game.player.book, mine = book.map(rec => strip(rec, game.world.seed));
+    return {
+      photos: new Set(book.map(rec => rec.seed)).size,
+      alike: mine.every(p => same(p, mine[0])),
+      there: !same(mine[0], strip(book[0], game.world.seed, false)),
+      others: ['a', 'b', 'c', 'd', 'e', 'f'].filter(meet => !same(strip(book[0], meet), mine[0])).length,
+    };
+  });
+  assert.ok(you.photos >= 2 && you.there, `${you.photos} photos to compare, and you ${you.there ? 'are' : "aren't"} in them`);
+  assert.ok(you.alike, "you're a different person from one photo in the scrapbook to the next");
+  assert.ok(you.others >= 4, `in six other meets you're drawn the same as in this one ${6 - you.others} times`);
   await ctx5.close();
 }
 
