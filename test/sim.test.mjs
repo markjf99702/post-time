@@ -12,7 +12,7 @@ import { makeTote, board, settle, ticketReturn, cost, TAKEOUT } from '../js/tote
 import { fmtTime, fmtClock, marginShort, marginText, lengthsText } from '../js/chart.js';
 import { timeWords, timeSay, aloud, raceCall } from '../js/call.js';
 import { forumPosts } from '../js/forum.js';
-import { angles, newcomer, freshBullet } from '../js/handicap.js';
+import { angles, newcomer, freshBullet, oddsText, oddsValue } from '../js/handicap.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const race = (f, surface = 'dirt', seed = 'x') => {
@@ -405,6 +405,52 @@ test('the tote pays like a tote', () => {
     const box = ticketReturn({ type: 'exbox', sel: [order[1], order[0]], amt: 2 }, pay);
     assert.equal(box, pay.exacta.pay);
   }
+});
+
+test('the board words a price at or just under what it pays: every whole number above 10-1', () => {
+  // The board rounded down to the morning line's steps, which above 10-1 go 12, 15, 20, 30, 50, 99: "30-1"
+  // over "$2 pays ~$97", and 463 of 1,411 final prices in one meet reading more than 10% under what was paid.
+  const steps = ['1-9', '1-5', '2-5', '1-2', '3-5', '4-5', '1-1', '6-5', '7-5', '3-2', '8-5', '9-5', '2-1', '5-2', '3-1', '7-2', '4-1', '9-2', '5-1',
+    ...Array.from({ length: 94 }, (_, k) => `${k + 6}-1`)];
+  const seen = [];
+  for (let k = 50; k <= 120000; k++) {
+    const o = k / 1000, text = oddsText(o), shown = oddsValue(text);
+    if (seen[seen.length - 1] !== text) seen.push(text);
+    const next = steps[steps.indexOf(text) + 1];
+    // Never more than the real price (but under 1-9, the least a board shows), and never a whole step under it.
+    if (o >= 1 / 9) assert.ok(shown <= o + 1e-9, `${o} reads ${text}`);
+    else assert.equal(text, '1-9');
+    if (next) assert.ok(oddsValue(next) > o, `${o} reads ${text}, a step or more under`);
+    else assert.equal(text, '99-1');
+    // What a ticket pays is never more than a seventh over what the board says, and above 10-1 a tenth.
+    if (o >= 1 / 9 && o < 100) assert.ok((o + 1) / (shown + 1) < (o >= 10 ? 1.1 : 1.17), `${o} reads ${text}`);
+  }
+  assert.deepEqual(seen, steps);
+  assert.deepEqual([30.6, 47.9, 20.4, 28.9, 99.5, 250].map(oddsText), ['30-1', '47-1', '20-1', '28-1', '99-1', '99-1']);
+  // On a board: the wording is made from the odds beside it.
+  const w = createWorld('test-board', '2026-09-26');
+  for (const r of w.cards[0].races) {
+    const b = board(makeTote(r, w), 1);
+    assert.deepEqual(b.text, b.odds.map(o => oddsText(o)));
+  }
+});
+
+test('the morning line keeps its own steps and prints nothing longer than 50-1', () => {
+  // About one race in twenty had a horse at 99-1 on the morning line. The price behind the line is as it
+  // was (the early money reads it); only what's printed stops at 50-1.
+  const w = createWorld('test-line', '2026-09-26');
+  const made = new Set(['1-5', '2-5', '1-2', '3-5', '4-5', '1-1', '6-5', '7-5', '3-2', '8-5', '9-5', '2-1', '5-2', '3-1', '7-2', '4-1', '9-2', '5-1', '6-1', '7-1', '8-1', '9-1', '10-1', '12-1', '15-1', '20-1', '30-1', '50-1']);
+  let capped = 0, entries = 0;
+  for (let d = 0; d < 40; d++) {
+    for (const r of buildCard(w, d).races) {
+      for (const e of r.entries) {
+        entries++;
+        assert.ok(made.has(e.mlText), `race day ${d + 1}, race ${r.no}: a morning line of ${e.mlText}`);
+        if (e.ml > 50) { capped++; assert.deepEqual([e.ml, e.mlText], [99, '50-1']); } else assert.equal(oddsValue(e.mlText), e.ml);
+      }
+    }
+  }
+  assert.ok(capped > 5, `only ${capped} of ${entries} morning lines were longer than 50-1, too few to show anything`);
 });
 
 test('no exotic ticket pays more than the whole pool', () => {

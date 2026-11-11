@@ -5,7 +5,7 @@
 import { buildWorld, simulateRace, applyResult, nextDay as worldNextDay, ownerSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats } from './world.js';
 import { makeTote, board, settle, ticketReturn, cost as betCost, legs } from './tote.js';
 import { forumPosts, reactions, scoreTipsters } from './forum.js';
-import { oddsText } from './handicap.js';
+import { oddsText, lineText } from './handicap.js';
 import { liveCall } from './call.js';
 import { JOCKEYS, TRAINERS, OWNERS } from './data.js';
 import { distanceName } from './track.js';
@@ -43,7 +43,7 @@ export function load() {
       }
       game.world = world;
       game.player = { ...freshPlayer(), ...player };
-      for (const fix of [redrawShort, refundStrays, stopEarlyClocks, countRecords]) {
+      for (const fix of [redrawShort, refundStrays, stopEarlyClocks, countRecords, capMorningLines]) {
         try { fix(); } catch { /* a save this can't make sense of loads as it is */ }
       }
       return true;
@@ -115,6 +115,14 @@ function stopEarlyClocks() {
 // it starts from the lines its horses hold today, and counts every race from here on.
 function countRecords() {
   ensureStats(game.world);
+}
+
+// A morning line prints nothing longer than 50-1 now. A card drawn before that can have "99-1" on it: it
+// reads 50-1 from here, and the price behind it, which the early money goes by, stays.
+function capMorningLines() {
+  for (const race of game.world.cards[game.world.day].races) {
+    for (const e of race.entries) if (e.mlText) e.mlText = lineText(e.ml, e.mlText);
+  }
 }
 
 function inRace(race, sel) {
@@ -325,7 +333,7 @@ export function raceLabel(race) {
 
 export function oddsNow(race) {
   const b = currentBoard(race);
-  return b.odds.map(o => oddsText(Math.max(0.2, o)));
+  return b.odds.map(o => oddsText(o));
 }
 
 export { legs, betCost };

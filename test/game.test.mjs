@@ -17,6 +17,7 @@ const { raceCall, raceClock } = await import('../js/call.js');
 const { marginShort } = await import('../js/chart.js');
 const { buildWorld, meetStats, ownerSilks } = await import('../js/world.js');
 const { TRAINERS, OWNERS } = await import('../js/data.js');
+const { makeTote } = await import('../js/tote.js');
 
 function build(seed) {
   const meet = newMeet(seed);
@@ -509,6 +510,20 @@ test('a meet saved before records were counted gets them from the lines its hors
   // By now horses have retired and their lines have gone, and the records still have those rides.
   const rides = stats => stats.jockeys.reduce((n, r) => n + r.starts, 0);
   assert.ok(rides(meetStats(game.world)) > rides(meetStats({ horses: game.world.horses })), 'no line has gone from a card, so this meet shows nothing');
+});
+
+test('a card saved with a 99-1 morning line reads 50-1, at the same price', () => {
+  // The live version's cards can have one. What's printed changes; the price the early money goes by doesn't.
+  buildOn('long-lines', '2026-10-03');
+  const [r1] = card().races;
+  const before = r1.entries.map(e => [e.ml, e.mlText]);
+  Object.assign(r1.entries[0], { ml: 99, mlText: '99-1' });
+  const early = makeTote(r1, game.world).early;
+  save();
+  assert.equal(load(), true);
+  const now = card().races[0].entries.map(e => [e.ml, e.mlText]);
+  assert.deepEqual(now, [[99, '50-1'], ...before.slice(1)]);
+  assert.deepEqual(makeTote(card().races[0], game.world).early, early, 'the early money moved');
 });
 
 test("two regulars don't post the same reaction after a race", () => {

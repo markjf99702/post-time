@@ -149,7 +149,7 @@ export function* buildWorld(seed, start) {
       const run = simulateRace(race, world, { record: false });
       const odds = backgroundOdds(world, race);
       // The forum regulars were betting these too, so they arrive with a record.
-      const posts = forumPosts(world, race, { odds, text: odds.map(o => oddsText(Math.max(0.2, o))) });
+      const posts = forumPosts(world, race, { odds, text: odds.map(o => oddsText(o)) });
       applyResult(world, race, run, odds);
       const order = run.results.map(r => r.h);
       scoreTipsters(world.tipsters, posts, order, { win: { [order[0]]: Math.floor((odds[order[0]] + 1) * 20) / 10 } });

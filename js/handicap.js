@@ -116,16 +116,22 @@ export function probsFrom(ratings, beta = 0.16) {
   return e.map(x => x / s);
 }
 
-// Odds as a track shows them: 3-5, 2-1, 7-2, 12-1.
+// Odds as a track shows them: 3-5, 2-1, 7-2, 12-1. These are the steps a morning line is made in.
 const LADDER = [
   [0.2, '1-5'], [0.4, '2-5'], [0.5, '1-2'], [0.6, '3-5'], [0.8, '4-5'], [1, '1-1'], [1.2, '6-5'], [1.4, '7-5'],
   [1.5, '3-2'], [1.6, '8-5'], [1.8, '9-5'], [2, '2-1'], [2.5, '5-2'], [3, '3-1'], [3.5, '7-2'], [4, '4-1'],
   [4.5, '9-2'], [5, '5-1'], [6, '6-1'], [7, '7-1'], [8, '8-1'], [9, '9-1'], [10, '10-1'], [12, '12-1'],
   [15, '15-1'], [20, '20-1'], [30, '30-1'], [50, '50-1'], [99, '99-1'],
 ];
+// The board has steps of its own: 1-9 for anything shorter than 1-5, the same steps up to 10-1, then every
+// whole number to 99-1. It used to share the morning line's, which above 10-1 go 12, 15, 20, 30, 50, 99, so
+// "30-1" stood over "$2 pays ~$97", and one board had two horses at 20-1 paying about $43 and about $60.
+const BOARD = [[1 / 9, '1-9'], ...LADDER.filter(s => s[0] <= 10), ...Array.from({ length: 89 }, (_, k) => [k + 11, `${k + 11}-1`])];
+// The board's wording of the odds: the step at or below them, so a ticket never pays less than the board
+// says (but for a price shorter than 1-9, the least a board shows).
 export function oddsText(o) {
-  let best = LADDER[0];
-  for (const step of LADDER) if (step[0] <= o + 1e-9) best = step;
+  let best = BOARD[0];
+  for (const step of BOARD) if (step[0] <= o + 1e-9) best = step;
   return best[1];
 }
 // Morning-line odds snap to the nearest step.
@@ -139,9 +145,16 @@ export function oddsValue(text) {
   return a / b;
 }
 
-// The track handicapper's morning line: a fair book plus about 20%.
+// A morning line prints nothing longer than 50-1: a line maker's prices stop about there, and "99-1" on a
+// program is a typo. The price itself stays as it was worked out, since the early money reads it.
+const LINE_LONGEST = 50;
+export function lineText(price, text) {
+  return price > LINE_LONGEST ? `${LINE_LONGEST}-1` : text;
+}
+
+// The track handicapper's morning line: a fair book plus about 20%. For each horse, [the price, as printed].
 export function morningLine(race, horses) {
   const ratings = race.entries.map(e => publicRating(horses[e.hid], race, e));
   const p = probsFrom(ratings, 0.15);
-  return p.map(x => snapOdds(1 / (x * 1.2) - 1));
+  return p.map(x => { const [price, text] = snapOdds(1 / (x * 1.2) - 1); return [price, lineText(price, text)]; });
 }

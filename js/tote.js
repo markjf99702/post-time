@@ -54,7 +54,7 @@ export function board(tote, frac, bets = []) {
   const net = pools.win * (1 - TAKEOUT.win);
   const odds = win.map(w => Math.max(0.05, net / w - 1));
   return {
-    odds, text: odds.map(o => oddsText(Math.max(0.2, o))),
+    odds, text: odds.map(o => oddsText(o)),
     pools,
     fav: odds.indexOf(Math.min(...odds)),
   };
