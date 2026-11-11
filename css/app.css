@@ -177,6 +177,12 @@ a { color: var(--link); }
 .menu .joe-btns button[hidden] { display: none; }
 .menu .joe-btns button { line-height: 1.25; }
 
+/* Save a copy and Open a copy, and the line under them. Like the voice row, they take the menu's width and
+   never add to it: what Open a copy says it will open runs to two lines rather than widen the menu. */
+.menu .keep { width: 0; min-width: 100%; display: grid; border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
+.menu .keep button { width: 100%; line-height: 1.25; }
+.menu .keep .voice-note { padding: 0 12px 8px; }
+
 /* Said under the header while the browser is refusing to save. */
 .unsaved { margin: 0; padding: 8px max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left)); background: var(--paper-2); border-bottom: 2px solid var(--red); font-size: 14.5px; line-height: 1.3; text-align: center; }
 

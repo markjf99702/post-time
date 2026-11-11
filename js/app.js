@@ -1,7 +1,7 @@
 // Post Time: a day at the races. This file starts things up and moves between screens.
 
 import { h, clear, money } from './ui/dom.js';
-import { game, load, save, notSaved, newMeet, card, nextRace } from './game.js';
+import { game, load, save, notSaved, newMeet, card, nextRace, adopt, whereIs } from './game.js';
 import { renderCard, upNextInView } from './ui/card.js';
 import { renderRace } from './ui/race.js';
 import { renderWatch, rehearse } from './ui/watch.js';
@@ -10,6 +10,7 @@ import { renderBook, renderHelp, renderMeet } from './ui/book.js';
 import { SAMPLE, pace } from './call.js';
 import * as audio from './audio.js';
 import * as joe from './joe.js';
+import * as copy from './copy.js';
 
 const app = document.getElementById('app');
 const watchEl = document.getElementById('watch');
@@ -306,6 +307,50 @@ restart.addEventListener('click', e => {
   restart.textContent = 'Start over';
   closeMenu();
   setup();
+});
+
+// ------------------------------------------------------------------ a copy of the meet
+
+// Save a copy downloads the meet here as one file. Open a copy reads one back and checks it the way a save is
+// checked when the page opens, then says what's in it: replacing the meet here takes a second tap, as starting
+// over does. Neither is offered where a download can't start (the Artifact copy of the game).
+const keepRow = document.getElementById('keepRow'), copyNote = document.getElementById('copyNote');
+const saveCopyBtn = document.getElementById('saveCopy'), openCopyBtn = document.getElementById('openCopy'), copyFile = document.getElementById('copyFile');
+keepRow.hidden = !copy.offered();
+let opening = null, openingTimer = null;
+function copyReset(note = '') {
+  clearTimeout(openingTimer);
+  opening = null;
+  openCopyBtn.textContent = 'Open a copy';
+  copyNote.textContent = note;
+}
+saveCopyBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  copyReset(waiting || !copy.saveCopy() ? 'There\'s no meet here to save yet.' : 'The copy is in your downloads. Open a copy, here or on another device, carries the meet on from it.');
+});
+openCopyBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  if (building) return;
+  if (!opening) { copyFile.value = ''; copyFile.click(); return; }
+  const it = opening;
+  copyReset();
+  if (!adopt(it)) { copyNote.textContent = "This browser wouldn't keep that meet, so the one here is as it was."; return; }
+  waiting = null;
+  lastBank = null;
+  closeMenu();
+  applySettings();
+  nav.go('card');
+});
+copyFile.addEventListener('change', async () => {
+  const file = copyFile.files && copyFile.files[0];
+  if (!file) return;
+  const it = await copy.openCopy(file);
+  if (!it.ok) { copyReset(it.why); return; }
+  copyReset();
+  opening = it;
+  openCopyBtn.textContent = `Tap again to open it in place of the meet here`;
+  copyNote.textContent = `${copy.describe(whereIs(it.world, it.player))}.`;
+  openingTimer = setTimeout(() => copyReset(), 15000);
 });
 
 // ------------------------------------------------------------------ start

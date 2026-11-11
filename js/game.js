@@ -156,6 +156,75 @@ export function save() {
   return !refused;
 }
 
+// ------------------------------------------------------------------ a copy of the meet
+
+// A copy of the meet in one file: what Save a copy downloads, and what Google Drive keeps (js/drive.js). It's
+// the meet and you as they're saved here, with when and where the copy was made. `more` adds what Drive keeps
+// with it (which copy it is, and how far on the meet is).
+export const COPY = 'post-time meet';
+export function meetCopy(more = {}) {
+  return JSON.stringify({ postTime: COPY, v: 1, saved: new Date().toISOString(), ...more, world: game.world, player: game.player }, (k, v) => (k === 'path' ? undefined : v));
+}
+
+// A copy read back, checked the way a save is when the page opens: enough of a meet to show its card, and a
+// player. { ok: true, world, player, ... } or { ok: false, why }.
+export function readCopy(text) {
+  const c = typeof text === 'string' ? parsed(text) : null;
+  if (!c || typeof c !== 'object' || c.postTime !== COPY) return { ok: false, why: "That file isn't a copy of a Post Time meet." };
+  if (!isMeet(c.world) || !c.player || typeof c.player !== 'object' || Array.isArray(c.player)) return { ok: false, why: "That copy of a meet is damaged, so it can't be opened." };
+  return { ...c, ok: true };
+}
+
+// The meet in a copy takes the place of the one here, and the page goes on from it as from a save. This
+// device's settings stay (its voice and sound are its own). Nothing changes if either part can't be stored.
+export function adopt(copy) {
+  const settings = game.player?.settings;
+  const player = { ...copy.player, settings: settings && typeof settings === 'object' ? settings : copy.player.settings };
+  let was = null;
+  try {
+    was = [localStorage.getItem(KEY_WORLD), localStorage.getItem(KEY_PLAYER)];
+    localStorage.setItem(KEY_WORLD, JSON.stringify(copy.world, (k, v) => (k === 'path' ? undefined : v)));
+    localStorage.setItem(KEY_PLAYER, JSON.stringify(player));
+  } catch {
+    // (Put back what was here, so the two halves are of one meet.)
+    try { for (const [k, v] of [[KEY_WORLD, was?.[0]], [KEY_PLAYER, was?.[1]]]) if (v != null) localStorage.setItem(k, v); } catch { /* as it is */ }
+    return false;
+  }
+  totes.clear();
+  recorded = { key: '', run: null };
+  return load() === true;
+}
+
+// How far on a meet is, in what a player does: the race day, the races run on it, the tickets bought, the
+// money. Two devices are at the same place in a meet when these match. A forum thread opened or a race's
+// clock started isn't counted: just looking at a race doesn't move a meet on.
+export function progressMark(world = game.world, player = game.player) {
+  if (!world || !player) return '';
+  const races = world.cards?.[world.day]?.races || [];
+  const bets = Object.values(player.bets || {}).reduce((n, list) => n + (Array.isArray(list) ? list.length : 0), 0);
+  return [world.seed, world.day, races.filter(r => r.status === 'official').length, bets, round2(player.bank || 0), player.atm || 0,
+    (player.ledger || []).length, (player.book || []).length].join('|');
+}
+
+// A meet that's just been built and never played: opening day of the first meet, nothing run or bet. A device
+// with one of these takes a meet from Drive without asking.
+export function untouched(world = game.world, player = game.player) {
+  if (!world || !player) return true;
+  const m = world.meet, races = world.cards?.[world.day]?.races || [];
+  return !!m && m.no === 1 && world.day === m.first && !(world.meets || []).length && !races.some(r => r.status === 'official')
+    && !(player.ledger || []).length && !(player.atm || 0) && !Object.values(player.bets || {}).some(l => Array.isArray(l) && l.length);
+}
+
+// Where a meet is, for saying which is which: "Meet 1, race day 7", its date, the races run that day and the
+// bankroll. (A save from before meets ended has no meet number yet.)
+export function whereIs(world = game.world, player = game.player) {
+  const c = world.cards[world.day];
+  return {
+    meet: world.meet?.no || 1, raceDay: world.meet ? world.day - world.meet.first + 1 : null, date: c.date,
+    run: c.races.filter(r => r.status === 'official').length, of: c.races.length, bank: round2(player.bank || 0),
+  };
+}
+
 // Builds a new meet a step at a time; call step() until it returns true.
 export function newMeet(seed = Math.random().toString(36).slice(2, 10)) {
   const steps = buildWorld(seed, firstSaturday());

@@ -8,6 +8,7 @@ import { oddsText } from '../handicap.js';
 import { photoCard } from './results.js';
 import { MOVING } from './race.js';
 import { JOE, offered as joeOffered } from '../joe.js';
+import { offered as copyOffered } from '../copy.js';
 
 // The page is this meet's: your record in it, the meets before it (each opens its closing page), and your
 // photos, a meet at a time.
@@ -179,6 +180,7 @@ export function renderHelp(root, nav) {
       h('p', {}, "Back the winner and you're in the winner's circle photo. It goes in your scrapbook."),
       h('h3', {}, 'Saving'),
       h('p', { class: 'saving' }, savingText()),
+      copyOffered() ? h('p', {}, 'Save a copy, in the menu, downloads the whole meet as one file. Open a copy carries the meet on from a file like that, on this device or another, in place of the one here.') : null,
       jdFoot(),
     ),
   );

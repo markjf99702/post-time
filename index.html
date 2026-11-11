@@ -54,6 +54,12 @@
       <button type="button" id="hearIt">Hear it</button>
       <p class="voice-note" id="voiceNone" hidden>This browser has no voice to read the call. The call is still written out as the race is run.</p>
     </div>
+    <div class="keep" id="keepRow" hidden>
+      <button type="button" id="saveCopy">Save a copy</button>
+      <button type="button" id="openCopy">Open a copy</button>
+      <input type="file" id="copyFile" accept=".json,application/json" hidden>
+      <p class="voice-note" id="copyNote" role="status"></p>
+    </div>
     <button type="button" id="restart" class="quiet">Start over</button>
   </nav>
   <main id="app" class="app"></main>
