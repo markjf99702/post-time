@@ -407,6 +407,24 @@ test('the tote pays like a tote', () => {
   }
 });
 
+// The ten weeks before the meet are bet on the tote, like the races you watch. (They had odds from a stand-in
+// book that held the favourite at a median 2.49-1, winning 27% of the time, where the tote has it at 1.70-1
+// and 35%: so the prices on the lines from before the meet, and the records the forum regulars opened the
+// meet with, came from another game.) Each race from before the meet is put back together from the lines its
+// runners still hold; the favourite is the lowest price among them.
+test('the weeks before the meet are bet on the tote: the favourite on those lines is the price it is live', () => {
+  const w = createWorld('pinned', '2026-10-03');
+  const races = new Map();
+  for (const h of w.horses) for (const p of h.pps) races.set(`${p.d}:${p.no}`, [...(races.get(`${p.d}:${p.no}`) || []), p]);
+  // (A race one of whose runners has since retired has lost a line, and with it perhaps its favourite.)
+  const favs = [...races.values()].filter(ps => ps.length === ps[0].fs).map(ps => Math.min(...ps.map(p => p.odds))).sort((a, b) => a - b);
+  assert.ok(favs.length >= 60, `only ${favs.length} whole races from before the meet`);
+  const median = favs[Math.floor(favs.length / 2)];
+  assert.ok(median < 2.2, `the median favourite before the meet is ${median}-1`);
+  // And the regulars' records are the tote's: a winning pick is paid a tote's price, in steps of 20 cents.
+  for (const [who, r] of Object.entries(w.tipsters)) assert.ok(Math.abs(r.back * 5 - Math.round(r.back * 5)) < 1e-6, `${who} was paid ${r.back} on ${r.wins} winners`);
+});
+
 test('the board words a price at or just under what it pays: every whole number above 10-1', () => {
   // The board rounded down to the morning line's steps, which above 10-1 go 12, 15, 20, 30, 50, 99: "30-1"
   // over "$2 pays ~$97", and 463 of 1,411 final prices in one meet reading more than 10% under what was paid.

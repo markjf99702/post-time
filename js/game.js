@@ -2,9 +2,9 @@
 // localStorage. A race is settled the moment you send the horses to the gate, so closing the page
 // halfway through a race doesn't change what happened.
 
-import { buildWorld, simulateRace, applyResult, nextDay as worldNextDay, ownerSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats } from './world.js';
-import { makeTote, board, settle, ticketReturn, cost as betCost, legs } from './tote.js';
-import { forumPosts, reactions, scoreTipsters, favouriteAtTheOff } from './forum.js';
+import { buildWorld, simulateRace, makeOfficial, forumThread, nextDay as worldNextDay, ownerSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats } from './world.js';
+import { makeTote, board, ticketReturn, cost as betCost, legs } from './tote.js';
+import { reactions } from './forum.js';
 import { oddsText, lineText } from './handicap.js';
 import { liveCall } from './call.js';
 import { JOCKEYS, TRAINERS, OWNERS } from './data.js';
@@ -226,12 +226,10 @@ export function cancelBet(race, i) {
   save();
 }
 
+// The forum's thread on a race, made the first time it's wanted and kept with the meet from then on.
+const thread = race => race.forum || (race.forum = forumThread(game.world, race, toteFor(race)));
 export function forumFor(race) {
-  if (!race.forum) {
-    const b = board(toteFor(race), 0.45, []);
-    race.forum = forumPosts(game.world, race, { odds: b.odds, text: b.text });
-    save();
-  }
+  if (!race.forum) { thread(race); save(); }
   return race.forum;
 }
 
@@ -251,19 +249,11 @@ export function runnersFor(race) {
 export function goToGate(race) {
   const run = simulateRace(race, game.world, { record: true });
   if (race.status === 'official') return { run, replay: true };
-  const tote = toteFor(race);
   const bets = myBets(race);
-  const final = board(tote, 1, bets);
-  const order = run.results.map(r => r.h);
-  const pay = settle(tote, order, bets);
-  // ChalkEater has whoever is favourite on the final board, whatever it was when he posted.
-  const forum = favouriteAtTheOff(forumFor(race), final.odds);
-  applyResult(game.world, race, run, final.odds);
-  race.result.pay = pay;
-  race.result.odds = final.odds.map(o => +o.toFixed(2));
-  race.result.oddsText = final.text;
-  race.forumAfter = reactions(game.world, race, forum, order, pay, run);
-  game.world.tipsters = scoreTipsters(game.world.tipsters || {}, forum, order, pay);
+  // (A thread nobody has opened is made here without a save of its own: the whole meet, half a million
+  // characters, was written twice on the tap that starts a race. The save below writes it.)
+  const { order, pay, posts } = makeOfficial(game.world, race, run, { tote: toteFor(race), bets, posts: thread(race) });
+  race.forumAfter = reactions(game.world, race, posts, order, pay, run);
   const returns = bets.map(b => ticketReturn(b, pay));
   const spent = bets.reduce((s, b) => s + b.cost, 0);
   const back = returns.reduce((s, r) => s + r, 0);

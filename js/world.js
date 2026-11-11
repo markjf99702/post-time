@@ -7,8 +7,9 @@ import { runRace, figureFor } from './sim.js';
 import { coursePath, FURLONG } from './track.js';
 import { runningLine, tripComment } from './chart.js';
 import { SIRES, DAMSIRES, JOCKEYS, TRAINERS, OWNERS, SILK_COLORS, PATTERNS, STAKES, BIG_STAKES, makeName, damName } from './data.js';
-import { morningLine, publicRating, probsFrom, formRating, oddsText } from './handicap.js';
-import { forumPosts, scoreTipsters } from './forum.js';
+import { morningLine, formRating } from './handicap.js';
+import { forumPosts, scoreTipsters, favouriteAtTheOff } from './forum.js';
+import { makeTote, board, settle } from './tote.js';
 
 export const HISTORY_DAYS = 10;
 export const BARN = 210;
@@ -145,15 +146,8 @@ export function* buildWorld(seed, start) {
   for (let d = -HISTORY_DAYS; d < 0; d++) {
     world.day = d;
     const card = buildCard(world, d);
-    for (const race of card.races) {
-      const run = simulateRace(race, world, { record: false });
-      const odds = backgroundOdds(world, race);
-      // The forum regulars were betting these too, so they arrive with a record.
-      const posts = forumPosts(world, race, { odds, text: odds.map(o => oddsText(o)) });
-      applyResult(world, race, run, odds);
-      const order = run.results.map(r => r.h);
-      scoreTipsters(world.tipsters, posts, order, { win: { [order[0]]: Math.floor((odds[order[0]] + 1) * 20) / 10 } });
-    }
+    // Bet on the tote like any other race, with the forum regulars posting: they arrive with a record.
+    for (const race of card.races) makeOfficial(world, race, simulateRace(race, world, { record: false }));
     endOfDay(world, d);
     yield (d + HISTORY_DAYS + 1) / (HISTORY_DAYS + 1);
   }
@@ -413,11 +407,32 @@ export function simulateRace(race, world, opts = {}) {
   return runRace(race, entrants, opts);
 }
 
-// Odds for races run before you arrived: the public's opinion plus some informed money.
-function backgroundOdds(world, race) {
-  const pub = race.entries.map(e => publicRating(world.horses[e.hid], race, e));
-  const p1 = probsFrom(pub, 0.15), p2 = probsFrom(race.entries.map(e => e.rating), 0.12);
-  return p1.map((p, i) => Math.max(0.1, 0.83 / (0.75 * p + 0.25 * p2[i]) - 1));
+// The forum's thread on a race: the regulars post with the betting about half done, and quote the board
+// as it stands then.
+export function forumThread(world, race, tote) {
+  const b = board(tote, 0.45);
+  return forumPosts(world, race, { odds: b.odds, text: b.text });
+}
+
+// A race that has been run is made official: the tote pays out at the final odds, your tickets among the
+// public's (`bets`), those odds go on every runner's line, and each forum regular's pick goes on his record.
+// Every race at Larkspur comes through here, the ones run in the ten weeks before the meet and the ones you
+// watch. (The weeks before the meet had odds from a stand-in book of their own, which made the favourite a
+// median 2.49-1 where the tote makes it 1.70-1 and scored the regulars against those prices, so they opened
+// the meet with records from another game: ChalkEater near the top, where over a meet he's last but one.)
+// `tote` and `posts` are the race's own when it already has them.
+export function makeOfficial(world, race, run, { tote = makeTote(race, world), bets = [], posts = forumThread(world, race, tote) } = {}) {
+  const final = board(tote, 1, bets);
+  const order = run.results.map(r => r.h);
+  const pay = settle(tote, order, bets);
+  // ChalkEater has whoever is favourite on the final board, whatever it was when he posted.
+  favouriteAtTheOff(posts, final.odds);
+  applyResult(world, race, run, final.odds);
+  race.result.pay = pay;
+  race.result.odds = final.odds.map(o => +o.toFixed(2));
+  race.result.oddsText = final.text;
+  world.tipsters = scoreTipsters(world.tipsters || {}, posts, order, pay);
+  return { order, pay, posts };
 }
 
 const SPLIT = [0.6, 0.2, 0.11, 0.05, 0.02];

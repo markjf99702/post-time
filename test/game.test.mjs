@@ -1290,6 +1290,28 @@ test('a meet in progress runs the way it did: three race days of a fixed meet co
   assert.deepEqual(played, PINNED);
 });
 
+// The tap on To the gate writes the meet once. (When the race's forum thread hadn't been opened it was made
+// then, with a save of its own, and the whole meet was written a second time a moment later: 54 ms each on a
+// slow phone, with nothing drawn until both were done.)
+test('going to the gate saves the meet once, whether or not the forum was opened', () => {
+  build('one-save');
+  const real = localStorage.setItem;
+  let writes = 0;
+  localStorage.setItem = (k, v) => { if (k === 'post-time/world') writes++; real(k, v); };
+  try {
+    const [unread, read] = card().races;
+    assert.equal(unread.forum, undefined);
+    goToGate(unread);
+    assert.equal(writes, 1, `a race whose forum wasn't opened wrote the meet ${writes} times at the gate`);
+    assert.ok(unread.forum.length >= 3 && JSON.parse(store.get('post-time/world')).cards[0].races[0].forum.length === unread.forum.length, 'the thread made at the gate was not saved');
+    const posts = forumFor(read);
+    assert.equal(writes, 2, 'opening the forum should keep its thread');
+    goToGate(read);
+    assert.equal(writes, 3);
+    assert.equal(read.forum, posts);
+  } finally { localStorage.setItem = real; }
+});
+
 test("the best day is the one you came out furthest ahead on, today included, and there's none until a day is won", () => {
   assert.equal(bestDay([]), null);
   // A losing first day used to show as "Best day −$10.00".
