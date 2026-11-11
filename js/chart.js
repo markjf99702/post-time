@@ -86,6 +86,9 @@ export function tripComment(run, k, fieldSize) {
     else bits.push(paths >= 4 ? `Pressed ${paths} wide, clear` : 'Stalked, drew clear');
   } else if (!told) {
     const gained = first - r.pos; // places made up between the first call and the wire
+    // Places lost from the better of the first call and the stretch call: a horse that moved up to lead a
+    // furlong out and finished fourth made no late gain, and didn't improve its position. It weakened.
+    const drop = r.pos - Math.min(first, str);
     const third = run.results[2];
     const place = r.pos === 2 ? 'place' : 'show';
     if (first === 1 && r.pos >= 4) bits.push(r.duel > 6 ? 'Dueled, gave way' : 'Set pace, faded');
@@ -93,21 +96,22 @@ export function tripComment(run, k, fieldSize) {
     else if (first <= 3 && r.pos >= fieldSize - 1) bits.push(r.emptied > 150 ? 'Chased, stopped' : 'Chased, tired');
     else if (gained >= 4 && r.pos <= 3 && paths >= 4) bits.push(`Rallied ${paths} wide`);
     else if (near) bits.push(sentence(near));
-    else if (gained >= 4 && r.pos <= 3) bits.push('Closed well');
-    else if (gained >= 3) bits.push('Late gain');
+    else if (gained >= 4 && r.pos <= 3 && str >= r.pos) bits.push('Closed well');
+    else if (gained >= 3 && str >= r.pos) bits.push('Late gain');
     // A clear second: no match for the winner, and a length or more in front of the third.
     else if (r.pos === 2 && r.behind >= 1 && (!third || third.toPrev >= 1)) bits.push('Second best');
     // The rest of the placed horses, by the last furlong: passed one for the place, lost a place, or held it.
     else if (r.pos <= 3 && str > r.pos) bits.push(`Up for ${place}`);
     else if (r.pos <= 3 && gained < 0) bits.push('Stalked, weakened');
     else if (r.pos <= 3) bits.push(sentence(`${first <= 3 ? 'stalked, ' : ''}${str < r.pos ? 'outfinished' : gained > 0 || r.pos === 2 ? `held ${place}` : 'no rally'}`));
-    else if (paths >= 4) bits.push(`${paths} wide, ${gained > 0 ? 'mild rally' : 'no rally'}`);
+    else if (paths >= 4) bits.push(`${paths} wide, ${gained > 0 && drop < 2 ? 'mild rally' : 'no rally'}`);
     else if (r.pos >= fieldSize - 1) bits.push(r.behind > 12 ? 'Outrun' : 'No factor');
     else {
       // The rest finished in mid-field. What's said is what happened between the first call and the wire:
-      // passed a horse or two, lost a place or two, lost more, or neither (in the front half that's running
-      // evenly; further back it's no rally). This used to be "Even trip" for all of them, a third of all lines.
-      const how = gained > 0 ? 'Improved position' : gained <= -3 ? 'Faded' : gained < 0 ? 'Weakened' : r.pos <= fieldSize / 2 ? 'Evenly' : 'No rally';
+      // lost three places or more, lost one or two, passed a horse or two, or neither (in the front half
+      // that's running evenly; further back it's no rally). This used to be "Even trip" for all of them, a
+      // third of all lines.
+      const how = drop >= 3 ? 'Faded' : drop === 2 || gained < 0 ? 'Weakened' : gained > 0 ? 'Improved position' : r.pos <= fieldSize / 2 ? 'Evenly' : 'No rally';
       bits.push(r.wide < 0.6 && !bits.length ? `Saved ground, ${how.toLowerCase()}` : how);
     }
   }

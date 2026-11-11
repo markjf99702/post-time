@@ -576,11 +576,21 @@ test('a trip note says how the horse finished: a near miss, a place taken late, 
   assert.equal(trip({ first: 1, str: 1, pos: 2, behind: 1 }), 'Set pace, caught late');
   assert.equal(trip({ first: 1, str: 2, pos: 2, behind: 1 }), 'Set pace, held place', 'it had been caught before the last furlong');
   assert.equal(trip({ first: 7, str: 5, pos: 2, behind: 1 }), 'Closed well');
+  assert.equal(trip({ first: 7, str: 1, pos: 2, behind: 1, third: 0.5 }), 'Outfinished', 'it led a furlong out and was caught');
   // In mid-field the note is what happened between the first call and the wire. These were all "Even trip",
   // a third of every line.
   assert.equal(trip({ n: 10, first: 6, str: 6, pos: 5 }), 'Improved position');
   assert.equal(trip({ n: 10, first: 4, str: 5, pos: 5 }), 'Weakened');
   assert.equal(trip({ n: 10, first: 2, str: 4, pos: 6 }), 'Faded');
+  // A horse that moved up and then lost its place in the last furlong weakened, whatever it gained early:
+  // one that led a furlong out and finished fourth was said to have "Improved position".
+  assert.equal(trip({ n: 10, first: 5, str: 1, pos: 4 }), 'Faded');
+  assert.equal(trip({ n: 10, first: 5, str: 2, pos: 4 }), 'Weakened');
+  assert.equal(trip({ n: 10, first: 8, str: 3, pos: 5 }), 'Weakened', 'not a late gain');
+  assert.equal(trip({ n: 10, first: 8, str: 5, pos: 5 }), 'Late gain');
+  assert.equal(trip({ n: 10, first: 7, str: 4, pos: 5 }), 'Improved position');
+  assert.equal(trip({ n: 10, first: 5, str: 4, pos: 5 }), 'Evenly');
+  assert.equal(trip({ n: 10, first: 8, str: 4, pos: 6, wide: 3 }), '4 wide, no rally');
   assert.equal(trip({ n: 10, first: 5, str: 5, pos: 5 }), 'Evenly');
   assert.equal(trip({ n: 10, first: 7, str: 7, pos: 7 }), 'No rally');
   assert.equal(trip({ n: 10, first: 5, str: 5, pos: 5, wide: 0.3 }), 'Saved ground, evenly');

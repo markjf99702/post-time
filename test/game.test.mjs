@@ -776,9 +776,13 @@ test("a trip note doesn't contradict itself or the result, and no note is on eve
   assert.deepEqual(notes.filter(n => missed.test(n.cm) && !(n.fin <= 3 && n.bl < 0.375)).map(told), []);
   // What a note says of the places a horse made up or lost is what its running line shows: from the first
   // call to the wire, and for a place taken or lost late, from a furlong out.
-  assert.deepEqual(notes.filter(n => /Improved position|improved position|mild rally/.test(n.cm) && !(n.fin < n.first)).map(told), []);
-  assert.deepEqual(notes.filter(n => /Weakened|Faded|weakened|faded/.test(n.cm) && !(n.fin > n.first)).map(told), []);
-  assert.deepEqual(notes.filter(n => /Evenly|evenly/.test(n.cm) && n.fin !== n.first).map(told), []);
+  // (A horse is held to the better of its two calls: one that led a furlong out and finished fourth
+  // weakened, wherever it was early.)
+  const best = n => Math.min(n.first, n.str);
+  assert.deepEqual(notes.filter(n => /Improved position|improved position|mild rally/.test(n.cm) && !(n.fin < n.first && n.fin - best(n) < 2)).map(told), []);
+  assert.deepEqual(notes.filter(n => /Late gain|Closed well/.test(n.cm) && !(n.first - n.fin >= 3 && n.str >= n.fin)).map(told), []);
+  assert.deepEqual(notes.filter(n => /Weakened|Faded|weakened|faded/.test(n.cm) && !(n.fin > best(n))).map(told), []);
+  assert.deepEqual(notes.filter(n => /Evenly|evenly/.test(n.cm) && !(n.fin === n.first && n.fin - best(n) < 2)).map(told), []);
   assert.deepEqual(notes.filter(n => /Up for (place|show)/.test(n.cm) && !(n.str > n.fin)).map(told), []);
   assert.deepEqual(notes.filter(n => /[Oo]utfinished/.test(n.cm) && !(n.str < n.fin)).map(told), []);
   assert.deepEqual(notes.filter(n => /Second best/.test(n.cm) && !(n.fin === 2 && n.bl >= 1)).map(told), []);
