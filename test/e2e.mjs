@@ -368,12 +368,33 @@ assert.equal(await page.locator('.race-row.done').count(), 1, 'race 1 is officia
 assert.equal(await page.evaluate(() => window.postTime.game.player.bank), bank);
 // Down to $1.40, with no win, place or show ticket that cheap: the ATM is offered.
 await page.evaluate(() => { window.postTime.game.player.bank = 1.4; window.postTime.nav.refresh(); });
-assert.equal(await page.locator('.card-foot .btn').textContent(), 'Take out $100', 'no ATM with $1.40 left');
-assert.equal(await page.locator('.card-foot p').textContent(), "You're down to $1.40, not enough for a $2 ticket. There's an ATM by the paddock.", 'the card says $1.40 is no money at all');
+assert.equal(await page.locator('.day .atm .btn').textContent(), 'Take out $100', 'no ATM with $1.40 left');
+assert.equal(await page.locator('.day .atm p').textContent(), "You're down to $1.40, not enough for a $2 ticket. There's an ATM by the paddock.", 'the card says $1.40 is no money at all');
 await page.evaluate(() => { window.postTime.game.player.bank = 0.4; window.postTime.nav.refresh(); });
-assert.equal(await page.locator('.card-foot p').textContent(), "You're out of money. There's an ATM by the paddock.");
-await page.evaluate(b => { window.postTime.game.player.bank = b; window.postTime.nav.refresh(); }, bank);
-assert.equal(await page.locator('.card-foot .btn').count(), 0, 'the ATM is offered with money left');
+assert.equal(await page.locator('.day .atm p').textContent(), "You're out of money. There's an ATM by the paddock.");
+// Broke, the ATM is where the player is. On the card it's under the date, on the screen without scrolling
+// (it used to be under all eight races, 974 px down this 844 px screen, and nowhere else). The result of
+// the race that did it says what's left, and the betting window has the ATM where the cost would be. The
+// button leaves the player on the screen it was tapped on, with the $100.
+const broke = async where => {
+  await page.evaluate(() => { const { game } = window.postTime; game.player.bank = 0; game.player.atm = 0; });
+  await page.evaluate(([screen, params]) => window.postTime.nav.go(screen, params), where);
+};
+await broke(['card', {}]);
+const atmOnCard = await page.evaluate(() => { const r = document.querySelector('.atm .btn').getBoundingClientRect(), top = document.getElementById('top').getBoundingClientRect(); return r.top >= top.bottom && r.bottom <= innerHeight && scrollY === 0; });
+assert.ok(atmOnCard, "with $0 the ATM isn't on the screen when the card opens");
+await broke(['result', { no: 1 }]);
+assert.equal(await page.locator('.summary .atm p').textContent(), "That leaves you $0.00. There's an ATM by the paddock.");
+await page.click('.summary .atm .btn');
+assert.deepEqual([await page.locator('.official').count(), await page.locator('.atm').count(), await page.locator('#bank').textContent()], [1, 0, '$100.00'], 'the ATM on a result should leave the result up, with $100');
+await broke(['race', { no: 2, tab: 'bet' }]);
+assert.deepEqual([await page.locator('.bet-foot .atm p').textContent(), await page.locator('.bet-foot .cost').count()], ["You're out of money. There's an ATM by the paddock.", 0], 'with $0 the betting window has no ATM where the cost goes');
+await page.evaluate(() => window.scrollTo(0, 200));
+await page.click('.bet-foot .atm .btn');
+assert.deepEqual([await page.locator('.tabs button[aria-selected="true"]').textContent(), await page.locator('.bet-foot .atm').count(), await page.locator('.bet-foot .cost').textContent(), await page.locator('#bank').textContent(), await page.evaluate(() => [scrollY > 0, window.postTime.game.player.atm])],
+  ['Bet', 0, 'Pick a horse.', '$100.00', [true, 100]], 'the ATM at the betting window should leave the window up, with $100');
+await page.evaluate(b => { const { game, nav, save } = window.postTime; game.player.bank = b; game.player.atm = 0; save(); nav.go('card'); }, bank);
+assert.equal(await page.locator('.atm').count(), 0, 'the ATM is offered with money left');
 
 // The game open in a second tab: when that one saves, this one loads the newer save instead of carrying
 // on with its old copy of the meet (and betting on a race it could see the result of over there).

@@ -11,8 +11,9 @@ import { BET_NAMES, cost as betCost, BASE } from '../tote.js';
 import { drawHorse } from '../draw/horse.js';
 import { oddsText, angles, newcomer } from '../handicap.js';
 import * as audio from '../audio.js';
+import { atmLine } from './card.js';
 
-const COND = { fast: 'ft', good: 'gd', sloppy: 'sly', muddy: 'my', firm: 'fm', yielding: 'yl', soft: 'sf' };
+const COND ={ fast: 'ft', good: 'gd', sloppy: 'sly', muddy: 'my', firm: 'fm', yielding: 'yl', soft: 'sf' };
 const SEX = { c: 'colt', f: 'filly', g: 'gelding', h: 'horse', m: 'mare' };
 // A colt is a horse from the year he turns five, and a filly a mare.
 function sexWord(sex, age) {
@@ -458,6 +459,8 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
     // what it costs when that's more than one bet; and what there is to spend.
     if (bet) msg.append(h('b', {}, pickLine(race, bet)), c > st.amt ? h('span', { class: 'money' }, ` · ${money(c)} (${c / st.amt} bets of $${st.amt})`) : '', h('span', { class: 'muted' }, ` · you have ${money(game.player.bank)}`));
     else msg.append(h('span', { class: 'muted' }, needs(st)));
+    // With no money for a ticket and none bought, the way to the ATM is here, where the cost would be.
+    const broke = open ? atmLine(changed) : null;
     const buy = h('button', {
       class: 'btn', type: 'button', disabled: !bet || !open || c > game.player.bank + 1e-9 ? true : null,
       onclick: () => {
@@ -470,7 +473,7 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
         showPrinted();
       },
     }, 'Buy ticket');
-    builder.append(h('div', { class: 'bet-foot' }, msg, buy));
+    builder.append(h('div', { class: 'bet-foot' }, broke || msg, buy));
     picked(); // the bar at the bottom follows the slip
   };
   draw();

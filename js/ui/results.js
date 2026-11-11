@@ -9,6 +9,7 @@ import { marginShort, fmtTime, ordinal } from '../chart.js';
 import { BET_NAMES } from '../tote.js';
 import { drawCircle } from '../draw/circle.js';
 import { distanceName } from '../track.js';
+import { atmLine, redraw } from './card.js';
 
 export function renderResult(root, nav, params) {
   const race = card().races.find(r => r.no === params.no);
@@ -44,6 +45,8 @@ export function renderResult(root, nav, params) {
           back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : h('span', { class: 'small' }, 'torn up'),
         );
       })),
+      // The race that left you without the price of a ticket says so, with the way to the ATM.
+      nxt && nxt.no === race.no + 1 ? atmLine(() => redraw(nav), `That leaves you ${money(game.player.bank)}.`) : null,
     ));
   }
 

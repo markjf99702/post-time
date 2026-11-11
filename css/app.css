@@ -196,6 +196,12 @@ a { color: var(--green-2); }
 .tag.stk { background: #6a3aa8; color: #fff; }
 .tag.turf { background: #3f7f35; color: #fff; }
 .card-foot { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+/* Out of money: the line that says so and the button to the ATM, on the card, at the window and on a result. */
+.atm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.atm p { margin: 0; flex: 1 1 200px; }
+.day .atm { margin-top: 12px; }
+.summary .atm { flex: 1 0 100%; padding-top: 10px; border-top: 1px solid var(--line); }
+.bet-foot .atm { flex: 1 1 260px; font-size: 15px; }
 .jd-foot { padding: 14px 16px; text-align: center; font-size: 14px; color: var(--muted); }
 .jd-foot a { color: inherit; text-decoration: none; text-underline-offset: 3px; border-radius: 2px; }
 .jd-foot a:hover, .jd-foot a:focus-visible { text-decoration: underline; }

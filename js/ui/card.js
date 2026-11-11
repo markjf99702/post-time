@@ -7,6 +7,27 @@ import { distanceName } from '../track.js';
 
 const SKY = { sunny: '☀️', 'partly cloudy': '⛅', overcast: '☁️', rain: '🌧️', showers: '🌦️' };
 
+// Out of money. With less than $2 (the least a win, place or show ticket costs) and no ticket on the race
+// that's up, there's nothing left to do but watch, so the ATM is offered wherever the player is when that
+// happens: under the date on the card, at the betting window, and under the tickets on the result that
+// did it. (It was only at the foot of the card, under all eight races, and nothing on the way there said
+// so.) `after` draws the screen again where it is; `lead` is said in place of the usual first sentence.
+export function atmLine(after, lead) {
+  const nxt = nextRace(), left = game.player.bank;
+  if (!nxt || left >= 2 || myBets(nxt).length) return null;
+  const said = lead || (left >= 1 ? `You're down to ${money(left)}, not enough for a $2 ticket.` : "You're out of money.");
+  return h('div', { class: 'atm' },
+    h('p', {}, `${said} There's an ATM by the paddock.`),
+    h('button', { class: 'btn ghost', type: 'button', onclick: () => { atm(); after(); } }, 'Take out $100'),
+  );
+}
+// The same screen again, where it was (going to a screen starts it at the top).
+export function redraw(nav) {
+  const y = window.scrollY;
+  nav.refresh();
+  window.scrollTo(0, y);
+}
+
 export function renderCard(root, nav) {
   const c = card();
   const w = game.world;
@@ -25,6 +46,7 @@ export function renderCard(root, nav) {
         tot.spent ? ['Today: bet ', h('b', { class: 'money' }, money(tot.spent)), ', back ', h('b', { class: 'money' }, money(tot.back)), ' ', h('b', { class: `money ${tot.net >= 0 ? 'pos' : 'neg'}` }, `(${money(tot.net, { sign: true })})`)] : null,
         tot.pending ? h('span', { class: 'muted' }, `${tot.spent ? ' · ' : ''}${money(tot.pending)} riding on races to come`) : null,
       ) : null,
+      atmLine(() => redraw(nav)),
     ),
     h('ol', { class: 'races' }, c.races.map(r => h('li', {}, raceRow(r, nxt, nav)))),
   );
@@ -35,12 +57,6 @@ export function renderCard(root, nav) {
       h('p', { class: 'h2' }, "That's the card."),
       h('p', { class: 'muted' }, 'Entries for next Saturday are drawn. Some of today\'s horses will be back in two or three weeks.'),
       h('button', { class: 'btn brass', type: 'button', onclick: () => { advanceDay(); nav.go('card'); window.scrollTo(0, 0); } }, 'Next race day ▸'),
-    );
-  } else if (game.player.bank < 2 && !myBets(nxt).length) { // $2 is the least a win, place or show ticket costs
-    const left = game.player.bank;
-    foot.append(
-      h('p', {}, left >= 1 ? `You're down to ${money(left)}, not enough for a $2 ticket. There's an ATM by the paddock.` : "You're out of money. There's an ATM by the paddock."),
-      h('button', { class: 'btn ghost', type: 'button', onclick: () => { atm(); nav.refresh(); } }, 'Take out $100'),
     );
   }
   root.append(foot, jdFoot());
