@@ -136,25 +136,31 @@ const optVoice = document.getElementById('optVoice');
 optSound.addEventListener('change', () => { game.player.settings.sound = optSound.checked; audio.setSound(optSound.checked); if (optSound.checked) audio.wake(); save(); });
 optVoice.addEventListener('change', () => { game.player.settings.voice = optVoice.checked; audio.setVoice(optVoice.checked); audio.primeVoice(); showVoices(); save(); });
 
-// Under "Read the race call aloud" while it's ticked: which voice reads it, and a button to hear it. The
-// row isn't there in a browser with no voice at all. "Best here" is the best voice this browser has just
-// now; a voice chosen by name is kept by name (settings.voiceName), so it's still the choice after a
-// spell on a device that doesn't have it.
+// Under "Read the race call aloud" while it's ticked: which voice reads it, and a button to hear it. "Best
+// here" is the best voice this browser has just now, and the line under the list says which that is (in
+// the list itself the name was cut off: "Best here (Chrome OS ..."). A voice chosen by name is kept by name
+// (settings.voiceName), so it's still the choice after a spell on a device that doesn't have it. In a
+// browser with no voice to read with, one line says so in place of all that; the tick stays, since the
+// same meet may be played where there is one, and the line goes if a voice turns up.
 const voiceRow = document.getElementById('voiceRow');
 const optVoiceName = document.getElementById('optVoiceName');
+const voiceNote = document.getElementById('voiceNote');
 let voicesShown = '';
 function showVoices() {
-  const on = optVoice.checked && audio.canSpeak();
-  voiceRow.hidden = !on;
-  if (!on) return;
-  const { best, offered } = audio.voiceChoices();
+  voiceRow.hidden = !optVoice.checked;
+  if (!optVoice.checked) return;
+  const { offered, using, none } = audio.voiceChoices();
+  voiceRow.classList.toggle('none', none);
+  document.getElementById('voiceNone').hidden = !none;
+  if (none) return;
   const saved = savedVoice();
   const names = [...new Set(offered.map(v => v.name))];
   const options = [
-    ['', best ? `Best here (${best.name})` : 'Best here'],
+    ['', 'Best here'],
     ...names.map(n => [n, `${n}${offered.find(v => v.name === n).localService === false ? ' (needs the internet)' : ''}`]),
     ...(saved && !names.includes(saved) ? [[saved, `${saved} (not here now)`]] : []),
   ];
+  voiceNote.textContent = using ? `Reading in ${using.name}` : '';
   // Built again only when the list has changed, so a list that arrives late doesn't shut one that's open.
   const shows = JSON.stringify(options);
   if (shows !== voicesShown) {
@@ -169,6 +175,7 @@ optVoiceName.addEventListener('change', () => {
   if (optVoiceName.value) game.player.settings.voiceName = optVoiceName.value;
   else delete game.player.settings.voiceName;
   audio.setVoiceName(savedVoice());
+  showVoices();
   save();
 });
 // Hear it: a line of a call in that voice, at the pace of one about twenty seconds from the wire.

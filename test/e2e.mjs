@@ -733,8 +733,13 @@ assert.deepEqual(await page.evaluate(() => window.__said.map(u => [u.volume, u.l
 assert.equal(await page.locator('#voiceRow').isVisible(), true, 'no voice row under "Read the race call aloud"');
 assert.equal(await menuWidth(), narrow, 'the voice row makes the menu wider');
 const offered = await page.locator('#optVoiceName option').allTextContents();
-assert.equal(offered[0], 'Best here (Google US English)');
+// The first choice is "Best here", and the line under the list says which voice that is. (With the name in
+// the choice itself the closed list read "Best here (Chrome OS ...", the number cut off.)
+assert.equal(offered[0], 'Best here');
 assert.equal(offered[1], 'Google US English (needs the internet)');
+const reading = () => page.locator('#voiceNote').textContent();
+assert.equal(await reading(), 'Reading in Google US English');
+assert.deepEqual(await page.evaluate(() => { const row = document.getElementById('voiceRow').getBoundingClientRect(), note = document.getElementById('voiceNote').getBoundingClientRect(); return [note.width > 0 && note.left >= row.left && note.right <= row.right + 0.5, document.getElementById('voiceNone').hidden]; }), [true, true], "the line that says which voice is reading isn't inside the menu, or the no-voice line shows");
 assert.ok(offered.includes('Samantha') && !offered.some(o => /^(Fred|Zarvox|Bells|Eddy)/.test(o)), `the voices offered: ${offered.join(', ')}`);
 // Hear it, and what was said for it: one line, however soon after the last (a tap while it's still talking
 // starts it again, a quarter of a second after the cancel).
@@ -754,6 +759,7 @@ assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('post-tim
 assert.deepEqual((await hearIt()).map(u => u.voice), ['Samantha'], 'Hear it should say one line, in the voice chosen');
 // The line goes out in the language of the voice chosen: on an Android phone that is what picks the voice.
 await page.selectOption('#optVoiceName', 'Daniel');
+assert.equal(await reading(), 'Reading in Daniel', "the line under the list doesn't follow the choice");
 assert.deepEqual((await hearIt()).map(u => [u.voice, u.lang]), [['Daniel', 'en-GB']], 'Hear it should be sent in the language of the voice chosen');
 await page.selectOption('#optVoiceName', 'Samantha');
 assert.deepEqual((await hearIt()).map(u => [u.voice, u.lang]), [['Samantha', 'en-US']]);
@@ -775,6 +781,7 @@ await page.reload();
 await page.waitForSelector('.races');
 await page.click('#menuBtn');
 assert.equal(await page.locator('#optVoiceName option:checked').textContent(), 'Ava (Premium) (not here now)');
+assert.equal(await reading(), 'Reading in Google US English');
 assert.deepEqual((await hearIt()).map(u => u.voice), ['Google US English'], 'with the chosen voice missing, the best here should read');
 assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('post-time/player')).settings.voiceName), 'Ava (Premium)', 'a missing voice was forgotten');
 // Back to the best here: nothing is saved for it, as in a save from before there was a choice.
@@ -1187,11 +1194,46 @@ await page.waitForSelector('.races');
   await first.waitForTimeout(1500);
   assert.deepEqual(await first.evaluate(() => [window.postTime.game.world.seed, !!document.querySelector('.setup'), document.getElementById('restart').disabled]), [built, false, false], 'a second meet was built beside the first');
   assert.equal(await first.locator('#bank').textContent(), '$200.00');
+  // With the call ticked, one line says there's no voice here, in place of the choice of voice and Hear it.
+  const voiceRow = p => p.evaluate(() => {
+    const seen = id => { const el = document.getElementById(id); return !!el && el.getClientRects().length > 0; };
+    return { line: seen('voiceNone') ? document.getElementById('voiceNone').textContent : '', list: seen('optVoiceName'), hearIt: seen('hearIt'), note: seen('voiceNote') ? document.getElementById('voiceNote').textContent : '', ticked: document.getElementById('optVoice').checked };
+  });
+  const NO_VOICE = 'This browser has no voice to read the call. The call is still shown under the picture.';
   await first.click('#menuBtn');
+  assert.deepEqual(await voiceRow(first), { line: '', list: false, hearIt: false, note: '', ticked: false });
   await first.check('#optVoice');
-  assert.equal(await first.locator('#voiceRow').isVisible(), false, 'a voice is offered in a browser that has none');
+  assert.deepEqual(await voiceRow(first), { line: NO_VOICE, list: false, hearIt: false, note: '', ticked: true }, 'a voice is offered in a browser that has none, or nothing says there is none');
   await first.uncheck('#optVoice');
   await first.click('#menuBtn');
+  // The commoner case: the browser has speech and no voice to speak with. Its list is empty and every line
+  // comes back as failed (headless Chromium is one; so is a desktop with no speech service). The menu
+  // offered "Best here" and Hear it, and tapping Hear it did nothing with no word of why. Now the same line
+  // shows, the tick stays, and the choice comes back if a voice turns up.
+  {
+    const mute = await ctx2.newPage();
+    mute.on('pageerror', e => problems.push(e.message));
+    await mute.addInitScript(() => {
+      window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+      const speech = { list: [], tell: null, getVoices() { return this.list; }, speak(u) { setTimeout(() => u.onerror && u.onerror({ error: 'synthesis-failed' }), 1); }, cancel() {}, addEventListener(type, fn) { if (type === 'voiceschanged') this.tell = fn; } };
+      Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: speech });
+    });
+    await mute.goto(base, { waitUntil: 'domcontentloaded' });
+    await mute.waitForSelector('.races');
+    await mute.click('#menuBtn');
+    await mute.check('#optVoice');
+    await mute.waitForSelector('#voiceNone:not([hidden])', { timeout: 5000 });
+    assert.deepEqual(await voiceRow(mute), { line: NO_VOICE, list: false, hearIt: false, note: '', ticked: true }, 'with speech and no voice, the menu still offers a voice');
+    assert.equal(await mute.evaluate(() => document.getElementById('menu').scrollWidth <= document.getElementById('menu').clientWidth + 1), true, 'the line is wider than the menu');
+    await mute.evaluate(() => { const s = window.speechSynthesis; s.list = [{ name: 'Chrome OS US English 4', lang: 'en-US', localService: true }, { name: 'Chrome OS US English 1', lang: 'en-US', localService: true }]; s.tell(); });
+    await mute.waitForSelector('#voiceNone', { state: 'hidden' });
+    assert.deepEqual(await voiceRow(mute), { line: '', list: true, hearIt: true, note: 'Reading in Chrome OS US English 4', ticked: true }, 'a voice turned up, and the choice is not back');
+    await mute.uncheck('#optVoice');
+    // How to play says where the call is, and that it can be read aloud.
+    await mute.click('#menu [data-go="help"]');
+    assert.match(await mute.locator('#app .help').textContent(), /The caller's lines run under the picture as the race goes\. Tick Read the race call aloud in the menu to have them spoken\./);
+    await mute.close();
+  }
 
   // The Back button goes back a screen, the way the page's own back buttons do: from a race to the card
   // (not to the tab before), from a race that's running to its result, from the winner's circle to the

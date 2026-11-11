@@ -309,6 +309,22 @@ let pickedOnline = true;
 let engine = 'plain'; // how this browser's speech engine takes a rate, for that voice (see engineOf)
 let voicesChanged = null;
 let netDown = false;  // a voice that needs the internet has failed: not again this visit
+// A browser can have speech and no voice to speak with: a desktop with no speech service, some web views.
+// Its list stays empty and every line fails, in silence. It's taken to have no voice once the list has been
+// asked for and is still empty a second and a half later, or a line comes back as failed with the list
+// empty, unless a line has been heard to start (a browser may read with a voice it doesn't list).
+const LIST_WAIT = 1500; // ms
+let listTimer = null, listLate = false, lineFailed = false, lineHeard = false;
+const tell = () => { if (voicesChanged) voicesChanged(); };
+function heard() { const was = noVoice(); lineHeard = true; if (was) tell(); }
+function failedWith(error) {
+  if (voices.length || (error !== 'synthesis-failed' && error !== 'voice-unavailable')) return;
+  const was = noVoice();
+  lineFailed = true;
+  if (!was && noVoice()) tell();
+}
+// True when "Read the race call aloud" can't be done here: the menu says so in place of the choice of voice.
+export function noVoice() { return !canSpeak() || (voices.length === 0 && !lineHeard && (listLate || lineFailed)); }
 const online = () => !netDown && (typeof navigator === 'undefined' || navigator.onLine !== false);
 
 function pick() {
@@ -331,10 +347,15 @@ export function refreshVoices() {
   }
   let list = [];
   try { list = Array.from(s.getVoices() || []); } catch { /* a browser that can't say: its own voice is used */ }
-  const was = voices.map(v => v.name).join('|');
+  const was = voices.map(v => v.name).join('|'), none = noVoice();
+  if (voices.length && !list.length) lineHeard = false; // the list has emptied: whether there's a voice is to be seen again
   voices = list;
   pick();
-  if (voicesChanged && was !== voices.map(v => v.name).join('|')) voicesChanged();
+  if (list.length) { listLate = lineFailed = false; clearTimeout(listTimer); listTimer = null; }
+  else if (voiceOn && !listLate && listTimer === null) {
+    listTimer = setTimeout(() => { listTimer = null; const before = noVoice(); listLate = true; refreshVoices(); if (!before && noVoice()) tell(); }, LIST_WAIT);
+  }
+  if (was !== voices.map(v => v.name).join('|') || none !== noVoice()) tell();
 }
 
 export function canSpeak() { return !!synth() && typeof SpeechSynthesisUtterance === 'function'; }
@@ -344,8 +365,10 @@ export function voiceEnabled() { return voiceOn && canSpeak(); }
 // meanwhile, and the chosen one comes back when it does.
 export function setVoiceName(name) { voiceName = name || null; pick(); }
 // For the menu: the voice "Best here" means now, and the ones to choose from, best first.
+// And `using`, the voice that reads now (the one chosen, if it's here), and `none`, true in a browser with
+// no voice to read with.
 export function voiceChoices() {
-  return { best: pickVoice(voices, { online: online() }), offered: offeredVoices(voices) };
+  return { best: pickVoice(voices, { online: online() }), offered: offeredVoices(voices), using: picked, none: noVoice() };
 }
 export function onVoicesChanged(fn) { voicesChanged = fn; }
 
@@ -592,12 +615,13 @@ const browserVoice = {
     u.rate = engineRate(rate, engine); // the number this engine needs for that pace
     u.pitch = Math.min(1, pitch); // never higher than the voice's own pitch: see FASTEST
     if (volume !== undefined) u.volume = volume;
-    u.onstart = onstart;
+    u.onstart = e => { heard(); onstart(e); };
     u.onend = onend;
     u.onerror = e => {
       // Chrome reports a line that was cancelled as an error: that's only the line ending.
       if (e && (e.error === 'interrupted' || e.error === 'canceled')) { onend(); return; }
       localOnly(u.voice);
+      failedWith(e && e.error);
       onerror();
     };
     uttering = u;
@@ -663,6 +687,8 @@ export function primeVoice() {
     u.rate = engineRate(FASTEST, engine);
     u.lang = langFor(picked);
     if (picked) u.voice = picked;
+    u.onstart = heard;
+    u.onerror = e => failedWith(e && e.error);
     synth().speak(u);
   } catch { /* a browser that won't: the tap carries on, and the call's own lines find out */ }
 }

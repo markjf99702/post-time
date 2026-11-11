@@ -19,11 +19,13 @@ const listening = [];
 let cancels = 0;
 let trouble = null; // an error for the next utterance to come back with, in place of being said
 let inFlight = false; // lines are begun and not ended, as while one is being said
+let dead = false; // every utterance fails, as in a browser with speech and no voice
 const voice = {
   // Each line is over as soon as it's begun, so the page's queue is always free for the next one. (Lines
   // that take time are further down, with a clock the tests turn by hand.)
   speak(u) {
     spoken.push(u);
+    if (dead) { u.onerror?.({ error: 'synthesis-failed' }); return; }
     if (trouble) { const error = trouble; trouble = null; u.onerror?.({ error }); return; }
     u.onstart?.({});
     if (!inFlight) u.onend?.({});
@@ -238,6 +240,60 @@ test('a list of voices that arrives late is used from then on, and the language 
   onLine = true;
   audio.say('Turning for home.');
   assert.equal(last().voice.name, 'Google US English');
+});
+
+test('a browser with no voice to read with is known for one, and not once a voice turns up', () => {
+  // Headless Chromium, a desktop with no speech service, some web views: there is speech, the list of
+  // voices stays empty, and every line comes back "synthesis-failed". The menu offered a voice and Hear it
+  // all the same, and nothing said why they were silent.
+  // (The page's wait for the list, on a clock turned by hand.)
+  const real = globalThis.setTimeout, waiting = [];
+  let clock = 0;
+  globalThis.setTimeout = (fn, ms) => { const timer = { fn, at: clock + ms }; waiting.push(timer); return timer; };
+  const tick = ms => { clock += ms; for (const timer of waiting.splice(0)) { if (timer.at <= clock) timer.fn(); else waiting.push(timer); } };
+  let told = 0;
+  audio.onVoicesChanged(() => { told++; });
+  const none = () => audio.voiceChoices().none;
+  audio.setVoice(true);
+  arrive(IPHONE);
+  assert.equal(none(), false);
+  // The list is empty: not yet a browser with no voice, since Chrome's is empty until it has loaded.
+  arrive(lists['No voices yet (Chrome before voiceschanged, or a browser with none)']);
+  assert.equal(none(), false, 'an empty list is taken for no voice at once');
+  tick(1400);
+  assert.equal(none(), false);
+  told = 0;
+  tick(200);
+  assert.deepEqual([none(), told], [true, 1], 'still empty a second and a half on, and the menu is not told');
+  // A voice turns up (downloaded, or the list was only slow): the choice is back.
+  arrive(IPHONE);
+  assert.deepEqual([none(), told], [false, 2]);
+  // Or the first sign is a line that fails: known at once, without the wait.
+  arrive([]);
+  dead = true;
+  told = 0;
+  audio.say('Down the backstretch.');
+  assert.equal(none(), true, 'a line failed with no voice in the list, and the menu still offers one');
+  assert.ok(told >= 1);
+  dead = false;
+  // A browser that lists no voice and reads all the same is not one of these.
+  audio.say('Around the far turn.');
+  assert.equal(none(), false, 'a line was heard to start, and the browser is still taken to have no voice');
+  // A failure of another kind, with no list, says nothing about there being a voice.
+  arrive(IPHONE);
+  arrive([]);
+  trouble = 'network';
+  audio.say('Turning for home.');
+  assert.equal(none(), false);
+  // And a browser with no speech at all.
+  const speech = globalThis.window.speechSynthesis;
+  globalThis.window.speechSynthesis = undefined;
+  assert.equal(none(), true);
+  globalThis.window.speechSynthesis = speech;
+  arrive(IPHONE);
+  assert.equal(none(), false);
+  audio.onVoicesChanged(null);
+  globalThis.setTimeout = real;
 });
 
 test('a voice that needs the internet and fails is dropped for the rest of the visit', () => {
