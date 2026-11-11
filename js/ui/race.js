@@ -13,7 +13,7 @@ import { oddsText, angles, newcomer } from '../handicap.js';
 import * as audio from '../audio.js';
 import { atmLine } from './card.js';
 
-const COND ={ fast: 'ft', good: 'gd', sloppy: 'sly', muddy: 'my', firm: 'fm', yielding: 'yl', soft: 'sf' };
+const COND = { fast: 'ft', good: 'gd', sloppy: 'sly', muddy: 'my', firm: 'fm', yielding: 'yl', soft: 'sf' };
 const SEX = { c: 'colt', f: 'filly', g: 'gelding', h: 'horse', m: 'mare' };
 // A colt is a horse from the year he turns five, and a filly a mare.
 function sexWord(sex, age) {

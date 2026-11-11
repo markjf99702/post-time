@@ -553,8 +553,9 @@ a { color: var(--link); }
 .setup .bar { width: 220px; height: 8px; border-radius: 4px; background: var(--paper-2); overflow: hidden; }
 .setup .bar i { display: block; height: 100%; width: 0; background: var(--brass); transition: width .2s; }
 
-/* The board and the picks: five to a row at most on a small phone, and the whole field in one row with room for it. */
-@media (max-width: 350px) {
+/* The board and the picks: five to a row at most on a small phone, and the whole field in one row with room for it.
+   (Six picks need a screen 358 px wide: a phone between 351 and 357 used to wrap eleven as five, five and one.) */
+@media (max-width: 357px) {
   .tote-grid { grid-template-columns: repeat(var(--by5, 5), minmax(0, 1fr)); }
   .picks-grid { max-width: calc(var(--by5, 5) * 46px - 6px); }
 }

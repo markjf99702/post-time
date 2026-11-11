@@ -1434,6 +1434,25 @@ await page.waitForSelector('.races');
     await shop.locator('.ticket button').first().click();
     assert.deepEqual([await shop.locator('.ticket').count(), await printing()], [width === 390 ? 2 : 4, 0], 'cancelling a ticket prints another one again');
   }
+  // A field of twelve is picked from two rows of six or, on a phone too narrow for six in a row, three rows of
+  // four. (A phone between 351 and 357 px wide was set out for six to a row and wrapped them five, five and
+  // two.) Twelve stand-in picks are put in the slip, set out as the race's page sets out a field of twelve.
+  const twelve = [];
+  for (const width of [320, 344, 351, 353, 357, 358, 360, 375, 390, 430]) {
+    await shop.setViewportSize({ width, height: 800 });
+    const rows = await shop.evaluate(() => {
+      const row = document.querySelector('.pick-row'), mine = row.cloneNode(true), grid = mine.querySelector('.picks-grid');
+      while (grid.children.length < 12) grid.append(grid.firstElementChild.cloneNode(true));
+      for (const [name, n] of [['--by5', 4], ['--by6', 6], ['--field', 12]]) grid.style.setProperty(name, n); // what evenRows() gives for twelve
+      row.after(mine);
+      const tops = [...grid.children].map(x => Math.round(x.getBoundingClientRect().top));
+      mine.remove();
+      return [...new Set(tops)].map(t => tops.filter(x => x === t).length);
+    });
+    if (!even(rows)) twelve.push(`${width} wide: ${rows.join(' and ')}`);
+  }
+  assert.deepEqual(twelve, [], 'twelve picks are in rows of uneven length');
+  await shop.setViewportSize({ width: 320, height: 568 });
 
   // A losing ticket is torn where nothing is printed: the tear runs down the gutter before the words
   // "torn up", on the result and on the Bet tab, on this small phone. (It was cut at 51 to 59% of the width,
