@@ -248,6 +248,23 @@ assert.match(await page.locator('.tote + .note').textContent(), /^Odds keep movi
 // A pick that hasn't been bought. The bar at the bottom names it and offers to buy it, and To the gate
 // doesn't run the race on one tap (or on a double tap): the first tap says what's about to be left behind.
 const third = await page.evaluate(() => { const { game, nextRace } = window.postTime; const e = nextRace().entries[2]; return `#${e.pp} ${game.world.horses[e.hid].name}`; });
+// To the gate with no ticket on the race only asks, the first time ("No ticket on this race. Tap again to watch
+// without one."). gateAsks gives that tap where it's due and waits out the moment in which another would be a
+// double tap; toTheGate then goes. With a ticket on the race (or no money for one) it's one tap.
+async function gateAsks(p) {
+  const asks = await p.evaluate(() => {
+    const { game, nextRace } = window.postTime, r = nextRace();
+    return !(game.player.bets[`${r.day}:${r.no}`] || []).length && game.player.bank >= 0.5 && !document.querySelector('.post-bar.pending');
+  });
+  if (!asks) return;
+  await p.click('.post-bar .btn.brass');
+  assert.equal(await p.locator('.post-bar .info').textContent(), 'No ticket on this race. Tap again to watch without one.');
+  await p.waitForTimeout(750);
+}
+async function toTheGate(p) {
+  await gateAsks(p);
+  await p.click('.post-bar .btn.brass');
+}
 const barText = () => page.locator('.post-bar .info').textContent();
 const barButtons = () => page.locator('.post-bar .btn').allTextContents();
 assert.deepEqual([await barText(), await barButtons()], ['No tickets yet. You can watch without betting.', ['To the gate ▸']]);
@@ -265,9 +282,17 @@ const unbought = await page.evaluate(() => {
 assert.deepEqual(unbought, { racing: false, status: 1, same: true }, 'To the gate ran the race with a pick not bought');
 assert.equal(await barText(), `You picked ${third.split(' ')[0]} to win for $10 and haven't bought it. Tap again to go without it.`);
 // Changing the pick puts the bar back, and so does buying it from the bar. With nothing picked the bar is
-// as it was, and To the gate is one tap (as every race below goes off).
+// as it was. With no ticket on the race at all, To the gate asks once too, and a double tap is still one tap.
 await page.locator('.pick-row').nth(0).locator('button').nth(2).click();
 assert.deepEqual([await barText(), await barButtons()], ['No tickets yet. You can watch without betting.', ['To the gate ▸']], "the bar doesn't go back when the pick is cleared");
+await page.waitForTimeout(750); // (the last tap on it was a moment ago)
+const bare = await page.evaluate(() => {
+  const gate = document.querySelector('.post-bar .btn.brass');
+  gate.click();
+  gate.click();
+  return { racing: !document.getElementById('watch').hidden, said: document.querySelector('.post-bar .info').textContent };
+});
+assert.deepEqual(bare, { racing: false, said: 'No ticket on this race. Tap again to watch without one.' }, 'To the gate with no ticket on the race went without a word');
 await page.locator('.pick-row').nth(0).locator('button').nth(2).click();
 await page.click('.post-bar .btn.brass');
 assert.deepEqual([await barText(), await barButtons(), await page.locator('#bank').textContent()], ['1 ticket · $10.00 on this race', ['To the gate ▸'], '$190.00'], "Buy ticket in the bar didn't buy the pick");
@@ -343,7 +368,7 @@ for (const scheme of ['light', 'dark']) {
 await page.emulateMedia({ colorScheme: 'light' });
 
 // Off they go; skip to the end.
-await page.click('.post-bar .btn.brass');
+await toTheGate(page);
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 await page.waitForTimeout(800);
 await page.evaluate(() => window.__watch.setT(25));
@@ -638,7 +663,7 @@ assert.ok(!/NaN/.test(await page.locator('.tote').textContent()), 'the tote has 
 
 // While a race is on, the keyboard can't get to the page behind it; and if the page moves on anyway,
 // the race goes with it instead of staying on top, stuck.
-await page.click('.post-bar .btn.brass');
+await toTheGate(page);
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 const cover = await page.evaluate(() => {
   const brand = document.querySelector('#top .brand');
@@ -845,7 +870,7 @@ await page.check('#optSound');
 await page.check('#optVoice');
 await page.click('#menuBtn');
 await page.click('.race-row.next');
-await page.click('.post-bar .btn.brass');
+await toTheGate(page);
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 const quieted = await page.evaluate(async () => {
   const w = window.__watch, lines = w.call.lines, v = window.__voice;
@@ -892,7 +917,7 @@ await page.click('.w-ctl .btn');
 await page.waitForSelector('.official');
 await page.waitForFunction(() => window.__quiet());
 await page.locator('.post-bar .btn', { hasText: /^Race 2/ }).click();
-await page.click('.post-bar .btn.brass');
+await toTheGate(page);
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 const nextRace = await page.evaluate(async () => {
   const w = window.__watch;
@@ -972,7 +997,7 @@ const minutes = await page.evaluate(async () => {
   return window.__voice.slice(from).filter(x => x !== '(cancel)' && x !== 'a');
 });
 assert.deepEqual(minutes, ['Ten minutes to post.'], 'the announcer at ten minutes to post');
-await page.click('.post-bar .btn.brass');
+await toTheGate(page);
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 // The page goes out of sight in the middle of a race (another tab, the phone locked): the voice stops, the
 // line waiting behind it is forgotten, and the crowd and hooves are held. Back in sight, the voice is
@@ -1029,7 +1054,7 @@ await page.waitForSelector('.races');
 // the bugle isn't in the measurement, and the bell is over two seconds before the wire.
 await page.evaluate(() => document.getElementById('optSound').click()); // off
 await page.click('.race-row.next');
-await page.click('.post-bar .btn.brass');
+await toTheGate(page);
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 await page.locator('.w-ctl button', { hasText: /^sound$/i }).click(); // on
 const roar = await page.evaluate(async () => {
@@ -1061,7 +1086,7 @@ await page.waitForSelector('.races');
 // Skip from the gate picks the race up with twelve seconds to run. The crowd and the hooves start there,
 // and the bell, which is for the off, doesn't ring in mid-stretch.
 await page.click('.race-row.next');
-await page.click('.post-bar .btn.brass');
+await toTheGate(page);
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 const skipped = await page.evaluate(async () => {
   const w = window.__watch, made = window.__oscillators.length, crowd = window.__crowd;
@@ -1117,6 +1142,7 @@ await page.check('#optVoice');
 await page.click('#menuBtn');
 await page.waitForFunction(() => window.__quiet());
 await page.click('.race-row.next');
+await gateAsks(page);
 const gate = await page.evaluate(async () => {
   window.postTime.nextRace().name = 'Odds and Ends Handicap';
   const heard = window.__heard, from = window.__from = heard.length, made = window.__oscillators.length;
@@ -1211,6 +1237,7 @@ await page.waitForFunction(() => window.__quiet());
 // The next race at 2x from the gate, then skipped ahead once a line has said who leads: Skip cancels the
 // line being said, and the caller picks the race up twelve seconds from the wire.
 await page.locator('.post-bar .btn', { hasText: /^Race \d/ }).click();
+await gateAsks(page);
 const at2 = await page.evaluate(async () => {
   const heard = window.__heard;
   const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -1351,7 +1378,7 @@ await page.waitForSelector('.races');
   await first.waitForSelector('.races');
   await first.click('.race-row.next');
   await first.click('.tabs button:nth-child(4)');
-  await first.click('.post-bar .btn.brass');
+  await toTheGate(first);
   await first.waitForSelector('.watch:not([hidden]) canvas.scene');
   await first.goBack();
   await first.waitForSelector('.official');
@@ -1903,7 +1930,7 @@ await page.waitForSelector('.races');
     return { shown: b.textContent, has: money(game.player.bank), flash: b.classList.contains('up'), rings: window.__made.filter(o => o.type === 'triangle').length, back: game.player.settled['0:2']?.back };
   });
   const atWindow = await bankroll();
-  await shop.click('.post-bar .btn.brass');
+  await toTheGate(shop);
   await shop.waitForSelector('.watch:not([hidden]) canvas.scene');
   const racing = await bankroll();
   assert.ok(racing.back > 0 && racing.has !== atWindow.has, 'the place ticket on the runner-up paid nothing, and this checked nothing');
@@ -2634,7 +2661,7 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
 
   // To the gate. He takes the race, and the plan is his: its lines are the ones that were made.
   await page.evaluate(() => { window.__watch = null; });
-  await page.click('.post-bar .btn.brass');
+  await toTheGate(page);
   await page.waitForFunction(() => window.__watch, null, { timeout: 15000 });
   const plan = await page.evaluate(() => {
     const w = window.__watch;
@@ -2776,7 +2803,7 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   await page.waitForSelector('.races', { timeout: 60000 });
   await page.evaluate(async () => { window.__audio = await import('./js/audio.js'); window.postTime.nav.go('race', { no: 2 }); });
   await page.waitForFunction(() => window.__audio.downloadedVoice().problem !== '', null, { timeout: 30000 });
-  await page.click('.post-bar .btn.brass');
+  await toTheGate(page);
   await page.waitForFunction(() => window.__watch && window.__said.filter(u => !u.silent).length >= 2, null, { timeout: 30000 });
   await page.evaluate(() => { const w = window.__watch; w.setT(w.winT - 3); });
   await page.waitForFunction(() => { const b = [...document.querySelectorAll('.w-ctl button')].find(x => /Results/.test(x.textContent)); return b && !b.hidden; }, null, { timeout: 60000 });

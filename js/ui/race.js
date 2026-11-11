@@ -89,9 +89,12 @@ export function renderRace(root, nav, params) {
   // The pick on the betting slip, when it's a whole ticket you could buy now for the race that's up. To
   // the gate used to run the race over it without a word, and the slip's own Buy button is often below
   // the bar. So the bar names the pick and its main button buys it, with To the gate beside it; and if To
-  // the gate is tapped all the same, the first tap only says what's being left behind.
+  // the gate is tapped all the same, the first tap only says what's being left behind. With no ticket on the
+  // race at all, the first tap says that too, and the second goes: watching without a bet is one tap more,
+  // and heading to the gate by mistake without one costs nothing. (Not when there's no money for a ticket.)
   const slip = () => (isNext && race.status !== 'official' ? unbought(race) : null);
-  let asked = false; // To the gate has been tapped once over a pick that isn't bought
+  const noTicket = () => isNext && race.status !== 'official' && !myBets(race).length && game.player.bank >= LEAST - 1e-9;
+  let asked = false; // To the gate has been tapped once over a pick that isn't bought, or with no ticket
   let notBefore = 0; // a tap on To the gate sooner than this is the second half of a double tap
   function say(text) {
     if (info.textContent === text.map(t => (typeof t === 'string' ? t : t.textContent)).join('')) return;
@@ -104,6 +107,12 @@ export function renderRace(root, nav, params) {
       asked = true;
       notBefore = performance.now() + DOUBLE_TAP;
       say([`You picked ${pickShort(race, bet)} for ${stake(betCost(bet))} and haven't bought it. Tap again to go without it.`]);
+      return;
+    }
+    if (!bet && !asked && noTicket()) {
+      asked = true;
+      notBefore = performance.now() + DOUBLE_TAP;
+      say(['No ticket on this race. Tap again to watch without one.']);
       return;
     }
     audio.wake(); audio.primeVoice();
@@ -416,6 +425,8 @@ function unbought(race) {
   const bet = currentBet(slipFor(race), race.entries.length);
   return bet && betCost(bet) <= game.player.bank + 1e-9 ? bet : null;
 }
+// The least any ticket costs (a 50-cent trifecta).
+const LEAST = Math.min(...Object.values(MIN));
 // A second tap sooner than this after a first is a double tap, not a second answer.
 const DOUBLE_TAP = 700; // ms
 
