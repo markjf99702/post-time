@@ -211,7 +211,7 @@ export function myBets(race) { return game.player.bets[raceKey(race)] || []; }
 export function placeBet(race, bet) {
   const c = betCost(bet);
   if (c <= 0 || !inRace(race, bet.sel)) return { ok: false, why: 'Pick your horses first.' };
-  if (c > game.player.bank + 1e-9) return { ok: false, why: `That ticket costs ${c.toFixed(2)} and you have ${game.player.bank.toFixed(2)}.` };
+  if (c > game.player.bank + 1e-9) return { ok: false, why: `That ticket costs $${c.toFixed(2)} and you have $${game.player.bank.toFixed(2)}.` };
   const k = raceKey(race);
   (game.player.bets[k] || (game.player.bets[k] = [])).push({ ...bet, cost: c });
   game.player.bank = round2(game.player.bank - c);

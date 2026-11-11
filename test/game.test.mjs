@@ -1167,3 +1167,11 @@ function buildResult(race) {
   return simulateRace(race, game.world, { record: true }).results[0].h;
 }
 
+test('a ticket there isn\'t the money for is refused in dollars', () => {
+  build('short-of-money');
+  game.player.bank = 3.4;
+  const race = card().races[0];
+  assert.deepEqual(placeBet(race, { type: 'exbox', sel: [0, 1, 2], amt: 2 }), { ok: false, why: 'That ticket costs $12.00 and you have $3.40.' });
+  assert.equal(game.player.bank, 3.4);
+});
+

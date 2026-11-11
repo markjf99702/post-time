@@ -150,8 +150,10 @@ export function photoCard(rec, you) {
   return frame;
 }
 
+// The kind of race, under the horse's name. A maiden claimer has its price, as it has on the card.
 function classText(rec) {
-  const names = { MCL: 'Maiden claiming', MSW: 'Maiden special weight', ALW: 'Allowance', STK: 'Stakes' };
-  return names[rec.cls] || `Claiming $${(rec.claim || 0).toLocaleString('en-US')}`;
+  const names = { MSW: 'Maiden special weight', ALW: 'Allowance', STK: 'Stakes' };
+  const price = rec.claim ? ` $${rec.claim.toLocaleString('en-US')}` : '';
+  return names[rec.cls] || `${rec.cls === 'MCL' ? 'Maiden claiming' : 'Claiming'}${price}`;
 }
 function shortLong(iso) { return longDate(iso).replace(/^\w+, /, ''); }

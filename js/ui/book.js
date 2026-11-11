@@ -31,7 +31,7 @@ export function renderBook(root, nav) {
     ),
   );
   root.append(h('h2', { class: 'h2 pad', style: { paddingBottom: 0 } }, "Winner's circle photos"));
-  if (!p.book.length) root.append(h('p', { class: 'pad muted' }, "Back a winner and you'll be in the picture. They'll collect here."));
+  if (!p.book.length) root.append(h('p', { class: 'pad muted' }, "Back a winner and you're in the picture. Your photos collect here."));
   else root.append(h('div', { class: 'book-grid' }, p.book.slice().reverse().map(r => photoCard(r, true))));
 
   const rec = game.world.tipsters || {};

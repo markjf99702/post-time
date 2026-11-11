@@ -223,10 +223,12 @@ export function renderWatch(el, nav, params) {
     hint.style.minHeight = `${hint.offsetHeight}px`;
     showHint();
   }
-  // Under the buttons: how to follow a horse or, while one is followed, which.
+  // Under the buttons: how to follow a horse or, while one is followed, which. Once the race is official
+  // there's nothing left to follow, and the line is blank (it keeps its room, so nothing moves).
+  let official = false;
   function showHint() {
     const r = following === null ? null : runners[following];
-    hint.textContent = r ? `Following #${r.number} ${r.name}. Tap again for the leaders.` : HINT;
+    hint.textContent = official ? '' : r ? `Following #${r.number} ${r.name}. Tap again for the leaders.` : HINT;
   }
 
   // The strip's buttons are made once, here, and kept for the race. It used to be emptied and built again
@@ -341,6 +343,8 @@ export function renderWatch(el, nav, params) {
     const done = () => {
       doneBtn.hidden = false;
       skipBtn.hidden = true;
+      official = true;
+      showHint();
       // The cash window rings for any ticket that paid: a place or show ticket on a horse that didn't
       // win is cashed too. (It used to ring only when the winner was backed.)
       if (result.back > 0) audio.cash();

@@ -152,6 +152,9 @@ assert.equal(await page.evaluate(() => window.postTime.game.player.opened['0:3']
 // It opens for betting after race 2, the one before it, and race 1 is the one that's up.
 assert.match(await page.locator('.tote + .note').textContent(), /^You can bet this race once race 2 is over\./);
 assert.equal(await page.locator('.post-bar .info').textContent(), 'Race 1 is up first.');
+// It has the board and that note, and no betting slip. (The slip used to be there, working, with a Buy
+// ticket button that could never buy.)
+assert.deepEqual([await page.locator('.tote-cell').count() >= 3, await page.locator('.builder, .picks-grid, .bet-foot').count()], [true, 0], "a race that isn't up for betting has a betting slip");
 assert.match(await page.locator('meta[name="description"]').getAttribute('content'), /Horses, form and your bankroll carry over/);
 await page.click('.rhead .back');
 await page.waitForSelector('.races');
@@ -363,8 +366,12 @@ await page.locator('.w-ctl button', { hasText: /^sound$/i }).click();
 const soundOff = await page.evaluate(() => ({ menu: document.getElementById('optSound').checked, saved: JSON.parse(localStorage.getItem('post-time/player')).settings.sound }));
 assert.deepEqual(soundOff, { menu: false, saved: false }, "turning the sound off in a race isn't kept, or the menu doesn't show it");
 await page.locator('.w-ctl button', { hasText: /^sound$/i }).click();
+const hintWas = await page.evaluate(() => { const hint = document.querySelector('.w-ctl .hint'); return [/^Tap a number in the running order to follow that horse\./.test(hint.textContent), hint.offsetHeight]; });
 await page.evaluate(() => window.__watch.setT(window.__watch.endT - 0.05));
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
+// Once the race is official there's nothing to follow: the line about following a horse is blank, in the
+// room it had.
+assert.deepEqual([hintWas[0], await page.evaluate(() => { const hint = document.querySelector('.w-ctl .hint'); return [hint.textContent, hint.offsetHeight]; })], [true, ['', hintWas[1]]], 'the hint about following a horse is still up after the race, or its room has gone');
 // The running order left on the screen at the end is the official one.
 const shownOrder = await page.locator('.order button').evaluateAll(bs => bs.map(b => +b.getAttribute('aria-label').match(/number (\d+)/)[1]));
 const officialOrder = await page.evaluate(() => { const r = window.postTime.card().races[0]; return r.result.order.map(o => r.entries[o.k].pp); });
@@ -389,6 +396,15 @@ assert.ok(Math.abs(bank - (196 + back)) < 0.001, `bankroll ${bank} should be 196
 // The winner's circle.
 await page.click('.actions .btn.brass');
 await page.waitForSelector('.photo-frame canvas');
+// The photo's caption says what kind of race it was the way the card does: a maiden claimer with its price.
+const kinds = await page.evaluate(async () => {
+  const { photoCard } = await import('./js/ui/results.js');
+  const { photoRecord } = await import('./js/game.js');
+  const race = window.postTime.card().races[0], rec = photoRecord(race, race.result.order[0].k, 0);
+  const said = as => photoCard({ ...rec, name: null, ...as }, false).querySelector('.horse').nextSibling.textContent;
+  return [said({ cls: 'MCL', claim: 20000 }), said({ cls: 'C16', claim: 16000 }), said({ cls: 'MSW', claim: null }), said({ cls: 'STK', claim: null, name: 'Brass Pull Stakes' })];
+});
+assert.deepEqual(kinds, ['Maiden claiming $20,000', 'Claiming $16,000', 'Maiden special weight', 'Brass Pull Stakes']);
 // It all survives a reload, and the next race is up.
 await page.reload();
 await page.waitForSelector('.races');
@@ -577,6 +593,13 @@ await page.click('#restart');
 await page.waitForSelector('.races', { timeout: 30000 });
 assert.notEqual((await meetNow())[0], meetWas[0], 'a second tap on Start a new meet, a second after the first, started nothing');
 assert.equal(await page.locator('#bank').textContent(), '$200.00', 'a new meet starts with $200');
+// (The slip is on the race that's up, so the new meet's first two races are run, with nothing on them.)
+await page.evaluate(async () => {
+  const { goToGate } = await import('./js/game.js');
+  const { card, nav } = window.postTime;
+  for (const race of card().races.slice(0, 2)) goToGate(race);
+  nav.go('card');
+});
 await page.locator('.race-row').nth(2).click();
 await page.click('.tabs button:nth-child(4)');
 assert.equal(await page.locator('.bet-foot .cost').textContent(), 'Pick a horse.', 'the last meet\'s pick is still on the slip');
@@ -585,7 +608,6 @@ assert.ok(!/NaN/.test(await page.locator('.tote').textContent()), 'the tote has 
 
 // While a race is on, the keyboard can't get to the page behind it; and if the page moves on anyway,
 // the race goes with it instead of staying on top, stuck.
-await page.click('.post-bar .btn.ghost');
 await page.click('.post-bar .btn.brass');
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 const cover = await page.evaluate(() => {
@@ -1252,6 +1274,9 @@ await page.waitForSelector('.races');
   await desk.waitForSelector('.races', { timeout: 60000 });
   await desk.evaluate(() => document.fonts.ready);
   const biggest = await desk.evaluate(() => { const { game, card, save } = window.postTime; game.player.settings.sound = false; save(); return card().races.reduce((a, r) => (r.entries.length > a.entries.length ? r : a)).no; });
+  // A scrapbook with nothing in it says how a photo gets there.
+  await desk.evaluate(() => window.postTime.nav.go('book'));
+  assert.equal(await desk.locator('.pad.muted').textContent(), "Back a winner and you're in the picture. Your photos collect here.");
   // The keyboard's focus is never under the header, the tabs or the bar at the bottom, and it has the game's
   // own ring. In a window 600 px tall, Tab through the Bet tab from the top (12 of its 52 stops used to be
   // wholly under the bar), then back up through the Form with Shift+Tab (6 of 39 were under the header and

@@ -425,6 +425,12 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
   }
   // A later race opens for betting when the one before it is over (which isn't always the one that's up).
   panel.append(h('p', { class: 'note' }, open ? MOVING : `You can bet this race once race ${race.no - 1} is over. The odds will have moved by then.`));
+  // A race that isn't up yet has its board and that note, and no betting slip: the slip used to be there,
+  // working, with a Buy ticket button that could never buy anything.
+  if (!open) {
+    panel.append(ticketList(race, false, changed));
+    return;
+  }
 
   const builder = h('div', { class: 'builder' });
   panel.append(builder);
