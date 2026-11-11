@@ -861,10 +861,15 @@ const quieted = await page.evaluate(async () => {
   const again = readSince(on).length > 0;
   sound(); // the effects off: the caller goes on
   const effects = v.length;
-  await reach(third + 2);
-  // (The line before may still be being read: the new one waits for it.)
+  // The next line of the plan as it stands (it may have been planned again by now), with the race held
+  // there so the line can't go stale while the one before it is still being read.
+  for (const end = performance.now() + 8000; !window.__quiet() && performance.now() < end;) await new Promise(r => setTimeout(r, 50));
+  const next = w.call.lines.find(l => l.t > w.T - w.t0 + 0.05);
+  w.setT(w.t0 + next.t + 0.05);
+  w.pause();
   for (const end = performance.now() + 8000; !readSince(effects).length && performance.now() < end;) await new Promise(r => setTimeout(r, 50));
   const soundOff = { cancelled: v.slice(effects).includes('(cancel)'), saidSince: readSince(effects).length > 0 };
+  [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === '1×').click(); // running again
   sound(); // the effects back on
   return { pressed, read, cut, whileOff, offState, again, soundOff, back: [caller.getAttribute('aria-pressed'), saved()] };
 });
