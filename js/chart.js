@@ -54,6 +54,12 @@ export function callText([pos, margin]) {
 // A few words on the trip, the way a chart caller writes them: any trouble first, then how the horse ran.
 // The ratings, the Troubled trip chip and LongshotLou look for the trouble words as written here: Stumbled,
 // Broke slowly, Bumped, Checked, Blocked (and Lou for "wide").
+// How far the field's middle horse ran with nothing left, in metres.
+function usualEmpty(run) {
+  const e = run.results.map(x => x.emptied || 0).sort((a, b) => a - b);
+  return e[Math.floor(e.length / 2)] || 0;
+}
+
 export function tripComment(run, k, fieldSize) {
   const r = run.results.find(x => x.h === k);
   const line = runningLine(run, k);
@@ -93,7 +99,10 @@ export function tripComment(run, k, fieldSize) {
     const place = r.pos === 2 ? 'place' : 'show';
     if (first === 1 && r.pos >= 4) bits.push(r.duel > 6 ? 'Dueled, gave way' : 'Set pace, faded');
     else if (first === 1) bits.push(near ? `Set pace, ${near}` : r.pos === 3 ? 'Set pace, weakened' : str === 1 ? 'Set pace, caught late' : 'Set pace, held place');
-    else if (first <= 3 && r.pos >= fieldSize - 1) bits.push(r.emptied > 150 ? 'Chased, stopped' : 'Chased, tired');
+    // "Stopped" is for a horse that ran out of everything well before the others did: by how far it ran
+    // empty past the field's middle horse. (On dirt every horse is run to be empty in the stretch, and
+    // measured from nothing, every dirt horse that chased and tired was written down as stopping.)
+    else if (first <= 3 && r.pos >= fieldSize - 1) bits.push(r.emptied - usualEmpty(run) > 150 ? 'Chased, stopped' : 'Chased, tired');
     else if (gained >= 4 && r.pos <= 3 && paths >= 4) bits.push(`Rallied ${paths} wide`);
     else if (near) bits.push(sentence(near));
     else if (gained >= 4 && r.pos <= 3 && str >= r.pos) bits.push('Closed well');

@@ -186,6 +186,18 @@ test('a running line is called at three points that come one after another, at e
   }
 });
 
+// Dirt races are run to leave every horse empty in the stretch, and "Chased, stopped" was written of a
+// horse that ran empty for more than 150 metres: on dirt it took the place of "Chased, tired" (47 to 2 over
+// two meets' first ten weeks, where turf had 0 to 22). Stopping is running out well before the others do.
+test("a dirt horse that chased and tired isn't written down as stopping", () => {
+  const n = { d: { stopped: 0, tired: 0 }, t: { stopped: 0, tired: 0 } };
+  for (const seed of ['chased-a', 'chased-b']) {
+    const w = createWorld(seed, '2026-09-26');
+    for (const h of w.horses) for (const p of h.pps) for (const k of ['stopped', 'tired']) if (p.cm.includes(`Chased, ${k}`)) n[p.surf][k]++;
+  }
+  for (const s of ['d', 't']) assert.ok(n[s].stopped * 4 < n[s].tired, `on ${s === 'd' ? 'dirt' : 'turf'}: ${n[s].stopped} chased and stopped, ${n[s].tired} chased and tired`);
+});
+
 test('the world builds a full card with past performances that happened', () => {
   const w = createWorld('test-world', '2026-09-26');
   const card = w.cards[0];
