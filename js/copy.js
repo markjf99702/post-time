@@ -1,5 +1,5 @@
 // A copy of the meet the player keeps themselves: Save a copy downloads one file, and Open a copy reads one
-// back in place of the meet here.
+// back in place of the meet here. And asking the browser to keep what's stored here.
 //
 // The whole meet lives in one browser, and nothing else brings it back if the browser clears it: Safari on
 // an iPhone deletes a site's storage after seven days of use without a visit to the site, unless it's on
@@ -56,3 +56,21 @@ export function describe(at) {
   const races = at.run === at.of ? 'all races run' : at.run ? `${at.run} race${at.run === 1 ? '' : 's'} run` : 'no races run';
   return `Meet ${at.meet}, ${at.raceDay ? `race day ${at.raceDay}, ` : ''}${day}: ${races}, $${at.bank.toFixed(2)}`;
 }
+
+// Once a ticket has been bought there's a meet worth keeping, so the browser is asked to keep this site's
+// storage when it runs short of room, rather than clear it with the rest. Chrome and Safari decide without
+// asking the player. Firefox would put up a question of its own, and isn't asked. Once a visit.
+let asked = false;
+export function keepData() {
+  if (asked) return;
+  asked = true;
+  try {
+    if (/Firefox\//.test(navigator.userAgent) || !navigator.storage || typeof navigator.storage.persist !== 'function') return;
+    const ask = () => navigator.storage.persist().catch(() => {});
+    if (typeof navigator.storage.persisted === 'function') navigator.storage.persisted().then(yes => { if (!yes) ask(); }, ask);
+    else ask();
+  } catch { /* not asked */ }
+}
+
+// A ticket has been bought in this meet: one is on the card, or one has been settled.
+export const hasTicket = (p = game.player) => !!p && ((p.ledger || []).length > 0 || Object.values(p.bets || {}).some(l => Array.isArray(l) && l.length));

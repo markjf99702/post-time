@@ -420,6 +420,8 @@ window.addEventListener('post-time:saved', () => {
   // used to change then, with its flash, behind the race where nobody saw it. It changes when the next
   // screen is drawn (the result, as a rule), where it's seen.
   if (game.player && game.world && view.screen !== 'watch') updateBank();
+  // A meet with a ticket in it is worth keeping: ask the browser to keep it (once a visit).
+  if (copy.hasTicket()) copy.keepData();
   // The race has a Sound button of its own: keep the menu in step with it.
   if (game.player?.settings) { optSound.checked = !!game.player.settings.sound; optVoice.checked = !!game.player.settings.voice; }
 });
@@ -436,6 +438,7 @@ const loaded = load();
 if (loaded === true) {
   applySettings();
   nav.go('card');
+  if (copy.hasTicket()) copy.keepData();
 } else if (loaded === 'damaged') {
   applySettings();
   cantRead();
