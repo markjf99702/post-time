@@ -95,6 +95,8 @@ body {
   overflow-x: hidden;
 }
 button { font: inherit; color: inherit; }
+/* A quick second tap on a button, a tab, a tick or a list is a second tap, and not a double tap that zooms the page. */
+button, select, label, a { touch-action: manipulation; }
 a { color: var(--link); }
 /* One focus ring for the whole game: the ink's colour, and white on the dark surfaces (the header, the tote
    board and the race). Where a ring outside its box would be cut off, it's drawn just inside. */
@@ -127,7 +129,8 @@ a { color: var(--link); }
 .bank.up { background: #2d7a3e; }
 .bank.down { background: rgba(179, 55, 44, .7); }
 .bank:empty { visibility: hidden; } /* while a meet is being built; it keeps its place */
-.menu-btn { background: none; border: 0; padding: 6px; margin-right: -6px; cursor: pointer; color: #f3ecd8; }
+/* 44 by 44 to a finger (it was 38), in the room it always had: the header is no taller for it. */
+.menu-btn { background: none; border: 0; padding: 9px; margin: -3px -9px -3px 0; cursor: pointer; color: #f3ecd8; }
 .menu-btn svg { width: 26px; height: 26px; display: block; }
 /* The menu is never taller than the screen under the header: on a phone on its side it scrolls inside its own
    box (it ran 76 px off the bottom there with the call ticked, and Start a new meet couldn't be reached), and
@@ -158,9 +161,9 @@ a { color: var(--link); }
 .menu .voice-row label { color: var(--muted); font-size: 14px; }
 .menu .voice-row select {
   width: 100%; min-width: 0; font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px;
-  padding: 7px 6px; text-overflow: ellipsis;
+  padding: 7px 6px; text-overflow: ellipsis; min-height: 44px;
 }
-.menu .voice-row button { border: 1px solid var(--line); padding: 7px 14px; margin-top: 2px; }
+.menu .voice-row button { border: 1px solid var(--line); padding: 7px 14px; margin-top: 2px; min-height: 44px; }
 /* Under the list, which voice is reading; and, in a browser with no voice, a line in place of the lot. */
 .menu .voice-note { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
 .menu .voice-note:empty { display: none; }
@@ -357,7 +360,7 @@ a { color: var(--link); }
    cards and to an unpressed button: the pressed ones, and the green buttons (Buy ticket, Results), are a lighter
    green there, with dark lettering. */
 .seg button {
-  background: var(--paper-2); border: 1px solid var(--edge); border-radius: 7px; padding: 8px 10px; cursor: pointer;
+  background: var(--paper-2); border: 1px solid var(--edge); border-radius: 7px; padding: 12px 10px; cursor: pointer;
   font: 500 14px/1 var(--display); letter-spacing: .06em; text-transform: uppercase;
 }
 .seg button[aria-pressed="true"] { background: var(--press); color: var(--press-ink); border-color: var(--press); }
@@ -391,7 +394,7 @@ a { color: var(--link); }
 .ticket::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: repeating-linear-gradient(#c0392b 0 6px, #fbf6e3 6px 10px); border-radius: 4px 0 0 4px; }
 .ticket .what { font-weight: 700; }
 .ticket .small { font-size: 12px; color: #6b604b; }
-.ticket button { background: none; border: 1px solid #c9bfa4; border-radius: 5px; padding: 4px 8px; font-size: 12px; cursor: pointer; color: #6b604b; }
+.ticket button { background: none; border: 1px solid #c9bfa4; border-radius: 5px; min-height: 40px; padding: 10px 12px; font-size: 12px; cursor: pointer; color: #6b604b; }
 .ticket.printed { animation: print .5s ease-out; }
 @keyframes print { from { transform: translateY(-14px); clip-path: inset(0 0 100% 0); } to { transform: none; clip-path: inset(0); } }
 .ticket.cashed { background-color: #eaf5e4; }
@@ -513,18 +516,18 @@ a { color: var(--link); }
 .watch.low .w-ctl .hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .w-ctl { display: flex; gap: 8px; padding: 8px 12px 12px; align-items: center; flex-wrap: wrap; }
 .w-ctl button {
-  background: #232b25; color: #f1ead6; border: 1px solid rgba(255,255,255,.12); border-radius: 7px; padding: 9px 12px; cursor: pointer;
+  background: #232b25; color: #f1ead6; border: 1px solid rgba(255,255,255,.12); border-radius: 7px; padding: 12px; cursor: pointer;
   font: 500 14px/1 var(--display); letter-spacing: .08em; text-transform: uppercase;
 }
 .w-ctl button[aria-pressed="true"] { background: var(--amber); color: #111; }
 .w-ctl .spacer { flex: 1; }
-.w-ctl .btn { padding: 0 16px; height: 34px; } /* Results, the height of the buttons it joins, so the row and the picture above it stay as they are */
+.w-ctl .btn { padding: 0 16px; height: 40px; } /* Results, the height of the buttons it joins, so the row and the picture above it stay as they are */
 .w-ctl .hint { font-size: 12.5px; color: #8f8a78; width: 100%; }
 /* On the narrowest phones the five buttons are one row, not four and Skip on a row of its own, and Results
    fits in Skip's place: the picture has the 42 px. */
 @media (max-width: 340px) {
   .w-ctl { gap: 6px; }
-  .w-ctl button { padding: 9px 9px; }
+  .w-ctl button { padding: 12px 9px; }
   .w-ctl .btn { padding: 0 12px; }
   .w-ctl .spacer { display: none; }
 }
@@ -625,8 +628,8 @@ a { color: var(--link); }
 @media (forced-colors: active) {
   .btn { border: 2px solid ButtonText; padding: 10px 16px; } /* its ground was all that made it a button */
   .w-ctl .btn { padding: 0 14px; }
-  .seg button[aria-pressed="true"] { border: 3px solid Highlight; padding: 6px 8px; }
-  .w-ctl button[aria-pressed="true"] { border: 3px solid Highlight; padding: 7px 10px; }
+  .seg button[aria-pressed="true"] { border: 3px solid Highlight; padding: 10px 8px; }
+  .w-ctl button[aria-pressed="true"] { border: 3px solid Highlight; padding: 10px; }
   .picks-grid button[aria-pressed="true"] { border: 4px solid Highlight; }
   .order button[aria-pressed="true"] { outline: 2px solid Highlight; }
   .tabs button { border-bottom-color: Canvas; }

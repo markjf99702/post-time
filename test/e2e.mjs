@@ -1949,6 +1949,26 @@ await page.waitForSelector('.races');
   await tapTab(1);
   assert.equal(await between.locator('.entry-more:not([hidden])').count(), 0, 'a horse shut on the form came back open');
 
+  // Things to tap are big enough to hit. A bet type, an amount and Cancel on a ticket are 40 px tall (they
+  // were 32, 32 and 26), the menu button is 44 by 44 (38) in a header no taller for it, and Hear it and the
+  // list of voices are 44 tall. A quick second tap on any of them is a tap, not a double tap to zoom.
+  await tapTab(4);
+  await between.locator('.pick-row').nth(0).locator('button').nth(0).click();
+  await between.click('.builder .btn');
+  const taps = await between.evaluate(() => {
+    const size = s => [...document.querySelectorAll(s)].map(el => { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
+    const least = s => Math.min(...size(s).map(x => x[1]));
+    return {
+      types: least('.seg:not(.amounts) button'), amounts: least('.seg.amounts button'), cancel: least('.ticket button'), menu: size('#menuBtn')[0],
+      header: Math.round(document.getElementById('top').getBoundingClientRect().height),
+      voice: ['#hearIt', '#optVoiceName'].map(s => getComputedStyle(document.querySelector(s)).minHeight),
+      zooms: ['.tabs button', '.seg button', '.picks-grid button', '.ticket button', '.post-bar .btn', '#menuBtn', '.menu .toggle', '#optVoiceName'].filter(s => getComputedStyle(document.querySelector(s)).touchAction !== 'manipulation'),
+    };
+  });
+  assert.deepEqual(taps, { types: 40, amounts: 40, cancel: 40, menu: [44, 44], header: 58, voice: ['44px', '44px'], zooms: [] }, 'things to tap on the Bet tab and in the header');
+  await between.click('.ticket button');
+  assert.equal(await between.locator('#bank').textContent(), '$200.00');
+
   // After a race the way on is in a bar at the bottom of the screen: what the race did for you, and the next
   // race as the button. (It was the last button on the page, 1,700 px down this 664 px screen and more.) The
   // winner's circle and Watch again are still at the end of the page, and clear the bar when it's scrolled
@@ -2015,6 +2035,17 @@ await page.waitForSelector('.races');
   assert.deepEqual([last.no, (await resultBar()).button], [8, 'The card ▸']);
   await between.click('.post-bar .btn');
   assert.deepEqual([await between.locator('.day-over .btn').textContent(), await scrollY()], ['Next race day ▸', 0]);
+
+  // The race screen's buttons are 40 px tall (they were 34), Results among them when it comes.
+  await go('watch', { no: 8 });
+  await between.waitForSelector('.watch:not([hidden]) .w-ctl button');
+  const tall = () => between.evaluate(() => [...new Set([...document.querySelectorAll('.w-ctl button')].filter(b => !b.hidden).map(b => Math.round(b.getBoundingClientRect().height)))]);
+  assert.deepEqual(await tall(), [40], "the race screen's buttons");
+  await between.evaluate(() => { const w = window.__watch; w.setT(w.endT); });
+  await between.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 40000 });
+  assert.deepEqual(await tall(), [40], "the race screen's buttons, with Results");
+  await between.evaluate(() => window.__watch.leave('card'));
+  await between.waitForSelector('.races');
 
   await ctx7.close();
 }
