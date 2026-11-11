@@ -1044,7 +1044,11 @@ await page.evaluate(() => {
     const out = [];
     for (const x of heard.slice(window.__from)) {
       if (x.ev !== 'speak' || x.silent) continue;
-      const line = w.call.lines.find(l => l.say === x.text) || null, up = line && shown.filter(y => y.text === line.text && y.at <= x.at + 20).pop();
+      // After a photo the winner's line goes up with the official sign. It isn't one of the call's lines (the
+      // call hands it back on its own), and it can be said within a moment of the placings ending: it's
+      // read here as a line of its own kind, timed from when it came up like the rest.
+      const official = w.call.official && x.text === w.call.official.replace(/\bDr\. /g, 'Doctor ') ? { text: w.call.official, slot: 'official' } : null;
+      const line = w.call.lines.find(l => l.say === x.text) || official, up = line && shown.filter(y => y.text === line.text && y.at <= x.at + 20).pop();
       out.push({ text: x.text, at: x.at, slot: line ? line.slot : 'not in the call', leader: !!line && (line.lead !== undefined || !!line.pair), age: up ? (x.at - up.at) / 1000 : 99, rate: x.rate, ended: heard.some(y => y.ev === 'end' && y.text === x.text && y.at > x.at) });
     }
     return out;
@@ -1072,12 +1076,13 @@ const at4 = await page.evaluate(async () => {
     cancels: cancels.map(x => { const then = lines.find(l => l.at > x.at); return then ? then.slot : 'nothing after it'; }),
   };
 });
-const after4 = at4.lines.filter(l => l.at > at4.changed);
+const after4 = at4.lines.filter(l => l.at > at4.changed && l.slot !== 'official'); // (the winner's line after a photo, if it's been said by now, has its own check below)
 assert.ok(at4.plans >= 1, 'the call was not planned again for the new speed');
 assert.ok(!at4.cutAtChange && at4.lines.find(l => l.text === at4.long).ended, `"${at4.long}" was cut off by the change to 4x`);
 assert.deepEqual(at4.cancels.filter(slot => slot !== 'wire'), [], 'a line was cancelled, and not for the call at the wire');
 assert.ok(at4.lines.some(l => l.slot === 'off') && after4.some(l => l.leader) && after4.some(l => l.slot === 'wire'), `at 4x the off, a line that says who leads, or the winner's line was not read: ${after4.map(l => l.text).join(' / ')}`);
 assert.deepEqual(at4.lines.filter(l => l.age > (l.slot === 'placings' ? 6 : 1.5)).map(l => `${l.text}: ${l.age.toFixed(2)} s after it came up`), [], 'a line was read long after it came up');
+assert.deepEqual(at4.lines.filter(l => l.slot === 'not in the call').map(l => l.text), [], 'at 4x something was read that is no line of the call');
 const headlines = ['run', 'fill', 'change', 'turn', 'eighth', 'wire', 'placings'];
 assert.deepEqual(after4.slice(1).filter(l => !headlines.includes(l.slot)).map(l => `${l.slot}: ${l.text}`), [], 'more than the headlines at 4x');
 assert.deepEqual([after4.find(l => l.slot === 'wire').rate, after4.find(l => l.slot === 'placings').rate], [1.2, 1.15], "the winner's line and the placings aren't at their own pace at 4x");
@@ -1107,11 +1112,12 @@ const at2 = await page.evaluate(async () => {
   const lines = window.__read();
   return { lines, skipped, jumped: w.winT - 12 > T, cancels: heard.slice(window.__from).filter(x => x.ev === 'cancel').map(x => (Math.abs(x.at - skipped) < 100 ? 'skip' : (lines.find(l => l.at > x.at) || {}).slot)) };
 });
-const after2 = at2.lines.filter(l => l.at > at2.skipped);
+const after2 = at2.lines.filter(l => l.at > at2.skipped && l.slot !== 'official');
 assert.ok(at2.jumped, 'the race was nearly over before Skip, and this checked nothing');
 assert.ok(at2.lines.some(l => l.slot === 'off') && at2.lines.some(l => l.leader && l.at < at2.skipped) && after2.some(l => l.slot === 'wire'), `at 2x the off, a line that says who leads, or the winner's line was not read: ${at2.lines.map(l => l.text).join(' / ')}`);
 assert.deepEqual(at2.cancels.filter(why => why !== 'skip' && why !== 'wire'), [], 'at 2x a line was cancelled, and not by Skip or for the call at the wire');
 assert.deepEqual(at2.lines.filter(l => l.age > (l.slot === 'placings' ? 6 : 1.5)).map(l => `${l.text}: ${l.age.toFixed(2)} s after it came up`), [], 'at 2x a line was read long after it came up');
+assert.deepEqual(at2.lines.filter(l => l.slot === 'not in the call').map(l => l.text), [], 'at 2x something was read that is no line of the call');
 // (Twelve seconds of race at 2x is six of talk: a line or two, the winner's line, then second, third and the time.)
 assert.ok(after2.length >= 2 && after2[after2.length - 1].slot === 'placings', `after Skip the caller said ${after2.map(l => l.text).join(' / ') || 'nothing'}`);
 assert.deepEqual([after2.find(l => l.slot === 'wire').rate, after2.find(l => l.slot === 'placings').rate], [1.2, 1.15], "the winner's line and the placings aren't at their own pace at 2x");
