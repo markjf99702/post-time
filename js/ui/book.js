@@ -181,6 +181,7 @@ export function renderHelp(root, nav) {
       h('h3', {}, 'Saving'),
       h('p', { class: 'saving' }, savingText()),
       copyOffered() ? h('p', {}, 'Save a copy, in the menu, downloads the whole meet as one file. Open a copy carries the meet on from a file like that, on this device or another, in place of the one here.') : null,
+      singleFile ? null : h('p', {}, "On an iPhone or iPad, add Post Time to the Home Screen (the Share button, then Add to Home Screen). Safari clears a site's saved data once it has been used for seven days without a visit to the site, and a game on the Home Screen isn't cleared that way."),
       jdFoot(),
     ),
   );
