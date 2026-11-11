@@ -1098,7 +1098,9 @@ test("a horse that stumbles or breaks slowly isn't then called as breaking with 
   // across early." Now the first call says it has recovered, or leaves it out of the group.
   const races = playLongMeet();
   assert.deepEqual(told(races, 'recovered'), []);
-  assert.ok(total(races, 'recovered') > 5, `a horse recovers from a bad start in only ${total(races, 'recovered')} first calls`);
+  // (It comes up seldom since a stumble costs what it looks like: most of these were stumblers, which used
+  // to lose nothing and were often up with the leaders at the first call.)
+  assert.ok(total(races, 'recovered') > 0, 'no horse recovers from a bad start in a first call');
   note(`first calls that name the horse that stumbled or broke slowly, as recovered: ${total(races, 'recovered')}`);
 });
 
@@ -1280,9 +1282,9 @@ test("a save that isn't a meet is left alone until a new meet is started", () =>
 // set the new lines in the same commit and say in its message that meets in progress will run
 // differently from there.
 const PINNED = [
-  { bank: 189.4, races: ['R1 2-3-6 71.73 $8.00', 'R2 2-5-7 64.85 $22.80', 'R3 5-6-2 83.09 $7.60', 'R4 7-8-4 71.09 $9.60', 'R5 8-10-7 64.16 $37.20', 'R6 3-4-6 64.43 $4.00', 'R7 1-5-7 63.00 $5.40', 'R8 5-1-4 101.45 $7.20'] },
-  { bank: 173.4, races: ['R1 2-3-1 110.48 $23.60', 'R2 4-2-3 64.44 $158.20', 'R3 4-8-3 102.93 $14.40', 'R4 6-8-7 103.54 $14.80', 'R5 7-4-2 76.99 $33.80', 'R6 8-9-3 63.76 $14.60', 'R7 6-3-1 108.56 $5.40', 'R8 8-9-1 94.98 $19.40'] },
-  { bank: 169, races: ['R1 6-5-1 83.92 $3.60', 'R2 5-1-7 97.79 $24.20', 'R3 7-4-6 65.11 $59.20', 'R4 3-1-2 64.58 $6.00', 'R5 3-7-1 82.98 $7.20', 'R6 5-7-9 108.75 $7.40', 'R7 1-7-2 102.86 $11.60', 'R8 4-3-6 108.97 $4.40'] },
+  { bank: 188, races: ['R1 2-3-1 71.17 $8.40', 'R2 3-2-6 64.61 $2.80', 'R3 3-6-7 83.49 $3.60', 'R4 6-5-4 70.72 $14.80', 'R5 1-2-3 64.40 $4.00', 'R6 4-6-7 64.17 $6.60', 'R7 4-3-10 63.38 $28.40', 'R8 2-6-3 101.56 $35.40'] },
+  { bank: 196.6, races: ['R1 9-2-8 110.61 $10.40', 'R2 4-5-8 64.66 $20.20', 'R3 8-5-6 102.30 $4.00', 'R4 1-8-3 103.29 $15.60', 'R5 2-7-5 76.56 $4.00', 'R6 1-7-5 63.93 $9.00', 'R7 6-5-1 108.57 $4.20', 'R8 8-5-6 95.30 $21.80'] },
+  { bank: 204.6, races: ['R1 1-3-7 84.76 $6.00', 'R2 2-7-6 97.67 $16.40', 'R3 5-9-6 64.18 $13.40', 'R4 8-3-2 64.45 $38.00', 'R5 7-3-5 83.24 $7.20', 'R6 4-2-3 110.15 $8.60', 'R7 1-2-4 103.21 $18.00', 'R8 2-8-1 108.82 $12.80'] },
 ];
 
 test('a meet in progress runs the way it did: three race days of a fixed meet come out the same', () => {

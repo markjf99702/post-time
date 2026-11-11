@@ -106,14 +106,17 @@ export function runRace(race, entrants, { record = true } = {}) {
     const eng = engine(e, D, race.surface, race.cond);
     const kickBase = D < 1300 ? 360 : D < 1650 ? 470 : 560;
     const reserveAtKick = 0.5 - 0.3 * e.style + R.range(-0.05, 0.05);
+    // A slow break costs a step and a stumble a moment's momentum a couple of strides out: each about a
+    // length, what a bump costs. (A slow break was a third to two thirds of a second, and slow breakers won
+    // 1.8% of their starts; a stumble came while the horse was barely moving and cost nothing.)
     const slow = R.chance(0.04 + 0.1 * (1 - e.gate));
     const stumble = !slow && R.chance(0.018);
     return {
       i, e, vc: eng.vc, vtop: eng.vtop,
       W0: eng.W, W: eng.W,
       p: -runup, o: RAIL + i * 0.88 + (i > 7 ? 0.3 : 0), v: 0, phase: R(), stride: R.range(6.9, 7.5),
-      react: 0.04 + Math.abs(R.gauss()) * 0.05 * (1.4 - e.gate) + (slow ? R.range(0.35, 0.7) : 0),
-      slow, stumble, stumbleT: stumble ? R.range(0.5, 1.2) : 0,
+      react: 0.04 + Math.abs(R.gauss()) * 0.05 * (1.4 - e.gate) + (slow ? R.range(0.12, 0.26) : 0),
+      slow, stumble, stumbleT: stumble ? R.range(0.06, 0.2) : 0,
       kick: kickBase * (1 + 0.1 * (0.5 - e.style)) * R.range(0.9, 1.12),
       reserveAtKick: Math.max(0.12, reserveAtKick), reserveCap: Math.max(0.12, reserveAtKick) + 0.14,
       empty: 0, finished: false, time: 0, blocked: 0, blockedT: 0, wideSum: 0, turnT: 0,
@@ -209,7 +212,7 @@ export function runRace(race, entrants, { record = true } = {}) {
           }
         }
       }
-      if (h.stumbleT > 0 && t > h.react) { want *= 0.55; h.stumbleT -= DT; }
+      if (h.stumbleT > 0 && t > h.react + 0.3) { want = Math.min(want, h.v * 0.9); h.stumbleT -= DT; }
       if (!h.finished) {
         if (Math.floor(t * 2) !== Math.floor((t - DT) * 2)) h.noise = R.gauss() * 0.004;
         want *= 1 + h.noise;

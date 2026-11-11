@@ -7,6 +7,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runRace, figureFor, stateAt, runningOrder } from '../js/sim.js';
 import { coursePath, FURLONG, COURSES } from '../js/track.js';
+import { rng } from '../js/rng.js';
 import { createWorld, simulateRace, buildCard, applyResult, nextDay, ageOf } from '../js/world.js';
 import { makeTote, board, settle, ticketReturn, cost, TAKEOUT } from '../js/tote.js';
 import { fmtTime, fmtClock, fmtWork, marginShort, marginText, lengthsText, tripComment } from '../js/chart.js';
@@ -51,6 +52,32 @@ test('race times look like real ones', () => {
   assert.ok(run.finalTime > 67 && run.finalTime < 74, `6f in ${run.finalTime}`);
   const q = run.fractions[0].t;
   assert.ok(q > 21 && q < 25, `first quarter ${q}`);
+});
+
+// A field like the ones a card draws: figures spread about 78, styles and reserves from each horse's best
+// distance as world.js draws them.
+function realField(seed, n, f) {
+  const R = rng(`field:${seed}`);
+  return Array.from({ length: n }, () => {
+    const dist = Math.max(5.5, Math.min(11, f + R.gauss() * 0.9));
+    return { rating: 78 + R.gauss() * 5, style: Math.max(0.02, Math.min(0.98, 0.3 + (8.5 - dist) * 0.05 + R() * 0.5)), reserve: Math.max(82, Math.min(140, 112 + (7.5 - dist) * 5 + R.gauss() * 8)), gate: R(), jockey: R(), heart: R() };
+  });
+}
+
+// A stumble cost nothing (stumblers won as often as the rest: the horse was held back while it was barely
+// moving) and a slow break about five lengths' worth (slow breakers won 1.8% of their starts). Both cost a
+// horse about what a bump does now, a length or so: they win about 60% as often as a horse away cleanly.
+test('a stumble and a slow break each cost about what a bump does', () => {
+  const t = { stumble: [0, 0], slow: [0, 0], bumped: [0, 0], clean: [0, 0] };
+  for (const f of [6, 8.5]) for (let s = 0; s < 3000; s++) {
+    const run = runRace(race(f, 'dirt', `trouble${f}:${s}`), realField(`trouble${f}:${s}`, 8, f), { record: false });
+    for (const r of run.results) {
+      const k = r.stumble ? 'stumble' : r.slow ? 'slow' : r.bumped ? 'bumped' : 'clean';
+      t[k][0]++; if (r.pos === 1) t[k][1]++;
+    }
+  }
+  const rate = k => t[k][1] / t[k][0], vs = k => rate(k) / rate('clean');
+  for (const k of ['stumble', 'slow']) assert.ok(vs(k) > 0.4 && vs(k) < 0.85, `a horse with a ${k} start wins ${(100 * rate(k)).toFixed(1)}% to ${(100 * rate('clean')).toFixed(1)}% for a clean start`);
 });
 
 test('the same race run twice comes out the same', () => {
@@ -206,7 +233,8 @@ test("LongshotLou calls a horse 'lightly raced and still improving' only in its 
   const w = createWorld('test-lou', '2026-12-19');
   const wrong = [];
   let said = 0;
-  for (let d = 0; d < 10; d++) {
+  // (Twenty race days: whether he says it at all in the first ten depends on the horses the meet draws.)
+  for (let d = 0; d < 20; d++) {
     for (const r of w.cards[w.day].races) {
       const odds = r.entries.map(e => e.ml);
       const lou = forumPosts(w, r, { odds, text: r.entries.map(e => e.mlText) }).find(p => p.who === 'lou');
@@ -412,6 +440,12 @@ test('the other chips: distance, a claim, a layoff, a troubled trip', () => {
   assert.deepEqual(chips(today(), runner([line({ f: 8 }), line({ f: 9 })])), ['Cutting back to a sprint']);
   assert.deepEqual(angles(today(), runner([line({ claimed: { from: 2, price: 16000 } })])), [['New barn: claimed last out', 'good']]);
   assert.deepEqual(angles(today(), runner([line({ cm: 'Checked in traffic' })])), [['Troubled trip last time', 'good']]);
+  // Only for real trouble: a stumble, a slow break or a check. (A bump or being blocked put it on about a
+  // third of every field, and those horses won about as often as the rest next time.)
+  assert.deepEqual(angles(today(), runner([line({ cm: 'Stumbled start; Evenly' })])), [['Troubled trip last time', 'good']]);
+  assert.deepEqual(angles(today(), runner([line({ cm: 'Broke slowly; Late gain' })])), [['Troubled trip last time', 'good']]);
+  assert.deepEqual(angles(today(), runner([line({ cm: 'Bumped start; Evenly' })])), []);
+  assert.deepEqual(angles(today(), runner([line({ cm: 'Blocked stretch' })])), []);
   // The race day is passed in: five weeks since its last race is a layoff, four isn't.
   const rested = runner([line({ d: 2 })]);
   assert.deepEqual(chips(today(), rested, 7), ['Back from 5 weeks off']);

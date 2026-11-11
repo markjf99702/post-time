@@ -43,6 +43,10 @@ export function surfaceRecord(h, surface) {
 const WET = ['sloppy', 'muddy', 'yielding', 'soft'];
 // The words a trip note uses for trouble: at the start (Stumbled, Broke slowly, Bumped) and in the running.
 export const TROUBLE = /Blocked|Checked|Stumbled|Broke slowly|Bumped/;
+// The trouble the Troubled trip chip is for: a stumble, a slow break or a rider having to check. (It was for
+// any trouble word, bumps and being blocked too, and sat on about a third of every field: those horses won
+// about as often as the rest next time.)
+const REAL_TROUBLE = /Stumbled|Broke slowly|Checked/;
 // The two kinds of maiden race (their codes in CLASSES, in world.js).
 const maidenRace = cls => cls === 'MCL' || cls === 'MSW';
 const daysFrom = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5); // between two dates, 2026-10-03
@@ -107,7 +111,7 @@ export function angles(race, h, day = race.day) {
   if (last && !last.clm && race.claim && last.cls !== 'MCL') out.push(['Drops into a claimer', 'good']);
   if (freshBullet(h, race)) out.push(['Bullet work', 'good']);
   if (last && day - last.d >= 5) out.push([`Back from ${day - last.d} weeks off`, '']);
-  if (last && TROUBLE.test(last.cm)) out.push(['Troubled trip last time', 'good']);
+  if (last && REAL_TROUBLE.test(last.cm)) out.push(['Troubled trip last time', 'good']);
   // On the same surface: mud on the dirt says nothing about soft turf.
   if (WET.includes(race.cond) && h.pps.some(p => WET.includes(p.cond) && p.surf === race.surface[0] && p.fin <= 2)) out.push(['Has run well on a wet track', 'good']);
   return out;
