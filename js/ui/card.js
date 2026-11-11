@@ -1,7 +1,7 @@
 // The race card: today's date and weather, the eight races, and what happened in the ones already run.
 
 import { h, money, cloth, jdFoot, dotted } from './dom.js';
-import { game, card, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay } from '../game.js';
+import { game, card, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay, multiFor } from '../game.js';
 import { longDate, clockText, raceDayOf, meetDays, isClosingDay, isHandicap } from '../world.js';
 import { BIG_STAKES } from '../data.js';
 import { distanceName } from '../track.js';
@@ -109,7 +109,8 @@ function raceRow(r, nxt, nav) {
   if (r.cls === 'STK') tags.push(h('span', { class: `tag stk${big ? ' big' : ''}` }, big ? 'Feature' : 'Stakes'));
   if (r.surface === 'turf') tags.push(h('span', { class: 'tag turf' }, 'Turf'));
   if (r.fm) tags.push(h('span', { class: 'tag' }, 'Fillies & mares'));
-  const mine = myBets(r);
+  // (A daily double or Pick 3 is on the race it was bought in.)
+  const mine = [...myBets(r), ...multiFor(r, { starting: true })];
   let state;
   if (done) {
     const winK = r.result.order[0].k;

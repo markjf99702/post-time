@@ -484,6 +484,10 @@ a { color: var(--link); }
 .ticket.lost::before { background: repeating-linear-gradient(#dba79f 0 6px, var(--torn) 6px 10px); }
 .ticket.lost .small { color: #746a56; }
 .ticket.lost .torn { text-align: right; white-space: nowrap; }
+/* A daily double or Pick 3 still alive after a race of it. */
+.ticket .alive { font: 600 12px/1 var(--display); letter-spacing: .1em; text-transform: uppercase; color: #2d7a3e; border: 1.5px solid #2d7a3e; border-radius: 4px; padding: 4px 6px; white-space: nowrap; }
+/* The races of a daily double or Pick 3, one row each, kept apart. */
+.pick-row.leg + .pick-row.leg { border-top: 1px solid var(--line); padding-top: 6px; }
 
 /* The bar's ground runs the width of the window, and what's in it keeps to the page's column: in a wide window
    its words began at the window's left edge and its buttons ended at the right, each 250 px outside the column

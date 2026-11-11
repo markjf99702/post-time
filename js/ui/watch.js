@@ -7,7 +7,7 @@ import { photoFinish } from '../draw/photo.js';
 import { stateAt, runningOrder } from '../sim.js';
 import { FURLONG } from '../track.js';
 import { marginShort, marginText, fmtTime, fmtClock } from '../chart.js';
-import { game, save, goToGate, recordingOf, memoKey, callFor, runnersFor, raceLabel, horseOf, myBets, betCost } from '../game.js';
+import { game, save, goToGate, recordingOf, memoKey, callFor, runnersFor, raceLabel, horseOf, myBets, betCost, multiFor, multiState, multiNumbers } from '../game.js';
 import { BET_NAMES } from '../tote.js';
 import { clockText } from '../world.js';
 import { pace, climb, officialLine, SLOW, SKIP_TO } from '../call.js';
@@ -589,16 +589,30 @@ function fieldText(race) {
 
 function myTickets(race) {
   const bets = myBets(race);
-  if (!bets.length) return null;
-  // Each ticket in full, and, for a short screen where they'd take more than a line, how many and what they cost.
-  const full = h('span', { class: 'full' }, 'Your tickets: ', bets.map((b, i) => {
-    const sel = b.sel.map(x => race.entries[x].pp);
-    const label = b.type === 'exacta' || b.type === 'trifecta' ? sel.join('-') : b.type.endsWith('box') ? sel.join(',') : sel[0];
-    return h('span', {}, `${i ? ' · ' : ''}${stake(b.amt)} ${BET_NAMES[b.type]} ${label}`);
-  }));
-  const paid = bets.reduce((sum, b) => sum + (b.cost ?? betCost(b)), 0);
-  return h('div', { class: 'w-tix' }, full, h('span', { class: 'count' }, `Your tickets: ${bets.length}, ${money(paid)}`));
+  // A daily double or Pick 3 with this race in it, unless an earlier race of it has already torn it up: "$1
+  // Double 3 / 5: alive" once a race of it has been won. (Where it stands is worked out from the races before
+  // this one: this one is settled already, and the line mustn't give it away.)
+  const multi = multiFor(race).map(t => ({ t, st: multiState(t, race) })).filter(x => x.st !== 'dead');
+  if (!bets.length && !multi.length) return null;
+  const races = t => t.legs.map(no => game.world.cards[game.world.day].races.find(r => r.no === no));
+  const lines = [
+    ...bets.map(b => {
+      const sel = b.sel.map(x => race.entries[x].pp);
+      const label = b.type === 'exacta' || b.type === 'trifecta' ? sel.join('-') : b.type.endsWith('box') ? sel.join(',') : sel[0];
+      return `${stake(b.amt)} ${BET_NAMES[b.type]} ${label}`;
+    }),
+    ...multi.map(({ t, st }) => `${stake(t.amt)} ${SHORT[t.type]} ${multiNumbers(races(t), t.sel)}${st === 'alive' ? ': alive' : ''}`),
+  ];
+  // Each ticket in full, and, for a short screen where they'd take more than a line, how many and what they
+  // cost here (with a double or Pick 3 still alive from an earlier race said so).
+  const full = h('span', { class: 'full' }, 'Your tickets: ', lines.map((l, i) => h('span', {}, `${i ? ' · ' : ''}${l}`)));
+  const here = multi.filter(x => x.t.legs[0] === race.no).map(x => x.t);
+  const paid = [...bets, ...here].reduce((sum, b) => sum + (b.cost ?? betCost(b)), 0);
+  const alive = multi.filter(x => x.st === 'alive').map(x => `${SHORT[x.t.type]} alive`);
+  const count = bets.length + here.length ? [`Your tickets: ${bets.length + here.length}, ${money(paid)}`] : [];
+  return h('div', { class: 'w-tix' }, full, h('span', { class: 'count' }, [...count, ...alive].join(' · ')));
 }
+const SHORT = { dd: 'Double', p3: 'Pick 3' };
 
 function fracName(at) {
   const q = Math.round(at / (FURLONG * 2));

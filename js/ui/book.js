@@ -173,6 +173,7 @@ export function renderHelp(root, nav) {
       h('dl', {},
         h('dt', {}, 'Win, place, show'), h('dd', {}, 'Your horse finishes first; first or second; first, second or third.'),
         h('dt', {}, 'Exacta, trifecta'), h('dd', {}, 'The first two, or the first three, in order. A box covers every order of the horses you pick, one bet per order. An exacta can be bet for $1 and a trifecta for 50 cents, as at a track. What paid is given for a $2 exacta and a $1 trifecta, and a smaller ticket is paid its share.'),
+        h('dt', {}, 'Daily double, Pick 3'), h('dd', {}, "One ticket on the winners of races in a row: the daily double on races 7 and 8, the Pick 3 on races 6, 7 and 8, ending in the stakes. Each is bought at the window of its first race, from $1. Pick one or more horses in each race, and the ticket is one bet for each way of putting them together: two in race 7 with three in race 8 is six bets. Each has a pool of its own, which closes when its first race goes off, so before the last race its Bet tab has the will-pays, what $1 pays with each horse in it, with yours marked."),
         h('dt', {}, 'Odds'), h('dd', {}, '5-2 means $5 profit for every $2 bet, so a $2 win ticket pays $7. Payouts are worked out per dollar and rounded down to the dime, so a $2 ticket pays in steps of 20 cents, and never less than $2.10.'),
       ),
       h('h3', {}, 'The race'),

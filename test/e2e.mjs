@@ -3117,6 +3117,72 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   await ctx9.close();
 }
 
+// The daily double and the Pick 3: the Pick 3 is sold at race 6's window, with a row for each of its races,
+// and the double at race 7's; race 8's Bet tab has the will-pays with yours marked and the bar says they're
+// alive; and race 8's results say what they paid.
+{
+  const ctx10 = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
+  const day = await ctx10.newPage();
+  day.on('pageerror', e => problems.push(e.message));
+  day.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
+  await day.goto(base);
+  await day.waitForSelector('.races', { timeout: 60000 });
+  const won = await day.evaluate(async () => {
+    const G = await import('./js/game.js');
+    const W = await import('./js/world.js');
+    for (const race of G.card().races.slice(0, 5)) G.goToGate(race);
+    window.postTime.nav.go('race', { no: 5 });
+    return G.card().races.map(r => W.simulateRace(r, G.game.world, { record: true }).results[0].h);
+  });
+  // (Race 5 is over: its window sells neither.)
+  await day.evaluate(() => window.postTime.nav.go('race', { no: 6, tab: 'bet' }));
+  const types = await day.locator('.builder .seg[aria-label="Bet type"] button').allTextContents();
+  assert.deepEqual(types.slice(8), ['Pick 3'], `race 6's window sells ${types.slice(8)}`);
+  await day.getByRole('button', { name: 'Pick 3', exact: true }).click();
+  await day.locator('.builder .amounts button', { hasText: /^\$1$/ }).click();
+  assert.deepEqual(await day.locator('.pick-row .lbl').allTextContents(), ['R6Race 6', 'R7Race 7', 'R8Race 8']);
+  const rows = day.locator('.pick-row');
+  await rows.nth(0).locator('button').nth(won[5]).click();
+  await rows.nth(0).locator('button').nth(won[5] === 0 ? 1 : 0).click();
+  await rows.nth(1).locator('button').nth(won[6]).click();
+  await rows.nth(2).locator('button').nth(won[7]).click();
+  assert.match(await day.locator('.builder .cost').textContent(), /\$2\.00 \(2 bets of \$1\)/);
+  assert.match(await day.locator('.would-pay').textContent(), /At these odds: between \$[\d,.]+ and \$[\d,.]+/);
+  await day.locator('.builder button.btn', { hasText: 'Buy ticket' }).click();
+  assert.match(await day.locator('.ticket .what').first().textContent(), /^\$1 PICK 3 \d+, \d+ \/ \d+ \/ \d+$/);
+  assert.match(await day.locator('.post-bar .info').textContent(), /1 ticket · \$2\.00 on this race/);
+  // Race 6 run; the double bought at race 7's window (in the page), and race 7 run.
+  await day.evaluate(async w => {
+    const G = await import('./js/game.js');
+    const [r6, r7] = G.card().races.slice(5);
+    G.goToGate(r6);
+    G.placeBet(r7, { type: 'dd', sel: [[w[6]], [w[7]]], amt: 1 });
+    G.goToGate(r7);
+    window.postTime.nav.go('race', { no: 8, tab: 'bet' });
+  }, won);
+  assert.deepEqual(await day.locator('.will-pays .tote-top span:first-child').allTextContents(), ['Daily double will-pays', 'Pick 3 will-pays']);
+  for (const k of [0, 1]) {
+    const cells = day.locator('.will-pays').nth(k).locator('.tote-cell');
+    assert.equal(await cells.count(), await day.locator('#tote .tote-cell').count());
+    assert.equal(await day.locator('.will-pays').nth(k).locator('.tote-cell.mine').count(), 1);
+    assert.ok(await cells.nth(won[7]).evaluate(c => c.classList.contains('mine')), 'your horse is not the one marked');
+  }
+  assert.equal(await day.locator('.post-bar .info').textContent(), 'Your daily double and Pick 3 are alive');
+  assert.equal(await day.locator('.ticket .alive').count(), 2);
+  const willPay = (await day.locator('.will-pays').first().locator('.tote-cell').nth(won[7]).locator('.odds').textContent()).replace(/^.*pays /, '');
+  await day.evaluate(async () => {
+    const G = await import('./js/game.js');
+    G.goToGate(G.card().races[7]);
+    window.postTime.nav.go('result', { no: 8 });
+  });
+  const paid = await day.locator('.board', { hasText: 'What paid' }).locator('tr', { hasText: '$1 daily double' }).locator('td').nth(1).textContent();
+  // (A will-pay from $100 up is shown to the dollar.)
+  const dollars = t => +t.replace(/[$,]/g, '');
+  assert.equal(willPay.includes('.') ? dollars(paid) : Math.floor(dollars(paid)), dollars(willPay), `the double paid ${paid}, its will-pay ${willPay}`);
+  assert.equal(await day.locator('.summary .ticket.cashed').count(), 2, "the double and the Pick 3 aren't on race 8's results as paid");
+  await ctx10.close();
+}
+
 await browser.close();
 server.close();
 console.log('all good');

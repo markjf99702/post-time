@@ -2,7 +2,7 @@
 // and the winner's circle.
 
 import { h, money, cloth, clear } from './dom.js';
-import { game, card, raceKey, horseOf, nextRace, raceLabel, myBets, photoRecord } from '../game.js';
+import { game, card, raceKey, horseOf, nextRace, raceLabel, myBets, photoRecord, multiFor, multiState, MULTI } from '../game.js';
 import { ownerSilks, longDate, isHandicap, raceDayOf, meetDays } from '../world.js';
 import { JOCKEYS, TIPSTERS, TRAINERS, OWNERS, BIG_STAKES } from '../data.js';
 import { marginShort, fmtTime, fmtClock, ordinal } from '../chart.js';
@@ -10,7 +10,7 @@ import { drawCircle } from '../draw/circle.js';
 import { distanceName } from '../track.js';
 import { ENGINE } from '../sim.js';
 import { atmLine, redraw } from './card.js';
-import { ticketLine, boughtAt } from './race.js';
+import { ticketLine, boughtAt, multiTicket } from './race.js';
 import { callAsCalled } from './watch.js';
 
 export function renderResult(root, nav, params) {
@@ -20,6 +20,8 @@ export function renderResult(root, nav, params) {
   const nxt = nextRace();
   const settled = game.player.settled[raceKey(race)];
   const bets = myBets(race);
+  // A daily double or Pick 3 with this race in it: alive or torn up after it, paid or torn up after its last.
+  const multi = multiFor(race);
   const win = res.order[0];
 
   const wrap = h('div', { class: 'official' });
@@ -34,11 +36,13 @@ export function renderResult(root, nav, params) {
   );
 
   // Your result.
-  if (bets.length && settled) {
+  if ((bets.length || multi.length) && settled) {
     const net = settled.back - settled.spent;
     wrap.append(h('div', { class: 'summary' },
-      h('div', {}, h('div', { class: 'kicker' }, net >= 0 ? 'You cashed' : 'Your tickets'), h('div', { class: `big money ${net >= 0 ? 'pos' : 'neg'}` }, money(settled.back)), h('div', { class: 'muted' }, `on ${money(settled.spent)} bet · ${money(net, { sign: true })}`)),
-      h('div', { class: 'tickets', style: { marginTop: 0, flex: '1 1 220px' } }, bets.map((b, i) => {
+      // (The money is what was settled on this race. A double or Pick 3 is settled on its last race, so a
+      // race with only one of those still running on it has none.)
+      settled.spent > 0 ? h('div', {}, h('div', { class: 'kicker' }, net >= 0 ? 'You cashed' : 'Your tickets'), h('div', { class: `big money ${net >= 0 ? 'pos' : 'neg'}` }, money(settled.back)), h('div', { class: 'muted' }, `on ${money(settled.spent)} bet · ${money(net, { sign: true })}`)) : null,
+      h('div', { class: 'tickets', style: { marginTop: 0, flex: '1 1 220px' } }, ...multi.map(t => multiTicket(t)), bets.map((b, i) => {
         const back = settled.returns[i];
         return h('div', { class: `ticket ${back > 0 ? 'cashed' : 'lost'}` },
           h('div', {}, ticketLine(b, b.sel.map(x => race.entries[x].pp)), h('div', { class: 'small' }, `COST ${money(b.cost)}${boughtAt(race, b)}`)),
@@ -104,6 +108,12 @@ export function renderResult(root, nav, params) {
       rows.map(([k, w, p, s]) => h('tr', {}, h('td', {}, cloth(race.entries[k].pp, 'sm'), ' ', horseOf(race.entries[k]).name), ...[w, p, s].map(v => h('td', { class: 'r money' }, v ? money(v) : '')))),
       pay.exacta ? h('tr', {}, h('td', {}, `$2 exacta ${pay.exacta.sel.map(k => race.entries[k].pp).join('-')}`), h('td', { class: 'r money', colspan: 3 }, money(pay.exacta.pay))) : null,
       pay.trifecta ? h('tr', {}, h('td', {}, `$1 trifecta ${pay.trifecta.sel.map(k => race.entries[k].pp).join('-')}`), h('td', { class: 'r money', colspan: 3 }, money(pay.trifecta.pay))) : null,
+      // The daily double and the Pick 3 that end in this race: the winners of their races, by number.
+      ...Object.entries(res.multi || {}).map(([type, m]) => {
+        const legs = m.sel.map((k, j) => card().races.find(r => r.no === race.no - m.sel.length + 1 + j));
+        if (!MULTI[type] || legs.some(r => !r)) return null;
+        return h('tr', {}, h('td', {}, `$1 ${type === 'dd' ? 'daily double' : 'Pick 3'} ${m.sel.map((k, j) => legs[j].entries[k].pp).join('-')}`), h('td', { class: 'r money', colspan: 3 }, money(m.pay)));
+      }),
     ),
   );
   wrap.append(h('div', { class: 'board' }, h('h3', {}, 'What paid'), payTable));
@@ -134,9 +144,11 @@ export function renderResult(root, nav, params) {
   // did for you on the left, and the next race (the card, after the last one) as the button. (It was the
   // third button of the row above, at the end of the page: 1,700 px down a phone's 664 after an ordinary
   // race and 2,250 after one with six tickets, two and a half to three and a half screens.)
-  const cashed = bets.length && settled ? settled.back : null;
+  const cashed = settled && (bets.length || multi.some(t => t.back !== undefined)) ? settled.back : null;
+  const alive = [...new Set(multi.filter(t => multiState(t) === 'alive').map(t => (t.type === 'dd' ? 'daily double' : 'Pick 3')))];
   root.append(h('div', { class: 'post-bar' },
-    h('div', { class: 'info' }, cashed > 0 ? ['You cashed ', h('b', { class: 'money' }, money(cashed))] : cashed === 0 ? 'No luck this time' : h('span', { class: 'muted' }, 'No tickets')),
+    h('div', { class: 'info' }, cashed > 0 ? ['You cashed ', h('b', { class: 'money' }, money(cashed))] : cashed === 0 ? 'No luck this time'
+      : alive.length ? `Your ${alive.join(' and ')} ${alive.length > 1 ? 'are' : 'is'} alive` : h('span', { class: 'muted' }, 'No tickets')),
     nxt ? h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('race', { no: nxt.no }) }, `Race ${nxt.no} ▸`) : h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('card') }, 'The card ▸'),
   ));
 }
@@ -163,7 +175,8 @@ export function renderCircle(root, nav, params) {
 export function photoCard(rec, you) {
   const c = h('canvas', { width: 720, height: 500 });
   // What the photo was worth is everything cashed on the race, which can be more than one ticket.
-  const cashed = (game.player.settled[`${rec.day}:${rec.no}`]?.returns || []).filter(x => x > 0).length;
+  const cashed = (game.player.settled[`${rec.day}:${rec.no}`]?.returns || []).filter(x => x > 0).length
+    + (game.player.multi || []).filter(t => t.day === rec.day && t.legs[t.legs.length - 1] === rec.no && t.back > 0).length;
   // The Larkspur Handicap's photo says so, and is framed in brass in the scrapbook.
   const big = rec.name === BIG_STAKES.name;
   const frame = h('figure', { class: `photo-frame${big ? ' big' : ''}`, style: { margin: '0 auto' } },

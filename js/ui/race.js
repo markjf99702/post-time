@@ -1,7 +1,7 @@
 // A race before it runs: the past performances, the paddock, the forum and the betting window.
 
 import { h, money, stake, cloth, silksCanvas, clear, ago, plural, dotted } from './dom.js';
-import { game, card, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor, toteFor } from '../game.js';
+import { game, card, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor, toteFor, MULTI, multiStarting, legRaces, multiFor, multiState, cancelMulti, willPaysFor, multiWouldPay, multiNumbers } from '../game.js';
 import { ownerSilks, ageOf, shortDate, clockText, CLASSES, meetStats, isHandicap, prepsOf } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
 import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES, CLOTH } from '../data.js';
@@ -70,7 +70,7 @@ export function renderRace(root, nav, params) {
   function drawTabs() {
     clear(tabs);
     for (const [k, label] of TABS) {
-      const count = k === 'bet' ? myBets(race).length : 0;
+      const count = k === 'bet' ? myBets(race).length + multiFor(race, { starting: true }).length : 0;
       tabs.append(h('button', { type: 'button', role: 'tab', 'aria-selected': String(k === current), onclick: () => tap(k) }, label, count ? h('span', { class: 'n' }, String(count)) : null));
     }
   }
@@ -93,7 +93,7 @@ export function renderRace(root, nav, params) {
   // race at all, the first tap says that too, and the second goes: watching without a bet is one tap more,
   // and heading to the gate by mistake without one costs nothing. (Not when there's no money for a ticket.)
   const slip = () => (isNext && race.status !== 'official' ? unbought(race) : null);
-  const noTicket = () => isNext && race.status !== 'official' && !myBets(race).length && game.player.bank >= LEAST - 1e-9;
+  const noTicket = () => isNext && race.status !== 'official' && !myBets(race).length && !multiFor(race).some(t => multiState(t, race) !== 'dead') && game.player.bank >= LEAST - 1e-9;
   let asked = false; // To the gate has been tapped once over a pick that isn't bought, or with no ticket
   let notBefore = 0; // a tap on To the gate sooner than this is the second half of a double tap
   function say(text) {
@@ -126,7 +126,7 @@ export function renderRace(root, nav, params) {
     clearSlip(race);
     // To the gate takes this button's place: a second tap meant for Buy mustn't start the race.
     notBefore = performance.now() + DOUBLE_TAP;
-    if (current === 'bet') { justBought(race); show('bet'); showPrinted(); } else { drawTabs(); refreshBar(); }
+    if (current === 'bet') { justBought(race, bet); show('bet'); showPrinted(); } else { drawTabs(); refreshBar(); }
   }
 
   // How tall the bar is just now (it has a second row on a phone while a pick isn't bought), so that
@@ -135,7 +135,8 @@ export function renderRace(root, nav, params) {
   function refreshBar() {
     asked = false;
     while (info.nextSibling) info.nextSibling.remove();
-    const bets = myBets(race);
+    // (A daily double or Pick 3 counts on the race it was bought in.)
+    const bets = [...myBets(race), ...multiFor(race, { starting: true })];
     const spent = bets.reduce((a, b) => a + b.cost, 0);
     const bet = slip();
     bar.classList.toggle('pending', !!bet);
@@ -148,7 +149,12 @@ export function renderRace(root, nav, params) {
       measureBar();
       return;
     }
-    say(bets.length ? [h('b', {}, `${bets.length} ticket${bets.length > 1 ? 's' : ''}`), ` · ${money(spent)} on this race`] : [h('span', { class: 'muted' }, isNext ? 'No tickets yet. You can watch without betting.' : race.status === 'official' ? 'This race is over.' : `Race ${nxt ? nxt.no : ''} is up first.`)]);
+    // A daily double or Pick 3 alive going into this race is said, after its own tickets or in place of them.
+    const alive = [...new Set(multiFor(race).filter(t => multiState(t, race) === 'alive').map(t => MULTI_NAME[t.type]))];
+    const aliveText = alive.length ? `${alive.join(' and ')} alive` : '';
+    say(bets.length ? [h('b', {}, `${bets.length} ticket${bets.length > 1 ? 's' : ''}`), ` · ${money(spent)} on this race`, aliveText ? ` · ${aliveText}` : '']
+      : alive.length && race.status !== 'official' ? [h('b', {}, `Your ${alive.join(' and ').replace('Daily', 'daily')} ${alive.length > 1 ? 'are' : 'is'} alive`)]
+        : [h('span', { class: 'muted' }, isNext ? 'No tickets yet. You can watch without betting.' : race.status === 'official' ? 'This race is over.' : `Race ${nxt ? nxt.no : ''} is up first.`)]);
     if (race.status === 'official') bar.append(h('button', { class: 'btn', type: 'button', onclick: () => nav.go('result', { no: race.no }) }, 'Results ▸'));
     else if (isNext) bar.append(h('button', { class: 'btn brass', type: 'button', onclick: toGate }, 'To the gate ▸'));
     else bar.append(h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('race', { no: nxt.no }) }, `Race ${nxt.no} first`));
@@ -413,6 +419,8 @@ const HELP = {
   exbox: 'Exacta box: pick two or more; any two of them finishing first and second, in either order. One bet per order.',
   trifecta: 'Trifecta: the first three, in order. Hard to hit, and it pays like it.',
   tribox: 'Trifecta box: pick three or more; any three of them in the top three, in any order.',
+  dd: 'Daily double: the winners of this race and the next, the last two of the day. Pick one or more in each; one bet for each pair.',
+  p3: 'Pick 3: the winners of this race and the next two, ending in the stakes. Pick one or more in each; one bet for each way.',
 };
 
 const state = new Map(); // per race: builder choices survive switching tabs
@@ -432,7 +440,7 @@ const slipFor = race => {
   const k = memoKey(race);
   if (!state.has(k)) {
     const kept = game.player.settings?.betType;
-    const type = BET_TYPES.includes(kept) ? kept : 'win';
+    const type = typesFor(race).includes(kept) ? kept : 'win';
     state.set(k, { type, picks: [[], [], []], amt: MIN[legType(type)] });
   }
   return state.get(k);
@@ -442,12 +450,12 @@ function clearSlip(race) { slipFor(race).picks = [[], [], []]; }
 // bet, the first for an exacta or trifecta (and out of second and third), one more in a box.
 function pickOn(race, i) {
   const st = slipFor(race);
-  if (st.type.endsWith('box')) { if (!st.picks[0].includes(i)) st.picks[0] = [...st.picks[0], i]; return; }
+  if (st.type.endsWith('box') || MULTI[st.type]) { if (!st.picks[0].includes(i)) st.picks[0] = [...st.picks[0], i]; return; }
   st.picks = st.picks.map((row, r) => (r === 0 ? [i] : row.filter(x => x !== i)));
 }
 // The ticket the slip would buy, if it's whole and there's the money for it.
 function unbought(race) {
-  const bet = currentBet(slipFor(race), race.entries.length);
+  const bet = currentBet(slipFor(race), race);
   return bet && betCost(bet) <= game.player.bank + 1e-9 ? bet : null;
 }
 // The least any ticket costs (a 50-cent trifecta).
@@ -465,11 +473,18 @@ function callAgain(race) { clearTimeout(again); again = setTimeout(() => rehears
 // A pick in words. On the slip: "$10 to win on #3 Early Ticket", "$1 exacta box 3, 5, 7: Early Ticket, Gold
 // Rush, Mud Pie" (an exacta or trifecta was numbers alone there, to be checked against the form). In the bar,
 // by name ("#3 Early Ticket to win"), and in a sentence after "You picked" ("#3 to win").
+const MULTI_NAME = { dd: 'Daily double', p3: 'Pick 3' };
 const TO = { win: 'to win', place: 'to place', show: 'to show', wps: 'across the board' };
-const numbers = (race, bet) => bet.sel.map(i => race.entries[i].pp).join(bet.type.endsWith('box') ? ', ' : '-');
+const numbers = (race, bet) => (MULTI[bet.type] ? multiNumbers(legRaces(bet.type, race), bet.sel) : bet.sel.map(i => race.entries[i].pp).join(bet.type.endsWith('box') ? ', ' : '-'));
 const named = (race, bet) => { const e = race.entries[bet.sel[0]]; return `#${e.pp} ${horseOf(e).name}`; };
+// A daily double's or Pick 3's horses' names, a race at a time, as its numbers are (multiNumbers in js/game.js).
+const multiNames = (races, sel) => sel.map((leg, k) => leg.map(i => horseOf(races[k].entries[i]).name).join(', ')).join(' / ');
 function pickLine(race, bet) {
   if (TO[bet.type]) return `${stake(bet.amt)} ${TO[bet.type]} on ${named(race, bet)}`;
+  if (MULTI[bet.type]) {
+    const races = legRaces(bet.type, race);
+    return `${stake(bet.amt)} ${BET_NAMES[bet.type].toLowerCase().replace('pick', 'Pick')} ${numbers(race, bet)}${bet.sel.every(l => l.length === 1) ? `: ${multiNames(races, bet.sel)}` : ''}`;
+  }
   return `${stake(bet.amt)} ${BET_NAMES[bet.type].toLowerCase()} ${numbers(race, bet)}: ${bet.sel.map(i => horseOf(race.entries[i]).name).join(', ')}`;
 }
 function pickName(race, bet) {
@@ -477,7 +492,7 @@ function pickName(race, bet) {
 }
 function pickShort(race, bet) {
   if (TO[bet.type]) return `#${race.entries[bet.sel[0]].pp} ${TO[bet.type]}`;
-  const name = BET_NAMES[bet.type].toLowerCase();
+  const name = BET_NAMES[bet.type].toLowerCase().replace('pick', 'Pick');
   return `${/^[aeiou]/.test(name) ? 'an' : 'a'} ${name} (${numbers(race, bet)})`;
 }
 // The ticket just bought prints out under the others, and the page moves to show it. (It used to print
@@ -486,7 +501,9 @@ function pickShort(race, bet) {
 // the bar's height clear below it now, in the stylesheet.) The move is aimed at where the ticket will lie
 // once it's out, and the ticket prints as the page gets there.
 let printing = null; // the ticket just bought, until the list it's in is drawn
-function justBought(race) { printing = { race: memoKey(race), i: myBets(race).length - 1 }; }
+function justBought(race, bet) {
+  printing = MULTI[bet?.type] ? { race: memoKey(race), multi: game.player.multi[game.player.multi.length - 1] } : { race: memoKey(race), i: myBets(race).length - 1 };
+}
 function showPrinted() {
   const t = document.querySelector('.ticket.printed');
   if (!t) return;
@@ -503,6 +520,8 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
   const open = isNext && race.status !== 'official';
 
   panel.append(toteBoard(race));
+  // Once the races before it are run, the race that ends a daily double or Pick 3 has its will-pays.
+  for (const w of willPaysFor(race)) panel.append(willPaysBoard(race, w));
   if (race.status === 'official') {
     panel.append(h('p', { class: 'note' }, 'Betting is closed. See the results for what paid.'));
     panel.append(ticketList(race, false, changed));
@@ -525,24 +544,30 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
   const draw = () => {
     clear(builder);
     const types = h('div', { class: 'seg', role: 'group', 'aria-label': 'Bet type' });
-    for (const t of BET_TYPES) {
+    for (const t of typesFor(race)) {
       types.append(h('button', {
         type: 'button', 'aria-pressed': String(st.type === t),
         onclick: () => {
           st.type = t; st.picks = [[], [], []];
           if (st.amt < MIN[legType(t)]) st.amt = MIN[legType(t)];
-          // (It's saved with the next ticket or race: a tap here doesn't write the whole meet.)
-          if (game.player.settings) game.player.settings.betType = t;
+          // (It's saved with the next ticket or race: a tap here doesn't write the whole meet. A daily double or
+          // Pick 3 isn't: it's sold in one race a day, and the next race's slip would have to forget it.)
+          if (game.player.settings && !MULTI[t]) game.player.settings.betType = t;
           draw();
         },
       }, BET_NAMES[t]));
     }
     builder.append(types, h('p', { class: 'bet-help' }, HELP[st.type]));
-    const rows = st.type === 'exacta' ? ['1st', '2nd'] : st.type === 'trifecta' ? ['1st', '2nd', '3rd'] : [st.type.endsWith('box') ? 'Pick' : 'Horse'];
-    const multi = st.type.endsWith('box');
+    // A daily double or Pick 3 has a row for each of its races, with that race's horses, and any number can
+    // be picked in each.
+    const legs = MULTI[st.type] ? legRaces(st.type, race) : null;
+    const rows = legs ? legs.map(r => [h('span', { 'aria-hidden': 'true' }, `R${r.no}`), h('span', { class: 'sr' }, `Race ${r.no}`)])
+      : st.type === 'exacta' ? ['1st', '2nd'] : st.type === 'trifecta' ? ['1st', '2nd', '3rd'] : [st.type.endsWith('box') ? 'Pick' : 'Horse'];
+    const multi = st.type.endsWith('box') || !!legs;
     rows.forEach((label, r) => {
-      const grid = evenRows(h('div', { class: 'picks-grid' }), race.entries.length);
-      race.entries.forEach((e, i) => {
+      const entries = legs ? legs[r].entries : race.entries;
+      const grid = evenRows(h('div', { class: 'picks-grid' }), entries.length);
+      entries.forEach((e, i) => {
         const [bg, fg] = CLOTH[e.pp] || CLOTH[1];
         const on = st.picks[r].includes(i);
         grid.append(h('button', {
@@ -558,7 +583,7 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
           },
         }, h('span', {}, String(e.pp)))); // the number, on a patch of the cloth at full strength
       });
-      builder.append(h('div', { class: 'pick-row' }, h('span', { class: 'lbl' }, label), grid));
+      builder.append(h('div', { class: `pick-row${legs ? ' leg' : ''}` }, h('span', { class: 'lbl' }, label), grid));
     });
     const amts = h('div', { class: 'seg amounts', role: 'group', 'aria-label': 'Amount' });
     for (const a of [0.5, 1, 2, 5, 10, 20, 50, 100]) {
@@ -566,7 +591,7 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
       amts.append(h('button', { type: 'button', 'aria-pressed': String(st.amt === a), onclick: () => { st.amt = a; draw(); } }, stake(a)));
     }
     builder.append(amts);
-    const bet = currentBet(st, race.entries.length);
+    const bet = currentBet(st, race);
     const c = bet ? betCost(bet) : 0;
     const msg = h('div', { class: 'cost' });
     // The pick in words, so the number can be checked against the name without going back to the form;
@@ -583,7 +608,7 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
         callAgain(race);
         audio.ticket();
         clearSlip(race);
-        justBought(race);
+        justBought(race, bet);
         changed();
         showPrinted();
       },
@@ -595,9 +620,19 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
   draw();
 }
 
-function legType(t) { return t === 'trifecta' || t === 'tribox' ? 'trifecta' : t === 'exacta' || t === 'exbox' ? 'exacta' : 'win'; }
+function legType(t) { return MULTI[t] ? t : t === 'trifecta' || t === 'tribox' ? 'trifecta' : t === 'exacta' || t === 'exbox' ? 'exacta' : 'win'; }
 
-function currentBet(st, runners) {
+// The kinds of bet sold at this race's window: the eight on the race itself, and in the race that starts it
+// the daily double or the Pick 3.
+const typesFor = race => [...BET_TYPES, ...multiStarting(race)];
+
+function currentBet(st, race) {
+  if (MULTI[st.type]) {
+    const legs = legRaces(st.type, race);
+    const sel = legs.map((r, k) => st.picks[k].filter(i => i < r.entries.length));
+    return legs.length === MULTI[st.type].legs && sel.every(x => x.length) ? { type: st.type, sel, amt: st.amt } : null;
+  }
+  const runners = race.entries.length;
   const p = st.picks.map(row => row.filter(i => i < runners));
   if (['win', 'place', 'show', 'wps'].includes(st.type)) return p[0].length === 1 ? { type: st.type, sel: [p[0][0]], amt: st.amt } : null;
   if (st.type === 'exacta') return p[0].length && p[1].length ? { type: 'exacta', sel: [p[0][0], p[1][0]], amt: st.amt } : null;
@@ -611,6 +646,7 @@ function needs(st) {
   if (st.type === 'trifecta') return 'Pick a first, second and third.';
   if (st.type === 'exbox') return 'Pick at least two.';
   if (st.type === 'tribox') return 'Pick at least three.';
+  if (MULTI[st.type]) return 'Pick at least one horse in each race.';
   return 'Pick a horse.';
 }
 
@@ -671,7 +707,7 @@ function twoPays(odds) {
 // ticket whose payout depends on what else finishes in the money. It moves with the odds. Early in the
 // betting it's only as good as the board, which has a long way to move.
 function payLine(race, bet) {
-  const est = bet ? wouldPay(toteFor(race), mtpState(race).frac, myBets(race), bet) : null;
+  const est = !bet ? null : MULTI[bet.type] ? multiWouldPay(race, bet) : wouldPay(toteFor(race), mtpState(race).frac, myBets(race), bet);
   // (To the dime under $10, and to the dollar above, as the board's $2 prices are.)
   const fig = x => (x < 9.995 ? money(x) : money(Math.round(x), { cents: false }));
   const text = !est ? '' : fig(est.low) === fig(est.high) ? `At these odds: about ${fig(est.low)}` : `At these odds: between ${fig(est.low)} and ${fig(est.high)}`;
@@ -680,7 +716,7 @@ function payLine(race, bet) {
 
 function updateTote(panel, race) {
   const pays = panel.querySelector('.would-pay');
-  if (pays) pays.replaceWith(payLine(race, currentBet(slipFor(race), race.entries.length)));
+  if (pays) pays.replaceWith(payLine(race, currentBet(slipFor(race), race)));
   const old = panel.querySelector('#tote');
   if (!old) return;
   const before = [...old.querySelectorAll('.odds')].map(x => x.textContent);
@@ -711,7 +747,8 @@ function ticketList(race, open, changed) {
   const settled = game.player.settled[raceKey(race)];
   // Only the ticket just bought prints out. (The last one in the list used to, every time the list was
   // drawn: when the Bet tab was opened, and when another ticket was cancelled.)
-  const fresh = printing && printing.race === memoKey(race) ? printing.i : -1;
+  const mine = printing && printing.race === memoKey(race) ? printing : null;
+  const fresh = mine && mine.i !== undefined ? mine.i : -1;
   printing = null;
   bets.forEach((b, i) => {
     const sel = b.sel.map(x => race.entries[x].pp);
@@ -724,7 +761,52 @@ function ticketList(race, open, changed) {
       back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : back === 0 ? h('span', { class: 'small torn' }, 'torn up') : open ? h('button', { type: 'button', onclick: () => { cancelBet(race, i); callAgain(race); changed(); } }, 'Cancel') : null,
     ));
   });
+  // And a daily double or Pick 3 with this race in it: it can be cancelled in its first race, while that's
+  // open, and from then on says where it stands.
+  for (const t of multiFor(race)) {
+    const cancel = open && t.legs[0] === race.no ? () => { cancelMulti(t); callAgain(race); changed(); } : null;
+    wrap.append(multiTicket(t, { cancel, fresh: mine?.multi === t }));
+  }
   return wrap;
+}
+
+// A daily double or Pick 3 ticket: "$1 DAILY DOUBLE 3 / 5, 6", its races, horses and cost, and once a race
+// of it has been run, whether it's alive; once the last has, what it paid or that it's torn up.
+export function multiTicket(t, { cancel = null, fresh = false } = {}) {
+  const races = t.legs.map(no => card().races.find(r => r.no === no));
+  const st = multiState(t);
+  return h('div', { class: `ticket${fresh ? ' printed' : ''}${st === 'paid' ? ' cashed' : st === 'dead' ? ' lost' : ''}` },
+    h('div', {},
+      h('div', { class: 'what' }, `${stake(t.amt)} ${BET_NAMES[t.type].toUpperCase()} `, h('span', { class: 'bit' }, multiNumbers(races, t.sel))),
+      h('div', { class: 'small' }, `LRK R${t.legs[0]}-R${t.legs[t.legs.length - 1]} · ${multiNames(races, t.sel)} · COST ${money(t.cost)}`),
+    ),
+    st === 'paid' ? h('span', { class: 'stamp' }, `PAID ${money(t.back)}`) : st === 'dead' ? h('span', { class: 'small torn' }, 'torn up')
+      : st === 'alive' ? h('span', { class: 'small alive' }, 'alive') : cancel ? h('button', { type: 'button', onclick: cancel }, 'Cancel') : null,
+  );
+}
+
+// The will-pays for the race that ends a daily double or Pick 3 (willPaysFor in js/game.js): what $1 pays
+// with each horse here, given the winners of the races before it, with yours marked. They don't move: the
+// pool closed when its first race went off.
+function willPaysBoard(race, { type, races, won, pays }) {
+  const yours = new Set(multiFor(race).filter(t => t.type === type && multiState(t, race) === 'alive').flatMap(t => t.sel[t.sel.length - 1]));
+  const grid = evenRows(h('div', { class: 'tote-grid' }), race.entries.length);
+  // (To the dollar from $100, so the figure fits a cell on a phone.)
+  const fig = x => (x < 99.995 ? money(x) : money(Math.floor(x), { cents: false }));
+  race.entries.forEach((e, i) => {
+    grid.append(h('div', { class: `tote-cell will${yours.has(i) ? ' mine' : ''}` },
+      h('div', { class: 'tc-top' }, cloth(e.pp, 'sm'), yours.has(i) ? h('span', { class: 'fav-tag', 'aria-hidden': 'true' }, 'YOURS') : null),
+      h('div', { class: 'nm' }, horseOf(e).name),
+      h('div', { class: 'odds' }, h('span', { class: 'sr' }, `${yours.has(i) ? 'Yours. ' : ''}$1 pays `), fig(pays[i])),
+    ));
+  });
+  const winners = won.map((k, j) => `#${races[j].entries[k].pp}`);
+  const which = races.length === 1 ? `Race ${races[0].no} won by ${winners[0]}` : `Races ${races.map(r => r.no).join(' and ')} won by ${winners.join(' and ')}`;
+  return h('div', { class: 'tote will-pays' },
+    h('div', { class: 'tote-top' }, h('span', {}, `${BET_NAMES[type]} will-pays`), h('span', {}, which)),
+    grid,
+    h('div', { class: 'tote-key' }, `What a $1 ${BET_NAMES[type].toLowerCase().replace('pick', 'Pick')} pays with each horse in this race. They don't move: the pool closed when race ${races[0].no} went off.`),
+  );
 }
 
 export { runnersFor };
