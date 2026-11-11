@@ -511,20 +511,37 @@ a { color: var(--link); }
 .w-ctl .hint { font-size: 12.5px; color: #8f8a78; width: 100%; }
 
 @media (min-width: 700px) {
-  .w-stage { flex-basis: min(62vh, 56vw); }
+  /* A tablet held upright has the height for a tall picture. (It was held to 56% of the width: 430 px of
+     1024, over half a screen of black.) */
+  .w-stage { flex-basis: min(62vh, 80vw); }
   .call { font-size: 22px; flex-basis: calc(2.6em + 39px); }
 }
-/* A phone on its side: the picture on the left, and the running order, the call and the buttons in a column
-   on the right. The running order keeps the height it was given at the gate and the call has what's left, so
-   neither moves as the lines come and go. (The running order had what was left and the call its own height:
-   the call's top edge moved on 23 of 27 lines, anywhere from 131 to 224 px down.) */
-@media (orientation: landscape) and (max-height: 520px) {
-  .watch { display: grid; grid-template-columns: minmax(0, 1fr) 260px; grid-template-rows: auto auto minmax(60px, 1fr) auto; }
-  .w-top { grid-column: 1 / -1; padding: 4px 10px; }
-  .w-stage { grid-row: 2 / span 3; height: auto; }
+/* Two columns: the picture on the left, the height of the screen but for the fractions under it, and the
+   running order, the call, the tickets and the buttons in a column on the right. A phone on its side has
+   them, and so does any window that would be a letterbox with the picture over the rest: a laptop, a
+   Chromebook. (At 1366 by 657 the picture was 1366 by 373, with no room above the far rail for the sky, the
+   hills or the grandstand.) The running order keeps the height it was given at the gate and the call has
+   what's left, so neither moves as the lines come and go. (On the phone the running order had what was left
+   and the call its own height: the call's top edge moved on 23 of 27 lines, from 131 to 224 px down.) */
+@media (orientation: landscape) and (max-height: 520px), (min-width: 900px) and (min-aspect-ratio: 3/2) {
+  .watch { display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto auto minmax(60px, 1fr) auto auto auto; }
+  .w-top { grid-column: 1 / -1; }
+  .w-stage { grid-column: 1; grid-row: 2 / span 4; }
+  .w-frs { grid-row: 6; }
   .order { grid-column: 2; grid-row: 2; align-content: flex-start; }
-  .call { grid-column: 2; grid-row: 3; font-size: 15px; }
-  .w-ctl { grid-column: 2; grid-row: 4; padding: 6px 10px; }
+  .call { grid-column: 2; grid-row: 3; }
+  .w-tix { grid-column: 2; grid-row: 4; }
+  .w-ctl { grid-column: 2; grid-row: 5; }
+  .w-ctl .spacer { display: none; } /* Results takes Skip's place in the row, which is no taller for it */
+}
+/* On the phone the column is narrower and its type smaller, the tickets go under the picture, where a line
+   of them has room, and the line about following a horse is left out. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .watch { grid-template-columns: minmax(0, 1fr) 260px; }
+  .w-top { padding: 4px 10px; }
+  .call { font-size: 15px; }
+  .w-tix { grid-column: 1 / -1; grid-row: 7; }
+  .w-ctl { padding: 6px 10px; }
   .w-ctl .hint { display: none; }
 }
 

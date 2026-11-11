@@ -999,12 +999,13 @@ const skipped = await page.evaluate(async () => {
   return { inGate, toRun: Math.round(w.winT - w.T), bells: window.__oscillators.slice(made).filter(o => o.frequency.value === 1760).length, crowd: window.__crowd !== crowd };
 });
 assert.deepEqual(skipped, { inGate: true, toRun: 12, bells: 0, crowd: true }, 'after Skip from the gate the starting bell rings in mid-stretch, or the crowd never starts');
-// On a wide screen that isn't tall, the picture gives way when anything under it grows. The camera keeps
-// its place when the picture changes size (it used to snap to where it was easing to), and Results is the
-// height of the buttons it joins, so the picture doesn't change size at the finish at all.
+// On a wide screen the picture has the height of the window under the line at the top, and gives way when
+// that line grows. The camera keeps its place when the picture changes size (it used to snap to where it
+// was easing to), and Results is the height of the buttons it joins, so neither the row of buttons nor the
+// picture changes size at the finish.
 await page.setViewportSize({ width: 1280, height: 700 });
 const steady = await page.evaluate(async () => {
-  const w = window.__watch, stage = document.querySelector('.w-stage'), row = document.querySelector('.w-ctl');
+  const w = window.__watch, stage = document.querySelector('.w-stage'), row = document.querySelector('.w-ctl'), head = document.querySelector('.w-top');
   const frames = async n => { for (let i = 0; i < n; i++) await new Promise(r => requestAnimationFrame(r)); };
   const tall = el => el.getBoundingClientRect().height;
   await frames(3);
@@ -1014,10 +1015,10 @@ const steady = await page.evaluate(async () => {
   w.pause();
   await frames(3);
   const was = { off: w.cam.off, span: w.cam.span, stage: tall(stage) };
-  row.style.paddingBottom = '20px'; // the row under the picture, 8 px taller
+  head.style.paddingBottom = '16px'; // the line over the picture, 8 px taller
   await frames(4);
   const now = { off: w.cam.off, span: w.cam.span, stage: tall(stage) };
-  row.style.paddingBottom = '';
+  head.style.paddingBottom = '';
   await frames(4);
   // On to the finish, at normal speed again.
   document.querySelector('.w-ctl button').click();
@@ -1466,7 +1467,8 @@ await page.waitForSelector('.races');
   // the gate for the rows it will need (three, for eleven in that column), every number is in the column,
   // and no line spills out of the call's box. (The running order had whatever room the call left it: over
   // one call the call's top edge moved on 23 of 27 lines, and at 667 wide the running order was cut on two.)
-  for (const [width, height] of [[844, 390], [667, 375]]) {
+  // A laptop or a Chromebook has the same two columns, with a wider column at the desktop's type sizes.
+  for (const [width, height] of [[844, 390], [667, 375], [1366, 657]]) {
     await watch(width, height);
     const col = await win.evaluate(async () => {
       const w = window.__watch, out = { field: w.run.n, lines: w.call.lines.length, top: new Set(), tall: new Set(), spill: 0, cut: 0, off: 0 };
@@ -1491,6 +1493,39 @@ await page.waitForSelector('.races');
     assert.ok(col.spill <= 1, `${width} by ${height}: a line of the call spills ${col.spill}px out of its box`);
     await card();
   }
+
+  // Where the horizon is in the picture, as a share of its height: on the backstretch and in the stretch.
+  const horizon = async (width, height) => {
+    await watch(width, height);
+    return win.evaluate(async () => {
+      const w = window.__watch, out = [];
+      for (const t of [Math.min(30, w.winT / 2), w.winT - 6]) {
+        w.setT(t);
+        for (let i = 0; i < 3; i++) await new Promise(r => requestAnimationFrame(r));
+        out.push(Math.round(w.horizon * 100));
+      }
+      const box = s => document.querySelector(s).getBoundingClientRect(), stage = box('.w-stage'), screen = document.getElementById('watch');
+      return { horizon: out, wide: Math.round(stage.width), tall: Math.round(stage.height), beside: box('.call').left >= stage.right - 0.5, fits: box('.w-ctl').bottom <= innerHeight + 0.5 && screen.scrollHeight <= screen.clientHeight + 1 };
+    });
+  };
+  // A laptop or a Chromebook, 1366 by 657: the picture has the height of the window, not a strip across the
+  // top of it, and the far side of the track is in it, with the sky, the hills and the grandstand over the
+  // far rail. (The picture was 1366 by 373, three and two-thirds times as wide as it was tall, and the
+  // horizon was 2% of the way down it on the backstretch and above its top edge in the stretch.)
+  const laptop = await horizon(1366, 657);
+  assert.ok(laptop.beside && laptop.fits && laptop.tall >= 560 && laptop.wide >= 950, `at 1366 by 657 the picture is ${laptop.wide} by ${laptop.tall}, and the call is ${laptop.beside ? 'beside' : 'under'} it`);
+  assert.ok(Math.min(...laptop.horizon) >= 20, `at 1366 by 657 the horizon is ${laptop.horizon.join('% and ')}% of the way down the picture`);
+  await card();
+  // However wide and short the window, the camera stands far enough back to keep the horizon in the picture.
+  // (In a window 1900 by 600 it was 8% of the way down in the stretch.)
+  const strip = await horizon(1900, 600);
+  assert.ok(strip.wide > 2.5 * strip.tall && Math.min(...strip.horizon) >= 15, `in a picture ${strip.wide} by ${strip.tall} the horizon is ${strip.horizon.join('% and ')}% of the way down`);
+  await card();
+  // A tablet held upright: the picture has most of the height the rest doesn't need. (It was held to 430 px
+  // of 1024.)
+  const tablet = await horizon(768, 1024);
+  assert.ok(!tablet.beside && tablet.fits && tablet.tall >= 560 && Math.min(...tablet.horizon) >= 20, `at 768 by 1024 the picture is ${tablet.wide} by ${tablet.tall}, with the horizon ${tablet.horizon.join('% and ')}% of the way down`);
+  await card();
   await ctx6.close();
 }
 

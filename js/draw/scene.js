@@ -94,12 +94,19 @@ export class RaceScene {
   target(t, st) {
     const run = this.run;
     const aspect = this.W / this.H;
-    const maxSpan = aspect > 1.4 ? 34 : aspect > 0.9 ? 24 : 20;
-    const minSpan = aspect > 1.4 ? 22 : 13;
+    // A picture much wider than it is tall can't be this close: the horizon goes up as the camera comes in,
+    // and at 22 metres across a picture three and a half times as wide as it's tall it was at the top edge,
+    // with the sky, the hills and the grandstand above it. So the picture is never less than ten metres
+    // across for each time its width is its height, which keeps the horizon about a fifth of the way down.
+    // (In steps, so a few pixels' change in the picture's height doesn't move the camera. A phone or a
+    // tablet either way up is never this wide: only pictures past 2.2 to 1.)
+    const floor = 5 * Math.round(aspect * 2);
+    const maxSpan = Math.max(floor, aspect > 1.4 ? 34 : aspect > 0.9 ? 24 : 20);
+    const minSpan = Math.max(floor, aspect > 1.4 ? 22 : 13);
     const gateX = -run.runup;
     if (t < 1.2) {
       const n = this.runners.length;
-      const span = Math.max(aspect > 1.4 ? 20 : aspect > 0.9 ? 15 : 12, n * 1.25 + 7);
+      const span = Math.max(floor, aspect > 1.4 ? 20 : aspect > 0.9 ? 15 : 12, n * 1.25 + 7);
       return { x: gateX + n * 0.55 - 0.5, span };
     }
     const order = st.map((s, i) => ({ ...s, i })).sort((a, b) => b.p - a.p);

@@ -66,7 +66,7 @@ export function renderWatch(el, nav, params) {
       clock,
     ),
     stage,
-    h('div', { class: 'w-top', style: { paddingTop: '2px', paddingBottom: '2px' } }, frs),
+    h('div', { class: 'w-top w-frs', style: { paddingTop: '2px', paddingBottom: '2px' } }, frs),
     order,
     callBox,
     ...(mineList ? [mineList] : []), // append() would print a null as "null"
@@ -416,7 +416,7 @@ export function renderWatch(el, nav, params) {
   el.tabIndex = -1;
   el.focus({ preventScroll: true });
   // Debug hook for tests and screenshots.
-  window.__watch = { setT: t => { T = t; scene.lastT = null; }, get T() { return T; }, winT, endT, t0, leave, run, call, pause: () => { speed = 0; }, get cam() { return scene.cam; } };
+  window.__watch = { setT: t => { T = t; scene.lastT = null; }, get T() { return T; }, winT, endT, t0, leave, run, call, pause: () => { speed = 0; }, get cam() { return scene.cam; }, get horizon() { return scene.hor / scene.H; } };
   return teardown;
 }
 
