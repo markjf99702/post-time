@@ -137,4 +137,12 @@ export function fmtClock(t) {
   return `${Math.floor(d / 600)}:${((d % 600) / 10).toFixed(1).padStart(4, '0')}`;
 }
 
+// A workout's time, to the fifth of a second the way clockers give them: :36.4, 1:01.0. The time is kept to
+// the tenth, and one that falls between two fifths is given the slower.
+export function fmtWork(t) {
+  const tenths = Math.round(Math.round(t * 10) / 2) * 2;
+  const s = ((tenths % 600) / 10).toFixed(1).padStart(4, '0');
+  return tenths >= 600 ? `${Math.floor(tenths / 600)}:${s}` : `:${s}`;
+}
+
 export const LENGTH_M = LENGTH;

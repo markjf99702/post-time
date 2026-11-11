@@ -5,7 +5,7 @@ import { game, card, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myB
 import { ownerSilks, ageOf, shortDate, clockText, CLASSES, meetStats } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
 import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES } from '../data.js';
-import { callText, marginShort, fmtTime } from '../chart.js';
+import { callText, marginShort, fmtTime, fmtWork } from '../chart.js';
 import { runStyle } from '../forum.js';
 import { BET_NAMES, cost as betCost, BASE } from '../tote.js';
 import { drawHorse } from '../draw/horse.js';
@@ -136,10 +136,12 @@ export function renderRace(root, nav, params) {
   return () => { clearInterval(timer); if (stopPanel) stopPanel(); };
 }
 
+// Who the race is for, under its name. A stakes isn't by invitation (only an invitational is): it's open to
+// any horse whose owner pays the fee to enter. A race for fillies and mares gives their ages too.
 export function conditions(race) {
   const C = CLASSES[race.cls];
-  const who = race.fm ? 'Fillies and mares' : 'Three-year-olds and up';
-  const what = C.maiden ? `${who} that have never won` : race.claim ? `${who}, each for sale for $${race.claim.toLocaleString('en-US')}` : race.cls === 'STK' ? `${who}, by invitation` : `${who}, non-claiming`;
+  const who = race.fm ? 'Fillies and mares, three and up' : 'Three-year-olds and up';
+  const what = C.maiden ? `${who}${race.fm ? ',' : ''} that have never won` : race.claim ? `${who}, each for sale for $${race.claim.toLocaleString('en-US')}` : race.cls === 'STK' ? `${who}. A stakes race: owners pay to enter` : `${who}, non-claiming`;
   return `${distanceName(race.distance)} on the ${race.surface} (${race.cond}). ${what}. Purse ${money(race.purse, { cents: false })}.`;
 }
 
@@ -240,19 +242,17 @@ function fillMore(more, race, e, hs) {
     // before that, so two made on the same day (as every horse has from before the meet) can be either
     // way round: one horse in five listed a work from August ahead of one from September.
     const works = hs.works.slice().reverse().sort((a, b) => (a.dt < b.dt ? 1 : a.dt > b.dt ? -1 : 0));
+    // A bullet goes in front of the work, where the Form prints it, and the time is given to the fifth.
     more.append(h('p', { class: 'works' }, h('b', {}, 'Works: '), works.map((w, k) => [
-      k ? ' · ' : '', `${shortDate(w.dt).slice(0, -2)} ${w.f}f ${w.surf === 't' ? 'turf' : 'ft'} ${fmtWork(w.t)} ${w.g} `,
-      w.rank === 1 ? h('b', {}, `${w.rank}/${w.of} ●`) : `${w.rank}/${w.of}`,
+      k ? ' · ' : '', w.rank === 1 ? h('b', {}, '●') : null,
+      `${shortDate(w.dt).slice(0, -2)} ${w.f}f ${w.surf === 't' ? 'turf' : 'ft'} ${fmtWork(w.t)} ${w.g} `,
+      w.rank === 1 ? h('b', {}, `${w.rank}/${w.of}`) : `${w.rank}/${w.of}`,
     ])));
   }
 }
 
 function supCall([pos, margin]) {
   return [String(pos), margin > 0.03 ? h('sup', {}, marginShort(margin)) : null];
-}
-function fmtWork(t) {
-  const m = Math.floor(t / 60), s = (t - m * 60).toFixed(1).padStart(4, '0');
-  return m ? `${m}:${s}` : `:${s}`;
 }
 function shortStakes(name) {
   return name.replace(/ (Stakes|Handicap|Mile|Sprint)$/, '').split(' ').map(w => w.slice(0, 5)).join('') + (/Handicap/.test(name) ? 'H' : 'S');

@@ -200,6 +200,36 @@ const works = await page.evaluate(async () => {
   return { shown, newestFirst: byDate.reverse().map(w => shortDate(w.dt).slice(0, -2)) };
 });
 assert.deepEqual(works.shown, works.newestFirst, 'the workouts are not listed newest first');
+// The small print. A work is timed to the fifth of a second, with the bullet in front of a bulleted one
+// (it was "3f ft :36.3 B 1/31 ●"). A stakes isn't "by invitation", and a race for fillies and mares says
+// how old they are. The page under the race's name is drawn from each.
+const smallPrint = await page.evaluate(async () => {
+  const { game, card, nav } = window.postTime;
+  const race = card().races.find(r => r.status !== 'official');
+  const k = race.entries.findIndex(e => game.world.horses[e.hid].works.length >= 2);
+  const horse = game.world.horses[race.entries[k].hid], was = horse.works, kept = { cls: race.cls, claim: race.claim, fm: race.fm };
+  horse.works = [{ ...was[0], dt: '2026-01-02', f: 3, t: 36.3, g: 'B', rank: 1, of: 31, surf: 'd' }, { ...was[1], dt: '2026-01-09', f: 5, t: 61.1, g: 'H', rank: 4, of: 12, surf: 't' }];
+  const out = { conditions: [] };
+  for (const as of [{ cls: 'STK', claim: null, fm: false }, { cls: 'ALW', claim: null, fm: true }, { cls: 'MSW', claim: null, fm: true }, { cls: 'C16', claim: 16000, fm: true }, { cls: 'MSW', claim: null, fm: false }]) {
+    Object.assign(race, as);
+    nav.refresh();
+    out.conditions.push(document.querySelector('.rhead .cond').textContent.replace(/^[^.]*\. /, '').replace(/ Purse .*$/, ''));
+  }
+  document.querySelectorAll('.entry-head')[k].click();
+  out.works = document.querySelectorAll('.entry')[k].querySelector('.works').textContent;
+  horse.works = was;
+  Object.assign(race, kept);
+  nav.refresh();
+  return out;
+});
+assert.equal(smallPrint.works, 'Works: 9Jan 5f turf 1:01.2 H 4/12 · ●2Jan 3f ft :36.4 B 1/31');
+assert.deepEqual(smallPrint.conditions, [
+  'Three-year-olds and up. A stakes race: owners pay to enter.',
+  'Fillies and mares, three and up, non-claiming.',
+  'Fillies and mares, three and up, that have never won.',
+  'Fillies and mares, three and up, each for sale for $16,000.',
+  'Three-year-olds and up that have never won.',
+]);
 
 // The forum has posts with picks.
 await page.click('.tabs button:nth-child(3)');
@@ -1035,6 +1065,9 @@ await page.waitForSelector('.races');
   await first.click('#menuBtn');
   await first.click('#menu [data-go="help"]');
   assert.equal(await first.locator('#app .help').count(), 1, "How to play can't be read during Opening day");
+  // The placing judges read a photo; the stewards rule on fouls.
+  const howTo = await first.locator('#app .help').textContent();
+  assert.ok(/In a close finish the placing judges read the photo\./.test(howTo) && !/stewards/.test(howTo), 'How to play has the stewards reading the photo');
   await first.click('.rhead .back');
   assert.deepEqual(await opening(), { progress: true, bank: '' }, "the progress doesn't come back after How to play");
   // Start a new meet does nothing while one is being built: taps on it, a second apart, don't start another

@@ -9,7 +9,7 @@ import { runRace, figureFor, stateAt, runningOrder } from '../js/sim.js';
 import { coursePath, FURLONG, COURSES } from '../js/track.js';
 import { createWorld, simulateRace, buildCard, applyResult, nextDay, ageOf } from '../js/world.js';
 import { makeTote, board, settle, ticketReturn, cost, TAKEOUT } from '../js/tote.js';
-import { fmtTime, fmtClock, marginShort, marginText, lengthsText, tripComment } from '../js/chart.js';
+import { fmtTime, fmtClock, fmtWork, marginShort, marginText, lengthsText, tripComment } from '../js/chart.js';
 import { timeWords, timeSay, aloud, raceCall } from '../js/call.js';
 import { forumPosts } from '../js/forum.js';
 import { angles, newcomer, freshBullet, oddsText, oddsValue } from '../js/handicap.js';
@@ -603,6 +603,21 @@ test('times round up into the next minute instead of reading 60 seconds', () => 
   assert.equal(timeWords(119.996), '2:00.00');
   assert.equal(timeWords(58.5), '58.50');
   assert.equal(timeWords(97.44), '1:37.44');
+});
+
+test('a workout is timed to the fifth of a second', () => {
+  // Works were printed to the tenth (:36.3, 1:01.1), which a clocker's watch doesn't give: about half of
+  // all work times in a meet were off a fifth.
+  assert.deepEqual([36.3, 36.4, 36.5, 48, 59.9, 60, 61.1, 73.8].map(fmtWork), [':36.4', ':36.4', ':36.6', ':48.0', '1:00.0', '1:00.0', '1:01.2', '1:13.8']);
+  const w = createWorld('test-works', '2026-09-26');
+  const works = w.horses.flatMap(h => h.works);
+  assert.ok(works.length > 300);
+  for (const k of works) {
+    const shown = fmtWork(k.t), [, m, s] = shown.match(/^(\d*):(\d\d\.\d)$/);
+    assert.ok(/[02468]$/.test(shown), `${k.t} is shown as ${shown}`);
+    assert.ok(Math.abs((+m || 0) * 60 + +s - k.t) <= 0.1 + 1e-9 && +s < 60, `${k.t} is shown as ${shown}`);
+  }
+  assert.ok(works.some(k => Math.round(k.t * 10) % 2), 'every work in this meet is on a fifth already');
 });
 
 test('the voice is given times and numbers in words', () => {
