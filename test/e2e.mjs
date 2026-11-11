@@ -1902,6 +1902,56 @@ await page.waitForSelector('.races');
   await ctx5.close();
 }
 
+// Between the races, on a phone with the browser's bars showing (390 by 664).
+{
+  const ctx7 = await browser.newContext({ viewport: { width: 390, height: 664 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  const between = await ctx7.newPage();
+  between.on('pageerror', e => problems.push(e.message));
+  between.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
+  await between.goto(base, { waitUntil: 'domcontentloaded' });
+  await between.waitForSelector('.races', { timeout: 60000 });
+  await between.evaluate(() => { const { game, save } = window.postTime; game.player.settings.sound = false; save(); return document.fonts.ready.then(() => 0); });
+  const go = (screen, params = {}) => between.evaluate(([screen, params]) => window.postTime.nav.go(screen, params), [screen, params]);
+  const tapTab = n => between.evaluate(n => document.querySelector(`.tabs button:nth-child(${n})`).click(), n);
+  const scrollY = () => between.evaluate(() => Math.round(scrollY));
+
+  // A tab keeps its place. With the seventh horse's past performances open and the page scrolled down to
+  // them, Bet opens with the tabs at the top of the screen and the board right under them (it opened at the
+  // top of the page, the picks under the bar), and Form comes back where it was left, with the horse still
+  // open (it came back at the top with every horse shut). A tab opened from the top of the page stays there.
+  await go('race', { no: 1 });
+  await tapTab(2);
+  assert.equal(await scrollY(), 0, 'a tab opened from the top of the page moved the page');
+  await tapTab(1);
+  await between.locator('.entry-head').nth(6).click();
+  await between.evaluate(() => window.scrollTo(0, document.querySelectorAll('.entry')[6].getBoundingClientRect().top + scrollY - 130));
+  const formAt = await scrollY();
+  assert.ok(formAt > 300, `the seventh horse is only ${formAt} px down the form`);
+  await tapTab(4);
+  const onBet = await between.evaluate(() => {
+    const box = s => document.querySelector(s).getBoundingClientRect();
+    return { stuck: Math.abs(box('.tabs').top - parseFloat(getComputedStyle(document.querySelector('.tabs')).top)) < 1, gap: Math.abs(Math.round(box('.panel').top - box('.tabs').bottom)), board: box('.tote').top < innerHeight / 2 };
+  });
+  assert.deepEqual(onBet, { stuck: true, gap: 0, board: true }, 'from down the form, the Bet tab should open with its top just under the tabs');
+  await between.evaluate(() => window.scrollBy(0, 60));
+  const betAt = await scrollY();
+  await tapTab(1);
+  assert.deepEqual([await between.locator('.entry-head').nth(6).getAttribute('aria-expanded'), await between.locator('.entry-more:not([hidden])').count(), Math.abs(await scrollY() - formAt) <= 2],
+    ['true', 1, true], `back on the form, the seventh horse should be open and the page ${formAt} px down (it is ${await scrollY()})`);
+  await tapTab(4);
+  assert.ok(Math.abs(await scrollY() - betAt) <= 2, `back on the Bet tab the page is ${await scrollY()} px down, and was left ${betAt} down`);
+  // The horse is still open after a look at the card, and shuts when it's tapped.
+  await go('card');
+  await go('race', { no: 1 });
+  assert.deepEqual([await between.locator('.entry-more:not([hidden])').count(), await scrollY()], [1, 0]);
+  await between.locator('.entry-head').nth(6).click();
+  await tapTab(3);
+  await tapTab(1);
+  assert.equal(await between.locator('.entry-more:not([hidden])').count(), 0, 'a horse shut on the form came back open');
+
+  await ctx7.close();
+}
+
 assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems while using it');
 // Offline, checked the junkdrawer house kit's way, from a server that answers like GitHub Pages: a browser may keep
 // each file for ten minutes, and asks again by its ETag. `net` is the connection: 'up', 'down' (the server drops every

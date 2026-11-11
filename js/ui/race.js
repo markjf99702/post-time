@@ -47,11 +47,26 @@ export function renderRace(root, nav, params) {
   const TABS = [['form', 'Form'], ['paddock', 'Paddock'], ['forum', 'Forum'], ['bet', 'Bet']];
   let current = tab;
   let stopPanel = null;
+  // A tab keeps its place. Reading a horse, checking the board and coming back is most of what's done
+  // here, and every tap on a tab used to go to the top of the page: the Bet tab opened with its picks under
+  // the bar, and the form came back from it at the top with every horse shut. Now each tab is left where
+  // it was and found there again, for as long as this race's page is up. A tab opened for the first time
+  // starts at the top if that's where the page is, and from further down it starts with the tabs at the
+  // top of the screen and its own top just under them, not with the race's heading over it.
+  const leftAt = {};
+  const tabsStick = () => Math.max(0, Math.round(head.getBoundingClientRect().bottom + window.scrollY - parseFloat(getComputedStyle(tabs).top)));
+  function tap(k) {
+    const y = window.scrollY;
+    leftAt[current] = y;
+    show(k);
+    nav.tab(k);
+    window.scrollTo(0, leftAt[k] ?? Math.min(y, tabsStick()));
+  }
   function drawTabs() {
     clear(tabs);
     for (const [k, label] of TABS) {
       const count = k === 'bet' ? myBets(race).length : 0;
-      tabs.append(h('button', { type: 'button', role: 'tab', 'aria-selected': String(k === current), onclick: () => { show(k); nav.tab(k); window.scrollTo({ top: 0 }); } }, label, count ? h('span', { class: 'n' }, String(count)) : null));
+      tabs.append(h('button', { type: 'button', role: 'tab', 'aria-selected': String(k === current), onclick: () => tap(k) }, label, count ? h('span', { class: 'n' }, String(count)) : null));
     }
   }
   function show(which) {
@@ -170,8 +185,12 @@ function entryCard(race, e, i, stats, board) {
   const chips = angles(race, hs, game.world.day);
   const fresh = newcomer(hs); // no race on its card: a first-time starter, or one that has raced elsewhere
   const style = runStyle(hs);
-  const more = h('div', { class: 'entry-more', hidden: true });
-  const head = h('button', { class: 'entry-head', type: 'button', 'aria-expanded': 'false' },
+  // The horses opened in this race's form stay open when the form is drawn again: on the way back from
+  // another tab, and from another screen.
+  const opened = openedIn(race);
+  const more = h('div', { class: 'entry-more', hidden: !opened.has(e.hid) });
+  if (!more.hidden) fillMore(more, race, e, hs);
+  const head = h('button', { class: 'entry-head', type: 'button', 'aria-expanded': String(!more.hidden) },
     cloth(e.pp, 'lg'),
     silksCanvas(silks, 30),
     h('div', { class: 'nm' }, hs.name),
@@ -182,6 +201,7 @@ function entryCard(race, e, i, stats, board) {
     const open = more.hidden;
     more.hidden = !open;
     head.setAttribute('aria-expanded', String(open));
+    if (open) opened.add(e.hid); else opened.delete(e.hid);
     if (open && !more.firstChild) fillMore(more, race, e, hs);
   });
   return h('article', { class: 'entry' },
@@ -364,6 +384,14 @@ const HELP = {
 };
 
 const state = new Map(); // per race: builder choices survive switching tabs
+// And beside them, the horses whose past performances are open in the race's form. Kept while the page is
+// open and no longer: nothing here is saved.
+const openHorses = new Map();
+function openedIn(race) {
+  const k = memoKey(race);
+  if (!openHorses.has(k)) openHorses.set(k, new Set());
+  return openHorses.get(k);
+}
 const slipFor = race => {
   const k = memoKey(race);
   if (!state.has(k)) state.set(k, { type: 'win', picks: [[], [], []], amt: 2 });
