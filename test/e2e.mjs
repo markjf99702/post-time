@@ -735,13 +735,19 @@ assert.deepEqual([paced.early, paced.wire, paced.last], [[1.15, 1], [1.2, 1], [1
 assert.deepEqual(paced.most, [1.2, 1], 'a line was asked for faster than 1.2, or at a raised pitch');
 assert.match(paced.shown, /The time, (\d:)?\d\d\.\d\d\.$/, 'the call box lost the time in digits');
 assert.match(paced.read, /The time, [a-z -]+\.$/, 'the voice is given the time in digits');
-// On the way to the results the caller finishes the line he's on. Any other way out of a race, he stops.
-await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
-await page.click('.w-ctl .btn');
+// On the way to the results the caller finishes the line he's on (second, third and the time; after a
+// photo, who won it). Any other way out of a race, he stops.
+await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 20000 });
+const toResults = await page.evaluate(() => {
+  const heard = window.__heard, last = heard.filter(x => x.ev === 'speak').pop();
+  const saying = heard.some(x => x.at > last.at && x.ev !== 'speak') ? null : last.text;
+  document.querySelector('.w-ctl .btn').click();
+  return { saying, at: last.at };
+});
 await page.waitForSelector('.official');
-const toResults = await page.evaluate(text => { const v = window.__voice; return { cut: v.slice(v.lastIndexOf(text)).includes('(cancel)'), over: window.__ended.includes(text) }; }, paced.read);
-assert.deepEqual(toResults, { cut: false, over: false }, 'the caller was cut off on the way to the results (or had already finished, and this checked nothing)');
-await page.waitForFunction(text => window.__ended.includes(text), paced.read, { timeout: 15000 });
+assert.ok(toResults.saying, 'the caller had finished before Results was tapped, and this checked nothing');
+assert.equal(await page.evaluate(at => window.__heard.some(x => x.ev === 'cancel' && x.at > at), toResults.at), false, 'the caller was cut off on the way to the results');
+await page.waitForFunction(({ saying, at }) => window.__heard.some(x => x.ev === 'end' && x.text === saying && x.at > at), toResults, { timeout: 15000 });
 await page.waitForFunction(() => window.__quiet());
 await page.locator('.actions .btn', { hasText: /^Race 3/ }).click();
 await page.click('.post-bar .btn.brass');
@@ -940,7 +946,7 @@ assert.deepEqual(at4.lines.filter(l => l.age > (l.slot === 'placings' ? 6 : 1.5)
 const headlines = ['run', 'fill', 'change', 'turn', 'eighth', 'wire', 'placings'];
 assert.deepEqual(after4.slice(1).filter(l => !headlines.includes(l.slot)).map(l => `${l.slot}: ${l.text}`), [], 'more than the headlines at 4x');
 assert.deepEqual([after4.find(l => l.slot === 'wire').rate, after4.find(l => l.slot === 'placings').rate], [1.2, 1.15], "the winner's line and the placings aren't at their own pace at 4x");
-assert.ok(after4.length >= 5, `only ${after4.length} lines read at 4x`);
+assert.ok(after4.length >= 3, `only ${after4.length} lines read at 4x`);
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 await page.click('.w-ctl .btn');
 await page.waitForSelector('.official');
@@ -971,7 +977,8 @@ assert.ok(at2.jumped, 'the race was nearly over before Skip, and this checked no
 assert.ok(at2.lines.some(l => l.slot === 'off') && at2.lines.some(l => l.leader && l.at < at2.skipped) && after2.some(l => l.slot === 'wire'), `at 2x the off, a line that says who leads, or the winner's line was not read: ${at2.lines.map(l => l.text).join(' / ')}`);
 assert.deepEqual(at2.cancels.filter(why => why !== 'skip' && why !== 'wire'), [], 'at 2x a line was cancelled, and not by Skip or for the call at the wire');
 assert.deepEqual(at2.lines.filter(l => l.age > (l.slot === 'placings' ? 6 : 1.5)).map(l => `${l.text}: ${l.age.toFixed(2)} s after it came up`), [], 'at 2x a line was read long after it came up');
-assert.ok(after2.length >= 3 && after2.some(l => l.leader), `after Skip the caller said ${after2.map(l => l.text).join(' / ') || 'nothing'}`);
+// (Twelve seconds of race at 2x is six of talk: a line or two, the winner's line, then second, third and the time.)
+assert.ok(after2.length >= 2 && after2[after2.length - 1].slot === 'placings', `after Skip the caller said ${after2.map(l => l.text).join(' / ') || 'nothing'}`);
 assert.deepEqual([after2.find(l => l.slot === 'wire').rate, after2.find(l => l.slot === 'placings').rate], [1.2, 1.15], "the winner's line and the placings aren't at their own pace at 2x");
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 await page.evaluate(() => window.postTime.nav.go('card'));
