@@ -2210,12 +2210,22 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
 
   // A new release: every file in the new copy comes from the server, though the browser still has its own copies of
   // the old ones for ten minutes. (The next release changes index.html, and so FILES in sw.js, as a real one does.)
+  // The new worker clears the caches of the releases before it, and only those: the caller's downloaded
+  // voice is kept in a cache with a name of its own (js/joe.js), and it is the player's, like their meet.
+  // (Every cache but the worker's own was deleted, so an update of the game would have taken a 76 MB
+  // download with it.)
+  await page.evaluate(async () => { for (const name of ['post-time-v1', 'post-time-voice-joe-1']) await (await caches.open(name)).put('kept', new Response(name)); });
   release = true;
   await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
   for (const end = Date.now() + 10000; !(await page.evaluate(async () => !!(await (await caches.match('index.html'))?.text())?.includes('<!-- the next release -->')));) {
     assert.ok(Date.now() < end, "the new release's offline copy kept the old index.html");
     await new Promise(r => setTimeout(r, 100));
   }
+  for (const end = Date.now() + 10000; await page.evaluate(() => caches.has('post-time-v1'));) {
+    assert.ok(Date.now() < end, "the new release's worker left an old cache of the game's");
+    await new Promise(r => setTimeout(r, 100));
+  }
+  assert.equal(await page.evaluate(async () => (await (await caches.open('post-time-voice-joe-1')).match('kept'))?.text()), 'post-time-voice-joe-1', "the new release's worker deleted the caller's downloaded voice");
   assert.deepEqual(problems, [], 'problems while offline or on a stalled connection');
   await ctx.close();
   server.close();

@@ -28,9 +28,14 @@ self.addEventListener('install', e => {
     .then(() => self.skipWaiting()));
 });
 
+// The caller's downloaded voice (js/joe.js) is the player's, like their meet: about 76 MB they asked for, in a
+// cache of its own with a name like this. An update of the game clears this worker's old caches and never
+// those.
+const VOICE = /^post-time-voice-/;
+
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys()
-    .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    .then(keys => Promise.all(keys.filter(k => k !== CACHE && !VOICE.test(k)).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 
