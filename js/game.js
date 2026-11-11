@@ -3,7 +3,7 @@
 // halfway through a race doesn't change what happened.
 
 import { buildWorld, simulateRace, makeOfficial, forumThread, nextDay as worldNextDay, ownerSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats, ensureMeet, isClosingDay } from './world.js';
-import { makeTote, board, settle, ticketReturn, cost as betCost, legs, MULTI, firstLeg, multiSettle, willPays as multiWillPays, wouldPayMulti } from './tote.js';
+import { makeTote, board, settle, ticketReturn, cost as betCost, legs, MULTI, firstLeg, multiSettle, multiClose, willPays as multiWillPays, wouldPayMulti } from './tote.js';
 import { reactions } from './forum.js';
 import { oddsText, lineText } from './handicap.js';
 import { liveCall } from './call.js';
@@ -377,6 +377,7 @@ export function goToGate(race) {
   const bets = myBets(race);
   // (A thread nobody has opened is made here without a save of its own: the whole meet, half a million
   // characters, was written twice on the tap that starts a race. The save below writes it.)
+  closePools(race);
   const { order, pay, posts } = makeOfficial(game.world, race, run, { tote: toteFor(race), bets, posts: thread(race) });
   race.forumAfter = reactions(game.world, race, posts, order, pay, run);
   const returns = bets.map(b => ticketReturn(b, pay));
@@ -594,6 +595,23 @@ export function cancelMulti(t) {
 }
 
 const multiTotes = races => races.map(r => toteFor(r));
+
+// As the first race of a double or Pick 3 goes off, its pool closes on the chances the public has given each of
+// its races, and they're kept with that race (`pools`), before it's run: a tote made again after a race has
+// been run sees it in the horses' form, so the will-pays and the payout would change if the page were closed
+// and opened again, or the meet carried to another device, between the races.
+function closePools(race) {
+  for (const type of multiStarting(race)) {
+    const races = legRaces(type, race);
+    if (races.length === MULTI[type].legs) race.pools = { ...race.pools, [type]: multiClose(type, multiTotes(races)) };
+  }
+}
+// What a pool closed on, if it was kept and is still of these races' fields. (Not for a day begun before the
+// pools were: its totes are made again, as they were.)
+function closedOn(type, races) {
+  const c = races[0].pools?.[type];
+  return c && Array.isArray(c.p) && c.p.length === races.length && c.p.every((p, k) => Array.isArray(p) && p.length === races[k].entries.length && p.every(Number.isFinite)) ? c : null;
+}
 // Your tickets in a pool: everything bought on it today.
 const inPool = (type, day) => (game.player.multi || []).filter(t => t.type === type && t.day === day);
 
@@ -609,7 +627,7 @@ function settleMulti(race, won) {
     if (races.slice(0, -1).some(r => r.status !== 'official')) continue;
     const winners = [...races.slice(0, -1).map(r => r.result.order[0].k), won];
     const mine = inPool(type, race.day);
-    const pay = multiSettle(type, multiTotes(races), winners, mine);
+    const pay = multiSettle(type, multiTotes(races), winners, mine, closedOn(type, races));
     race.result.multi = { ...race.result.multi, [type]: pay };
     for (const t of mine) {
       if (t.back !== undefined) continue;
@@ -630,7 +648,7 @@ export function willPaysFor(race) {
     const races = legRaces(type, first), before = races.slice(0, -1);
     if (before.some(r => r.status !== 'official')) continue;
     const won = before.map(r => r.result.order[0].k);
-    out.push({ type, races: before, won, pays: multiWillPays(type, multiTotes(races), won, inPool(type, race.day)) });
+    out.push({ type, races: before, won, pays: multiWillPays(type, multiTotes(races), won, inPool(type, race.day), closedOn(type, races)) });
   }
   return out;
 }

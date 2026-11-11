@@ -247,8 +247,9 @@ export const firstLeg = (type, count) => count - MULTI[type].legs + 1;
 // they were, a straight Pick 3 picked at random got back more than it cost (+2.9% over 600 race days), and
 // once flattened it's -25% to -29%, like a trifecta (npm run sim).
 const LATER_LEGS = 0.7;
-function multiPool(type, totes, bets, frac) {
-  const p = totes.map((t, k) => norm(k === 0 ? publicWin(t, frac) : publicWin(t, 0).map(v => v ** LATER_LEGS)));
+// `closed` is what the pool closed on (multiClose), once its first race has gone off.
+function multiPool(type, totes, bets, frac, closed = null) {
+  const p = closed ? closed.p : totes.map((t, k) => norm(k === 0 ? publicWin(t, frac) : publicWin(t, 0).map(v => v ** LATER_LEGS)));
   const pub = totes[0].size * MULTI[type].share;
   const mine = bets.flatMap(legs).filter(l => l.pool === type);
   return { p, pub, mine, total: pub + mine.reduce((s, l) => s + l.amt, 0), seed: totes[0].seed };
@@ -261,17 +262,26 @@ function multiPayFrom(type, P, sel) {
   return { sel: sel.slice(), pay: brk(P.total * (1 - TAKEOUT[type]) / Math.max(onCombo, BASE[type]), BASE[type]) };
 }
 
+// What a pool closes on as its first race goes off: the public's chances in each of its races, { p }. The game
+// keeps it with that race (js/game.js), since a race's tote made again once it has been run sees the race in
+// its horses' form and comes out different: the will-pays and the payout would move after the page was closed
+// and opened again between the races.
+export function multiClose(type, totes) {
+  return { p: multiPool(type, totes, [], 1).p };
+}
+
 // What a $1 daily double or Pick 3 pays when the winners of its races are `sel` (one entry index per race),
-// with your tickets in the pool: { sel, pay }. `totes` are its races' totes, first race first.
-export function multiSettle(type, totes, sel, bets = []) {
-  return multiPayFrom(type, multiPool(type, totes, bets, 1), sel);
+// with your tickets in the pool: { sel, pay }. `totes` are its races' totes, first race first, and `closed`
+// what the pool closed on, when that was kept.
+export function multiSettle(type, totes, sel, bets = [], closed = null) {
+  return multiPayFrom(type, multiPool(type, totes, bets, 1, closed), sel);
 }
 
 // The will-pays: once every race of a double or Pick 3 but its last has been run, with `won` their winners,
 // what $1 would pay with each horse in the last race. They're what's paid, since the pool closed at the
 // first race.
-export function willPays(type, totes, won, bets = []) {
-  const P = multiPool(type, totes, bets, 1);
+export function willPays(type, totes, won, bets = [], closed = null) {
+  const P = multiPool(type, totes, bets, 1, closed);
   return P.p[P.p.length - 1].map((_, j) => multiPayFrom(type, P, [...won, j]).pay);
 }
 

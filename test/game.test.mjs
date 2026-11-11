@@ -10,7 +10,7 @@ globalThis.localStorage = {
   removeItem: k => { store.delete(k); },
 };
 globalThis.window = new EventTarget();
-const { game, newMeet, load, save, notSaved, card, toteFor, placeBet, goToGate, mtpState, currentBoard, advanceDay, callFor, callInfo, horseOf, runnersFor, photoRecord, forumFor, bestDay, multiState, willPaysFor, cancelMulti, dayTotals } = await import('../js/game.js');
+const { game, newMeet, load, save, notSaved, card, toteFor, placeBet, goToGate, mtpState, currentBoard, advanceDay, callFor, callInfo, horseOf, runnersFor, photoRecord, forumFor, bestDay, multiState, willPaysFor, cancelMulti, dayTotals, meetCopy, readCopy, adopt } = await import('../js/game.js');
 const { stateAt, RAIL } = await import('../js/sim.js');
 const { LENGTH, FURLONG, segmentAt } = await import('../js/track.js');
 const { raceCall, raceClock } = await import('../js/call.js');
@@ -1439,6 +1439,30 @@ test('a daily double and a Pick 3 are bought in their first race, alive after it
   assert.ok(game.player.book.some(b => b.no === 8), "a paying double didn't put you in race 8's photo");
   advanceDay();
   assert.deepEqual(game.player.multi, []);
+});
+
+// A race's tote made again once the race has been run sees it in the horses' form, and comes out different.
+// The page closed and opened again between the races of a Pick 3 (or the meet carried to another device) made
+// its own totes again: a Pick 3's will-pays went from $1,746 to $869 and the payout with them. The pools are
+// kept as they closed, so the will-pays seen before the page was closed are what's paid after.
+test('a double and a Pick 3 pay what their will-pays said, with the page closed and opened between the races', () => {
+  build('double-reload');
+  const races = card().races;
+  for (const r of races.slice(0, 5)) goToGate(r);
+  const [r6, r7] = races.slice(5);
+  assert.ok(placeBet(r6, { type: 'p3', sel: [[0], [0], [0]], amt: 1 }).ok);
+  goToGate(r6);
+  assert.ok(placeBet(r7, { type: 'dd', sel: [[0], [0]], amt: 1 }).ok);
+  goToGate(r7);
+  const seen = Object.fromEntries(willPaysFor(races[7]).map(x => [x.type, x.pays]));
+  // (A copy taken in: the page's totes are made again from the meet, as they are when it's opened.)
+  assert.equal(adopt(readCopy(meetCopy())), true);
+  const r8 = card().races[7];
+  assert.deepEqual(Object.fromEntries(willPaysFor(r8).map(x => [x.type, x.pays])), seen, 'the will-pays moved when the page was opened again');
+  goToGate(r8);
+  const won = r8.result.order[0].k;
+  assert.equal(r8.result.multi.dd.pay, seen.dd[won]);
+  assert.equal(r8.result.multi.p3.pay, seen.p3[won]);
 });
 
 // A save from before the daily double and the Pick 3 (the one on the live site) has no list of them, and loads
