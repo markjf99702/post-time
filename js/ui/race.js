@@ -356,13 +356,20 @@ function paddockPanel(panel, race) {
   panel.append(grid);
   let raf = 0;
   const start = performance.now();
+  // With Reduce Motion on (the device's setting that asks pages for less animation), each horse stands for
+  // its picture, drawn once, instead of walking an endless loop beside the notes about it. (The guidelines'
+  // Pause, Stop, Hide: WCAG 2.2, success criterion 2.2.2.) It's read every frame, so turning it on stops them.
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   const frame = now => {
     const t = (now - start) / 1000;
+    const still = !!reduce?.matches;
     for (const d of draws) {
       const r = d.c.getBoundingClientRect();
       if (!r.width || r.bottom < 0 || r.top > innerHeight) continue;
       const dpr = Math.min(2, devicePixelRatio || 1);
-      if (d.c.width !== Math.round(r.width * dpr)) { d.c.width = Math.round(r.width * dpr); d.c.height = Math.round(r.height * dpr); }
+      if (d.c.width !== Math.round(r.width * dpr)) { d.c.width = Math.round(r.width * dpr); d.c.height = Math.round(r.height * dpr); d.still = false; }
+      if (still && d.still) continue;
+      d.still = still;
       const ctx = d.c.getContext('2d');
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, d.c.width, d.c.height);
@@ -373,7 +380,7 @@ function paddockPanel(panel, race) {
       ctx.translate(d.c.width / 2, d.c.height * 0.9);
       ctx.scale(k, -k);
       const nervy = d.e.pdk.kind === 'poor' && /Fractious|edge/.test(d.e.pdk.text);
-      drawHorse(ctx, { phase: (t * (nervy ? 1.3 : 0.9) + d.offset) % 1, gait: 'walk', coat: d.hs.coat, marks: d.hs.marks, number: d.e.pp, silks: d.silks, noRider: true });
+      drawHorse(ctx, { phase: (t * (nervy ? 1.3 : 0.9) + d.offset) % 1, gait: still ? 'stand' : 'walk', coat: d.hs.coat, marks: d.hs.marks, number: d.e.pp, silks: d.silks, noRider: true });
     }
     raf = requestAnimationFrame(frame);
   };

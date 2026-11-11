@@ -102,7 +102,7 @@ export function renderWatch(el, nav, params) {
     game.player.settings.sound = !game.player.settings.sound;
     audio.setSound(game.player.settings.sound);
     soundBtn.setAttribute('aria-pressed', String(game.player.settings.sound));
-    if (game.player.settings.sound && T > 0 && T < endT) audio.startRace();
+    if (game.player.settings.sound && T > 0 && T < endT && !paused) audio.startRace();
     save(); // the same setting as Sound in the menu, kept the same way
   } }, 'Sound');
   const callerBtn = h('button', { type: 'button', class: 'caller', title: 'Caller', 'aria-label': 'Caller', 'aria-pressed': String(!!game.player.settings.voice), onclick: () => {
@@ -114,11 +114,15 @@ export function renderWatch(el, nav, params) {
     save();
   } }, micIcon());
   const skipBtn = h('button', { type: 'button', onclick: skip }, 'Skip ▸▸');
+  // Pause holds everything where it is: the race and its clock, the caller (mid-line: he goes on from the
+  // next one) and the sound. The space bar does the same, anywhere on the race screen but on another button.
+  // (A picture, like the Caller's microphone, so the row of buttons still fits a phone on one line.)
+  const pauseBtn = h('button', { type: 'button', class: 'pause', title: 'Pause', 'aria-label': 'Pause', 'aria-pressed': 'false', onclick: () => setPaused(!paused) }, pauseIcon());
   const doneBtn = h('button', { class: 'btn brass', type: 'button', hidden: true, onclick: () => leave('result') }, 'Results ▸');
   const HINT = 'Tap a number in the running order to follow that horse. Tap it again to follow the leaders.';
   const HINT_SHORT = 'Tap a number to follow that horse.';
   const hint = h('div', { class: 'hint' }, HINT);
-  const ctl = h('div', { class: 'w-ctl' }, ...speedBtns, soundBtn, callerBtn, skipBtn, h('span', { class: 'spacer' }), doneBtn, hint);
+  const ctl = h('div', { class: 'w-ctl' }, ...speedBtns, soundBtn, callerBtn, pauseBtn, skipBtn, h('span', { class: 'spacer' }), doneBtn, hint);
   el.append(
     h('div', { class: 'w-top' },
       h('span', {}, `Race ${race.no}`),
@@ -173,7 +177,18 @@ export function renderWatch(el, nav, params) {
     speed = s;
     speedBtns.forEach((b, i) => b.setAttribute('aria-pressed', String([1, 2, 4][i] === s)));
   }
+  let paused = false;
+  function setPaused(on) {
+    if (on === paused || (on && ended)) return;
+    paused = on;
+    if (on) audio.pause(); else audio.play();
+    pauseBtn.setAttribute('aria-pressed', String(on));
+    pauseBtn.title = on ? 'Paused: tap to go on' : 'Pause';
+    // (Under Play, the race goes on from the frame it was paused on, however long it was.)
+    last = performance.now();
+  }
   function skip() {
+    setPaused(false);
     audio.hush();
     // The bell is for a race that starts by running through the off. Skipped from the gate, the race is
     // picked up with twelve seconds to run: the crowd and the hooves start there, without a bell.
@@ -201,7 +216,7 @@ export function renderWatch(el, nav, params) {
     last = tNow;
     // A close finish goes into slow motion for the last couple of seconds.
     const slow = close && speed === 1 && T > winT - SLOW.before && T < winT + SLOW.after ? SLOW.by : 1;
-    if (!ended) T = Math.min(endT, T + realDt * speed * slow);
+    if (!ended && !paused) T = Math.min(endT, T + realDt * speed * slow);
     const clockT = T - t0;
 
     if (!rung && T >= 0) {
@@ -482,6 +497,8 @@ export function renderWatch(el, nav, params) {
     const done = () => {
       doneBtn.hidden = false;
       skipBtn.hidden = true;
+      // (Pause keeps its room, so Results takes Skip's place rather than moving up into Pause's.)
+      pauseBtn.style.visibility = 'hidden';
       official = true;
       showHint();
       // The cash window rings for any ticket that paid: a place or show ticket on a horse that didn't
@@ -545,6 +562,8 @@ export function renderWatch(el, nav, params) {
     if (gone) return;
     gone = true;
     cancelAnimationFrame(raf);
+    el.removeEventListener('keydown', onKey);
+    audio.play(); // a race left while paused leaves the sound to the next screen
     audio.stopRace();
     audio.hush({ finish: toResults });
     audio.endCall();
@@ -559,12 +578,21 @@ export function renderWatch(el, nav, params) {
     nav.go(where, { no: race.no, fresh: true });
   }
 
+  // The space bar is Pause, unless the keyboard is on another button (which it presses, as it always has).
+  function onKey(e) {
+    if (e.key !== ' ' || e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.target.closest && e.target.closest('button, select, input, a')) return; // (Pause itself included: its own click)
+    e.preventDefault();
+    if (!ended) setPaused(!paused);
+  }
+  el.addEventListener('keydown', onKey);
+
   fitOrder();
   raf = requestAnimationFrame(frame);
   el.tabIndex = -1;
   el.focus({ preventScroll: true });
   // Debug hook for tests and screenshots.
-  window.__watch = { setT: t => { T = t; scene.lastT = null; }, get T() { return T; }, winT, endT, t0, leave, run, call, pause: () => { speed = 0; }, get cam() { return scene.cam; }, get horizon() { return scene.hor / scene.H; } };
+  window.__watch = { setT: t => { T = t; scene.lastT = null; }, get T() { return T; }, winT, endT, t0, leave, run, call, pause: () => { speed = 0; }, get paused() { return paused; }, get cam() { return scene.cam; }, get horizon() { return scene.hor / scene.H; } };
   return teardown;
 }
 
@@ -578,6 +606,23 @@ function micIcon() {
   for (const d of ['M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z', 'M6 11a6 6 0 0 0 12 0M12 17v4M8.5 21h7']) {
     const path = document.createElementNS(NS, 'path');
     path.setAttribute('d', d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+// The Pause button's picture: two bars, and while the race is paused a triangle for going on (CSS shows
+// the one that fits).
+function pauseIcon() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', 'mic');
+  for (const [cls, d] of [['bars', 'M8 5v14M16 5v14'], ['go', 'M8 5l11 7-11 7z']]) {
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('class', cls);
     svg.append(path);
   }
   return svg;

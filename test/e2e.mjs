@@ -1127,6 +1127,68 @@ const leftEarly = await page.evaluate(async () => {
 assert.deepEqual(leftEarly, { read: true, cut: true }, 'leaving a race for the card leaves the caller talking');
 await page.waitForSelector('.races');
 
+// Pause, on the race screen (here Watch again of a race that's been run): the race and its clock stop where
+// they are, the caller stops mid-line and the sound is held. The space bar does it too, and goes on again,
+// unless the keyboard is on another button, which it presses as before. A race left while paused leaves
+// the sound running for the next screen.
+{
+  const done = await page.evaluate(() => window.postTime.card().races.filter(r => r.status === 'official').pop().no);
+  await page.evaluate(no => window.postTime.nav.go('watch', { no }), done);
+  await page.waitForSelector('.watch:not([hidden]) canvas.scene');
+  const held = await page.evaluate(async () => {
+    const w = window.__watch, v = window.__voice, lines = w.call.lines, pause = document.querySelector('.w-ctl .pause');
+    const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    const sound = [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === 'Sound');
+    if (sound.getAttribute('aria-pressed') !== 'true') sound.click();
+    await wait(300); // clear of the cancel that Sound made
+    const k = lines.findIndex((l, i) => i > 3 && i < lines.length - 3 && l.d > 3);
+    w.setT(w.t0 + lines[k].t - 0.3);
+    await wait(500);
+    const saying = lines.some(l => l.say === v[v.length - 1]);
+    pause.click();
+    const at = w.T;
+    await wait(700);
+    const out = { saying, still: w.T === at, cut: v[v.length - 1] === '(cancel)', sound: window.__sound.state, pressed: pause.getAttribute('aria-pressed'), label: pause.getAttribute('aria-label') };
+    return out;
+  });
+  assert.deepEqual(held, { saying: true, still: true, cut: true, sound: 'suspended', pressed: 'true', label: 'Pause' }, 'Pause left the race, the caller or the sound going');
+  await page.focus('#watch');
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(500);
+  const going = await page.evaluate(() => ({ paused: window.__watch.paused, sound: window.__sound.state, pressed: document.querySelector('.w-ctl .pause').getAttribute('aria-pressed') }));
+  assert.deepEqual(going, { paused: false, sound: 'running', pressed: 'false' }, 'the space bar did not go on with the race');
+  await page.keyboard.press('Space');
+  assert.equal(await page.evaluate(() => window.__watch.paused), true, 'the space bar did not pause the race');
+  await page.evaluate(() => document.querySelector('.order button').focus());
+  await page.keyboard.press('Space');
+  assert.deepEqual(await page.evaluate(() => [window.__watch.paused, document.querySelectorAll('.order button[aria-pressed="true"]').length]), [true, 1], 'the space bar on a number in the running order paused or went on, rather than following that horse');
+  await page.evaluate(() => window.postTime.nav.go('card'));
+  await page.waitForSelector('.races');
+  assert.equal(await page.evaluate(() => window.__sound.state), 'running', 'a race left while paused left the sound held');
+}
+
+// With Reduce Motion on (the device's setting that asks pages for less animation), the paddock's horses
+// stand still, one picture each, instead of walking an endless loop beside the notes about them. Without
+// it they walk.
+{
+  const pictures = () => page.evaluate(() => [...document.querySelectorAll('.paddock canvas')].slice(0, 2).map(c => c.toDataURL()));
+  const moves = async () => { const a = await pictures(); await page.waitForTimeout(400); const b = await pictures(); return a.some((x, i) => x !== b[i]); };
+  const next = await page.evaluate(() => window.postTime.nextRace().no);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.evaluate(no => window.postTime.nav.go('race', { no, tab: 'paddock' }), next);
+  await page.waitForSelector('.paddock canvas');
+  await page.waitForTimeout(300);
+  const still = await moves();
+  const drawn = await page.evaluate(() => { const c = document.querySelector('.paddock canvas'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n / (d.length / 4); });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.waitForTimeout(200);
+  const walking = await moves();
+  assert.deepEqual([still, drawn > 0.1, walking], [false, true, true], `with Reduce Motion the paddock's horses ${still ? 'walk' : 'stand'}${drawn > 0.1 ? '' : ', and are not drawn'}; without it they ${walking ? 'walk' : 'stand'}`);
+  await page.evaluate(() => window.postTime.nav.go('card'));
+  await page.waitForSelector('.races');
+}
+
 // The sound of a race, measured where it goes to the speaker (nobody hears it here). The starting bell
 // rings as the race runs through the off. The crowd builds to the wire and roars as the winner crosses:
 // the two seconds after the wire are louder than the two before. (The roar used to be replaced by the
@@ -1765,7 +1827,7 @@ await page.waitForSelector('.races');
   // The narrowest phone, 320 wide, with the day's longest race. The five buttons are one row, and the row is
   // no taller when Results takes Skip's place. The line of fractions always ends with the latest one: at the
   // wire that's the final time, with the earliest fractions left out if the line is too long for the screen.
-  // (Skip was on a row of its own, and a route's line was cut off before the final time.)
+  // (A route's line was cut off before the final time.)
   {
     const longest = await win.evaluate(() => window.postTime.card().races.reduce((a, r) => (r.distance > a.distance ? r : a)).no);
     await watch(320, 568, longest);
@@ -1784,7 +1846,7 @@ await page.waitForSelector('.races');
     });
     assert.ok(/Final [\d:.]+$/.test(line.text) && !line.cut, `at 320 wide the fractions at the wire read "${line.text}"${line.cut ? ', cut off' : ''} (${line.fractions} fractions)`);
     await win.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 40000 });
-    assert.deepEqual([racing.rows, racing.off, await row()], [1, 0, racing], 'at 320 wide the buttons take more than one row, or the row changes when Results appears');
+    assert.deepEqual([racing.rows, racing.off, await row()], [2, 0, racing], 'at 320 wide the buttons take more than two rows (Skip, with the line about following a horse beside it, on the second), or they change when Results appears');
     await win.evaluate(() => window.__watch.leave('card'));
     await win.waitForSelector('.races');
   }

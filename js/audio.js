@@ -10,6 +10,7 @@ let master = null;
 let crowd = null;
 let hoof = null;
 let enabled = true;
+let paused = false; // the race on the screen is paused (pause, below)
 
 export function setSound(on) {
   enabled = on;
@@ -33,7 +34,7 @@ function output() {
     master.gain.value = enabled ? 0.8 : 0;
     master.connect(ac.destination);
   }
-  if (ac.state !== 'running') ac.resume(); // suspended, or "interrupted" on an iPhone after a call or a lock
+  if (ac.state !== 'running' && !paused) ac.resume(); // suspended, or "interrupted" on an iPhone after a call or a lock
   return ac;
 }
 
@@ -1002,9 +1003,25 @@ function back() {
   if (rehearsed) rehearsed.clips.resume(); // the lines still to be made for the race that's on
   if (!ac || !soundHeld) return;
   soundHeld = false;
+  if (paused) return;
   quietly(ac.resume());
   // A phone may not let the sound back without a tap: ask again at the next one.
   document.addEventListener('pointerdown', () => { if (ac.state !== 'running') quietly(ac.resume()); }, { once: true });
+}
+// The race's Pause: the voice stops mid-line (that line isn't taken up again: he goes on from the next one)
+// and the sound is held where it is, the bugle, the crowd and the hooves, until Play. A page that goes out of
+// sight while paused and comes back is still paused.
+export function pause() {
+  paused = true;
+  caller.stop();
+  joeCaller.stop();
+  quiet();
+  if (ac && ac.state === 'running') quietly(ac.suspend());
+}
+export function play() {
+  if (!paused) return;
+  paused = false;
+  if (ac && !out) quietly(ac.resume()); // (Play is a tap, so a phone lets the sound back)
 }
 if (typeof document !== 'undefined' && document.addEventListener) {
   document.addEventListener('visibilitychange', () => { if (document.hidden) away(); else back(); });
