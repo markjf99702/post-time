@@ -129,6 +129,7 @@ const LEADS = [/N leads\b/, /[Ii]t's N( by|[.!]| in front)/, /N shows the way/, 
   /N has them all beaten/, /closing on N/, /after N!/, /into N's lead/, /gaining on N/, /but N still/, /chases N/];
 const CHANGES = /takes over|takes the lead!|strikes the front|goes to the lead|is the new leader|leads now|[Nn]ow it's N|back in front|fights back to lead|comes again|takes it back/;
 const AGAIN = /back in front|fights back to lead|comes again|takes it back/;
+const PASSED = /takes over from N|goes by N and|N is headed|, past N!/;
 const SURE = /drawing away|won't catch|It's all N|Nobody is catching|home free|long gone|No catching|all beaten/;
 const SIDES = /on the outside|widest of all|\b[a-z]+ wide\b|on the rail|on the inside|along the rail|up the rail/g;
 const WHERE = {
@@ -196,6 +197,12 @@ function callAgainstRace(race, run, call, names, speed = 1) {
         count('change');
         if (lastNamed === l.lead) bad('change', l, 'already named as the leader');
         if (AGAIN.test(shape) !== led.has(l.lead)) bad('change', l, led.has(l.lead) ? 'led before, and is called as new to the lead' : 'has not led before');
+        // The horse it took over from, when the line names one, is the horse running second just then.
+        if (PASSED.test(shape) !== (l.passed !== undefined)) bad('passed', l, 'names the horse passed and is not marked so, or the other way round');
+        if (l.passed !== undefined) {
+          count('passed');
+          if (o[1].i !== l.passed || !x.includes(names[l.passed])) bad('passed', l, `${names[l.passed]} is ${NTH[o.findIndex(z => z.i === l.passed) + 1]}, ${gap(o[0].i, l.passed).toFixed(1)} lengths back`);
+        }
       }
       lastNamed = l.lead;
       led.add(l.lead);
@@ -834,6 +841,16 @@ test('a lead change is never called for the horse just named as the leader', () 
   assert.ok(total(races, 'change') > races.length, `only ${total(races, 'change')} lead changes called`);
 });
 
+test('a new leader "takes over from" the horse running second, or from nobody', () => {
+  // The horse named was the last one the caller had called in front, which could be an older leader: after
+  // a line calling two together, or a change the voice was too busy for. "Stubborn Ballad takes over from
+  // Stormy Verdict!" came with Stormy Verdict fifth, two and a half lengths back.
+  const races = playLongMeet();
+  assert.deepEqual(told(races, 'passed'), []);
+  assert.ok(total(races, 'passed') > races.length / 10, `only ${total(races, 'passed')} lead changes name the horse passed`);
+  note(`lead changes that name the horse passed: ${total(races, 'passed')} of ${total(races, 'change')}`);
+});
+
 test('a new leader is called within three seconds, nine times in ten', () => {
   // About one lead change in nine was never said (the voice was on another line), and one that was said
   // ended a median 1.9 seconds after the change.
@@ -988,7 +1005,7 @@ test('watched at 2x the call is its shorter lines, and at 4x only the headlines,
   // at 2x each line is in its shortest wording, and at 4x there's the off, the leader on each part of the
   // track, lead changes, the turn for home, a furlong out and the winner.
   const fast = playLongMeet().flatMap(r => r.fast || []);
-  for (const kind of ['leader', 'pair', 'crowded', 'long', 'twice', 'change', 'sure', 'closing', 'place', 'mover', 'flying', 'near', 'places', 'where', 'trouble', 'break', 'poles', 'fraction', 'stretch', 'finish', 'words']) assert.deepEqual(told(fast, kind), [], kind);
+  for (const kind of ['leader', 'pair', 'crowded', 'long', 'twice', 'change', 'passed', 'sure', 'closing', 'place', 'mover', 'flying', 'near', 'places', 'where', 'trouble', 'break', 'poles', 'fraction', 'stretch', 'finish', 'words']) assert.deepEqual(told(fast, kind), [], kind);
   const [twice, four] = [2, 4].map(speed => fast.filter(r => r.speed === speed));
   assert.equal(twice.length, 120);
   for (const r of fast) {

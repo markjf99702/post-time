@@ -610,13 +610,18 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     return out;
   }
 
+  // A new leader. The horse it took over from is named only when that's the horse running second as the
+  // line comes up. The last horse the caller called in front can be an older leader, after a line calling
+  // two together or a change the voice was too busy for: by now it may be fifth, and the lead was taken
+  // from another horse. Then the wording without it is used, which every one of them has.
   function changeForms(o) {
-    const [a] = o, was = S.leader;
+    const [a, b] = o, was = S.leader;
     const claims = { lead: a.i, change: true };
     if (S.led.has(a.i)) return [form(pick('again', AGAIN)[1](nm(a.i)), claims)];
     const w = pick('change', CHANGE);
-    const long = w[1](nm(a.i), nm(was)), short = w[2](nm(a.i));
-    return long === short ? [form(long, claims)] : [form(long, claims), form(short, claims)];
+    const short = w[2](nm(a.i));
+    if (w[1].length < 2) return [form(w[1](nm(a.i)), claims), form(short, claims)];
+    return b && b.i === was ? [form(w[1](nm(a.i), nm(was)), { ...claims, passed: was }), form(short, claims)] : [form(short, claims)];
   }
 
   function turnForms(o) {
