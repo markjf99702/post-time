@@ -52,7 +52,7 @@ tools/voice-files.mjs made them from the published packages and says exactly how
 
    espeak-ng-data/en.tar
        A plain tar of espeak-ng's compiled data as Python Piper 1.8.0 ships it (piper/espeak-ng-data in its
-       wheel), with two changes:
+       wheel), with two changes, made for Post Time on 11 November 2026:
        - The other languages' dictionaries are left out (every *_dict file but en_dict). The voice speaks
          English, and without them the download is 17 MB smaller.
        - Three bytes of phonindex are changed (at 830: 01 0d 00 20 becomes 02 0d b2 ca). In the source
