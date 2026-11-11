@@ -146,6 +146,38 @@ const lake = await page.evaluate(async () => {
 });
 assert.ok(lake.across > 0.5 && lake.deep > 0.01 && lake.deep < 0.1, `the lake should be a thin strip of water across the infield: it is ${lake.deep} of the picture deep, across ${lake.across} of it`);
 
+// Horses running side by side are drawn apart: two a path (a metre) apart across the track are drawn 1.9
+// metres apart from the moment the field has left the gate (in the gate they're in their stalls), and never
+// past the outer rail. (The camera is low: a path apart was three pixels on the screen, and a stretch duel
+// looked like one horse.) Over the horse with a ticket on it, and the one followed, is its saddle cloth with
+// its number, and on the map both are drawn last of all, ringed.
+const apart = await page.evaluate(async () => {
+  const { simulateRace, ownerSilks } = await import('./js/world.js');
+  const { RaceScene } = await import('./js/draw/scene.js');
+  const { RAIL } = await import('./js/sim.js');
+  const w = window.sameSeed, race = w.cards[0].races[0], run = simulateRace(race, w);
+  const runners = race.entries.map((e, i) => { const h = w.horses[e.hid]; return { number: e.pp, coat: h.coat, marks: h.marks, silks: ownerSilks(h.owner), name: h.name, mine: i === 2 }; });
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:fixed;left:0;top:0;width:390px;height:360px';
+  document.body.append(c);
+  const scene = new RaceScene(c, { race, run, runners, wx: w.cards[0].wx });
+  scene.setFocus(4);
+  const gap = t => +(scene.drawnOff(RAIL + 2, t) - scene.drawnOff(RAIL + 1, t)).toFixed(2);
+  const ctx = c.getContext('2d'), said = [];
+  const fillText = ctx.fillText;
+  ctx.fillText = function (text, ...a) { said.push(String(text)); return fillText.call(this, text, ...a); };
+  scene.draw(run.t0 + run.results[0].time - 6);
+  ctx.fillText = fillText;
+  const m = document.createElement('canvas'), mctx = m.getContext('2d'), rings = [];
+  const arc = mctx.arc;
+  mctx.arc = function (...a) { rings.push(a[2]); return arc.apply(this, a); };
+  scene.drawMap(mctx, 220, 108, run.t0 + 30);
+  c.remove();
+  const pp = n => String(race.entries[n].pp);
+  return { gate: gap(0), running: gap(10), wide: scene.drawnOff(RAIL + 30, 10) <= scene.zRail - 26 - 0.8 + 1e-9, numbers: said.filter(x => x === pp(2) || x === pp(4)).length, rings: rings.slice(-4) };
+});
+assert.deepEqual(apart, { gate: 1, running: 1.9, wide: true, numbers: 2, rings: [4.2, 6, 4.2, 6] }, 'horses side by side are drawn on top of each other, or yours is not marked with its number and drawn last on the map, ringed');
+
 // A look at a later race shows its opening odds, and doesn't start its clock.
 await page.locator('.race-row').nth(2).click();
 await page.click('.tabs button:nth-child(4)');

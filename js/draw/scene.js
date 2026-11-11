@@ -5,7 +5,7 @@
 // infield) sweeps past while the near things keep their places.
 
 import { drawHorse, NOSE } from './horse.js';
-import { stateAt } from '../sim.js';
+import { stateAt, RAIL } from '../sim.js';
 import { poles, headingAt, mapPoint, COURSES, STRAIGHT, FINISH_FROM_TOP } from '../track.js';
 import { CLOTH } from '../data.js';
 import { rng } from '../rng.js';
@@ -17,6 +17,7 @@ const TURF_W = 20;
 const Z_DIRT_IN = C + DIRT_W;
 const Z_TURF_OUT = Z_DIRT_IN + GAP;
 const Z_TURF_IN = Z_TURF_OUT + TURF_W;
+const SPREAD = 1.9;      // horses are drawn this many times as far apart across the track as they run (drawnOff)
 
 export function skyFor(no, wx) {
   const k = Math.max(0, Math.min(1, (no - 1) / 7));
@@ -621,9 +622,20 @@ export class RaceScene {
     }
   }
 
+  // How far from the rail a horse is drawn. The camera is low (about five metres up on a phone), so two
+  // horses a path apart were three pixels apart on the screen while each was forty-odd tall: a stretch duel
+  // looked like one horse, and at the wire the winner could be hidden behind the one it beat. So across the
+  // track they're drawn SPREAD times as far apart as they run (the race itself is as it was), easing out from
+  // their stalls as the gate opens, and never past the outer rail.
+  drawnOff(o, t) {
+    const k = smooth(Math.max(0, Math.min(1, (t - 0.4) / 2.5)));
+    const most = this.zRail - (this.turf ? Z_TURF_OUT : C) - 0.8;
+    return Math.min(most, RAIL + (o - RAIL) * (1 + (SPREAD - 1) * k));
+  }
+
   drawRunners(t, st) {
     const { ctx, W } = this;
-    const order = st.map((s, i) => ({ ...s, i, p: s.p - NOSE, z: this.zRail - s.o })).sort((a, b) => b.z - a.z);
+    const order = st.map((s, i) => ({ ...s, i, p: s.p - NOSE, z: this.zRail - this.drawnOff(s.o, t) })).sort((a, b) => b.z - a.z);
     const dustColor = this.turf ? 'rgba(90,140,60,' : ['sloppy', 'muddy'].includes(this.race.cond) ? 'rgba(80,58,40,' : 'rgba(185,150,110,';
     // Shadows first, all together.
     for (const h of order) {
@@ -636,6 +648,7 @@ export class RaceScene {
       ctx.fill();
     }
     let zPrev = Infinity;
+    const marked = [];
     for (const h of order) {
       this.gateParts(h.z, zPrev);
       zPrev = h.z;
@@ -663,18 +676,34 @@ export class RaceScene {
       const urge = this.urgeFor(h, st);
       drawHorse(ctx, { phase: h.phase, gait, coat: r.coat, marks: r.marks, silks: r.silks, number: r.number, urge, blinkers: r.blinkers });
       ctx.restore();
-      // Highlight for the horse you're following or backed.
-      if (r.mine || this.focus === h.i) {
-        ctx.fillStyle = this.focus === h.i ? '#ffd23f' : '#ffffff';
-        ctx.strokeStyle = 'rgba(0,0,0,.5)';
-        ctx.lineWidth = 1;
-        const ty = this.py(3.5, h.z);
-        ctx.beginPath();
-        ctx.moveTo(x - 0.35 * k, ty - 0.5 * k); ctx.lineTo(x + 0.35 * k, ty - 0.5 * k); ctx.lineTo(x, ty);
-        ctx.closePath(); ctx.fill(); ctx.stroke();
-      }
+      if (r.mine || this.focus === h.i) marked.push({ x, y: this.py(3.4, h.z), k, r, follow: this.focus === h.i });
     }
     this.gateParts(-Infinity, zPrev);
+    // Over each horse you hold a ticket on, and the one you're following, its saddle cloth with its number
+    // (it was a plain white triangle, the same for every ticket): ringed in white, or in amber for the one
+    // followed, as its number is in the running order. Drawn after all the horses, so none is hidden.
+    for (const m of marked) this.drawChip(m);
+  }
+
+  drawChip({ x, y, k, r, follow }) {
+    const { ctx } = this;
+    const [bg, fg] = CLOTH[r.number] || CLOTH[1];
+    const hgt = Math.max(15, Math.min(26, 0.62 * k));
+    const text = String(r.number);
+    ctx.font = `700 ${Math.round(hgt * 0.72)}px Oswald, sans-serif`;
+    const wid = Math.max(hgt * 0.95, ctx.measureText(text).width + hgt * 0.5);
+    const top = y - hgt - 5;
+    ctx.beginPath();
+    ctx.moveTo(x - 4, top + hgt); ctx.lineTo(x, top + hgt + 5); ctx.lineTo(x + 4, top + hgt); // the point, down to the horse
+    ctx.rect(x - wid / 2, top, wid, hgt);
+    ctx.fillStyle = follow ? '#f5b33d' : '#ffffff';
+    ctx.fill();
+    ctx.fillStyle = bg;
+    ctx.fillRect(x - wid / 2 + 2, top + 2, wid - 4, hgt - 4);
+    ctx.fillStyle = fg;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, top + hgt / 2 + 1);
   }
 
   urgeFor(h, st) {
@@ -779,8 +808,10 @@ export class RaceScene {
     mctx.beginPath();
     mctx.moveTo(...P(fin, -R + 2)); mctx.lineTo(...P(fin, -R - 28));
     mctx.stroke();
-    // Horses, back to front.
-    const order = st.map((x, i) => ({ ...x, i })).sort((a, b) => a.p - b.p);
+    // Horses, back to front, and yours (and the one followed) last of all, with a white ring, so they're
+    // never under another's dot.
+    const yours = i => this.runners[i].mine || this.focus === i;
+    const order = st.map((x, i) => ({ ...x, i })).sort((a, b) => (yours(a.i) - yours(b.i)) || a.p - b.p);
     for (const hs of order) {
       const pos = mapPoint(this.race, Math.max(0, Math.min(this.race.distance + 60, hs.p)), 1 + hs.o * 1.6 + (this.turf ? 0 : 0));
       const off = this.turf ? 0 : 0;
@@ -790,12 +821,21 @@ export class RaceScene {
       mctx.strokeStyle = 'rgba(0,0,0,.6)';
       mctx.lineWidth = 1;
       mctx.beginPath();
-      mctx.arc(x, y, this.runners[hs.i].mine || this.focus === hs.i ? 4.2 : 3.2, 0, Math.PI * 2);
+      mctx.arc(x, y, yours(hs.i) ? 4.2 : 3.2, 0, Math.PI * 2);
       mctx.fill();
       mctx.stroke();
+      if (yours(hs.i)) {
+        mctx.strokeStyle = this.focus === hs.i ? '#f5b33d' : '#ffffff';
+        mctx.lineWidth = 1.6;
+        mctx.beginPath();
+        mctx.arc(x, y, 6, 0, Math.PI * 2);
+        mctx.stroke();
+      }
     }
   }
 }
+
+const smooth = x => x * x * (3 - 2 * x);
 
 function wrap(a) {
   a = (a + Math.PI) % (Math.PI * 2);
