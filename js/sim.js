@@ -79,6 +79,18 @@ function paceFor(W, dist, vc) {
   return vc + d;
 }
 
+// Where the three calls of a running line are taken, in metres from the start. The last is always a
+// furlong from the finish. Before it, a sprint is called at the quarter and the half, and a race of a mile
+// or more at the half and the three quarters; five furlongs and five and a half are too short for that,
+// so their calls come sooner (at 1½ and 3 furlongs, and at 2 and 3). The cut used to be 1,300 metres, which
+// put 6½ and 7 furlongs with the routes: at 7 furlongs the second and third calls were the same point, at
+// 6½ the third was taken before the second, and at 5 both fell at the half.
+export function callPointsFor(D) {
+  const f = D / FURLONG;
+  const [a, b] = f > 7.99 ? [4, 6] : f > 5.75 ? [2, 4] : f > 5.25 ? [2, 3] : [1.5, 3];
+  return [a * FURLONG, b * FURLONG, D - FURLONG];
+}
+
 // entrants: [{ rating, style (0 closer .. 1 need-the-lead), reserve, gate, jockey, heart }]
 // race: { distance, surface, cond, seed }
 export function runRace(race, entrants, { record = true } = {}) {
@@ -121,7 +133,7 @@ export function runRace(race, entrants, { record = true } = {}) {
   const events = [];
   let t = 0;
   let leaderIdx = -1;
-  const callPoints = D < 1300 ? [FURLONG * 2, FURLONG * 4, D - FURLONG] : [FURLONG * 4, FURLONG * 6, D - FURLONG];
+  const callPoints = callPointsFor(D);
   const calls = callPoints.map(() => null);
   const fractions = [];
   const quarter = FURLONG * 2;

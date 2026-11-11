@@ -100,6 +100,29 @@ test('the running order at the finish is the official order, with the official m
   assert.ok(goneBy > 0, 'no race in the sample where the order by position at the end is wrong');
 });
 
+test('a running line is called at three points that come one after another, at every distance on a card', () => {
+  // The cut between sprint and route calls was 1,300 metres, so at 7 furlongs the second and third calls
+  // were the same point (every horse's line said the same thing twice), at 6½ the third was taken half a
+  // furlong before the second, and at 5 both fell at the half: one line in five.
+  const w = createWorld('test-calls', '2026-09-26');
+  const drawn = new Set();
+  for (let d = 0; d < 40; d++) for (const r of buildCard(w, d).races) drawn.add(r.f);
+  assert.deepEqual([...drawn].sort((a, b) => a - b), [5, 5.5, 6, 6.5, 7, 8, 8.5, 9], 'the distances a card can draw');
+  const want = { 5: [1.5, 3, 4], 5.5: [2, 3, 4.5], 6: [2, 4, 5], 6.5: [2, 4, 5.5], 7: [2, 4, 6], 8: [4, 6, 7], 8.5: [4, 6, 7.5], 9: [4, 6, 8] };
+  for (const f of drawn) {
+    const field = Array.from({ length: 8 }, (_, i) => horse({ rating: 76 + i, style: (i * 0.37) % 1 }));
+    const run = runRace(race(f, 'dirt', `calls${f}`), field, { record: false });
+    const at = run.callPoints.map(p => +(p / FURLONG).toFixed(3));
+    assert.deepEqual(at, want[f], `${f}f is called at ${at.join(', ')} furlongs`);
+    assert.ok(at.every((p, k) => p > (k ? at[k - 1] : 0)) && at[2] < f, `${f}f: the calls don't rise, or don't stop short of the wire`);
+    assert.equal(at[2], f - 1, `${f}f: the last call is a furlong from the finish`);
+    // Each call was taken, with the leader in front by nothing and everyone else behind it; and the field
+    // has moved between the second call and the third.
+    for (const c of run.calls) assert.ok(c && c.length === 8 && c[0].behind === 0 && c.every((x, k) => !k || x.behind >= c[k - 1].behind), `${f}f: a call is missing or out of order`);
+    assert.notDeepEqual(run.calls[1].map(x => x.behind), run.calls[2].map(x => x.behind), `${f}f: the second and third calls are the same`);
+  }
+});
+
 test('the world builds a full card with past performances that happened', () => {
   const w = createWorld('test-world', '2026-09-26');
   const card = w.cards[0];
