@@ -41,6 +41,8 @@ const LONGEST = 8;
 // The first run through the field comes this long after the off, once they've sorted themselves out, and
 // by this long after it the first call has been made.
 const FIRST = 4, CALLED = 8;
+// A change of leader is news for this many real seconds. After that the horse is simply the leader.
+const NEWS = 3;
 
 // A caller gives a time in fifths of a second, and a part of a fifth is dropped: 22.59 is "22 and 2".
 // The fifths come from the time as the clock shows it, to the hundredth, so the two never disagree
@@ -160,13 +162,15 @@ export function raceClock(run, speed = 1) {
 // are listed from eight seconds in, when the first call has been made: before that the field is sorting
 // itself out, and who went to the front is what the first call says. When two horses are trading the lead
 // stride for stride, only a change that lasts a second and a half is listed: the voice can't be kept free
-// for every one of them. Worked out once for a recording.
+// for every one of them. `all` is every change from four seconds in, with none left out, and the horse in
+// front at four seconds first: it says how long the horse in front has been there. Worked out once for a
+// recording.
 const SCANS = new WeakMap();
 function scan(run) {
   let s = SCANS.get(run);
   if (s) return s;
   const fin = run.finalTime, D = run.distance, top = run.path[run.path.length - 1].start;
-  s = { leads: [], tS: fin, tE: fin, tX: fin };
+  s = { leads: [], all: [], tS: fin, tE: fin, tX: fin };
   const st = [];
   let cur = null;
   for (let t = 0; t < fin; t += 0.1) {
@@ -180,8 +184,8 @@ function scan(run) {
     if (s.tE === fin && D - lead <= FURLONG) s.tE = t;
     if (s.tX === fin && D - lead <= FURLONG / 2) s.tX = t;
     if (t < FIRST) continue;
-    if (cur === null) cur = a;
-    else if (a !== cur && b >= 0 && (lead - st[b].p) / LENGTH >= PAIR) { if (t >= CALLED) s.leads.push({ t, to: a }); cur = a; }
+    if (cur === null) { cur = a; s.all.push({ t, to: a }); }
+    else if (a !== cur && b >= 0 && (lead - st[b].p) / LENGTH >= PAIR) { s.all.push({ t, to: a }); if (t >= CALLED) s.leads.push({ t, to: a }); cur = a; }
   }
   s.leads = s.leads.filter((e, k) => !s.leads[k + 1] || s.leads[k + 1].t - e.t >= 1.5);
   SCANS.set(run, s);
@@ -317,8 +321,8 @@ const HOME_FREE = [
   [3, (a, x) => `${a} has them all beaten, ${x} best of the rest.`, a => `${a} has them all beaten!`],
 ];
 const STILL = [
-  [0, (a, g) => `${a} by ${g}!`, a => `${a} in front!`], [1, (a, g) => `Still ${a}, ${g} in front!`, a => `Still ${a}!`],
-  [2, (a, g, b) => `${a} leads ${b} by ${g}!`, a => `${a} leads!`], [3, (a, g) => `${a} still in front by ${g}!`, a => `${a} still in front!`],
+  [0, (a, g) => `${a} by ${g}!`, a => `${a} in front!`], [1, (a, g) => `Still ${a}, ${g} in front!`, a => `Still ${a}!`, 'still'],
+  [2, (a, g, b) => `${a} leads ${b} by ${g}!`, a => `${a} leads!`], [3, (a, g) => `${a} still in front by ${g}!`, a => `${a} still in front!`, 'still'],
   [4, (a, g, b) => `It's ${a} by ${g} over ${b}!`, a => `It's ${a}!`], [5, (a, g, b) => `${a} holds ${b} off, ${g} between them!`, a => `${a} holds on!`, 'holds'],
 ];
 // The second horse, when it isn't gaining.
@@ -367,7 +371,8 @@ const up = s => s[0].toUpperCase() + s.slice(1);
 // To plan the rest of a race again from the middle (the speed changed, the race was skipped ahead, the
 // voice turned out slower than thought), `from` is the time on the race's clock to plan from, `wait` the
 // real seconds from then until the voice is free, and `said` the lines given so far, which are kept.
-export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed = 1, from = null, wait = 0, said = [], bugle = 0 } = {}) {
+// `jumped` says the race was skipped ahead to `from`, so nobody saw how it got there.
+export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed = 1, from = null, wait = 0, said = [], bugle = 0, jumped = false } = {}) {
   const fresh = from === null;
   const R = rng(fresh ? `call:${race.seed}` : `call:${race.seed}:${Math.round(from * 10)}:${speed}`);
   const D = run.distance, t0 = run.t0, fin = run.finalTime, n = names.length;
@@ -747,7 +752,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
       news.push(['clear', [form(w[1](nm(a.i), gapWords(g)), { lead: a.i }), form(w[2](nm(a.i)), { lead: a.i })]]);
     }
     if (g >= PAIR) {
-      const w = pick('still', STILL.filter(x => !x[3] || (g < 2 && g <= gAgo + 0.05))); // "holds off" is of a chaser who isn't being left behind
+      const w = pick('still', STILL.filter(x => x[3] !== 'holds' || (g < 2 && g <= gAgo + 0.05))); // "holds off" is of a chaser who isn't being left behind
       places.push(['still', [form(w[1](nm(a.i), gapWords(g), nm(b.i)), { lead: a.i }), form(w[2](nm(a.i)), { lead: a.i })]]);
       if (!closing) {
         const v = pick('chase', CHASE);
@@ -767,6 +772,15 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     const opts = [...news.filter(x => x[0] === 'heads' || x[0] === 'close' || wall(t) - wall(saidAt(x[0])) > 4), ...places];
     const fresh = opts.filter(x => x[0] !== S.drive);
     return (fresh.length ? fresh : opts).map(([kind, forms]) => forms.map(f => ({ ...f, drive: kind })));
+  }
+
+  // The stretch, picked up from the middle with the caller's leader out of date: who leads now, by how
+  // much and from which horse. (Never "still": the horse hasn't been called the leader yet.)
+  function pickUpForms(o) {
+    const [a, b] = o;
+    const w = pick('still', STILL.filter(x => !x[3]));
+    const kind = { lead: a.i, drive: S.drive === 'still' ? 'lead' : 'still' }; // never the same kind of line twice running
+    return [form(w[1](nm(a.i), gapWords(gapOf(a, b)), nm(b.i)), kind), form(w[2](nm(a.i)), kind)];
   }
 
   // ------------------------------------------------------------ the walk
@@ -827,24 +841,35 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
 
     if (!inStretch && wall(ev.tS) - w <= (speed === 1 ? 2.5 : 1.5)) { w = wall(ev.tS); continue; } // kept clear for the turn for home
     const changed = S.leader !== null && !!b && a.i !== S.leader && g >= PAIR; // a new leader, not yet called
+    // ...and not called as one if it's old news. The caller's idea of who leads comes from the lines said
+    // so far. After Skip, a change of speed, or a change the voice was too busy for, that can be the
+    // leader of half a minute ago: "Stormy Dancer is the new leader!" came 28 seconds after he took it.
+    // Then he says where they are and who leads, which is what somebody picking the race up wants.
+    let tookIt = t; // when the horse in front got there
+    if (changed) { const e = ev.all.filter(x => x.t <= t + 0.05).pop(); if (e && e.to === a.i) tookIt = e.t; }
+    // Picking the race up after a skip, a horse that has had its head in front for a while is the leader,
+    // even if it only drew a quarter of a length clear this second: nobody watched the two of them at it.
+    if (changed && jumped && lines.length === said.length) { while (tookIt > t - NEWS - 1 && ord(tookIt - 0.1)[0].i === a.i) tookIt -= 0.1; }
+    const stale = changed && w - wall(tookIt) > NEWS;
     const turning = inStretch && !S.turn && t - ev.tS <= 1.9; // within two seconds of the leader getting there, or not at all
     if (turning) { slot = 'turn'; forms = turnForms(o); }
-    else if (changed) { slot = 'change'; forms = changeForms(o); }
+    else if (changed && !stale) { slot = 'change'; forms = changeForms(o); }
     else if (!S.broke && t < 3.4 && !headlines) { slot = 'break'; forms = breakForms(); if (!forms) { S.broke = true; continue; } }
     else if (!S.first && t < FIRST) { w = wall(FIRST); continue; }
     else if (inStretch) {
       if (!S.eighth && t >= ev.tE - 0.2 && t - ev.tE <= 2.5) { slot = 'eighth'; forms = eighthForms(o, t); }
       else if (!headlines && !S.sixteenth && t >= ev.tX - 0.2 && t - ev.tX <= 1.2 && wall(fin) - w > 2.6) { slot = 'sixteenth'; forms = sixteenthForms(o); }
+      else if (stale) { slot = headlines ? 'fill' : 'drive'; forms = headlines ? fillForms(o, t, true) : pickUpForms(o); }
       else if (!headlines) { slot = 'drive'; forms = driveForms(o, t); }
     } else {
       const fr = !headlines && fracs.find(f => !S.frac[f.k] && t >= f.t + 0.2 - 1e-6 && t - f.t < 4);
       const seg = segmentAt(run.path, a.p), part = seg.name;
       const rest = o.filter(z => !S.pass.has(z.i));
-      const again = !S.first || !S.pass.has(a.i) || wall(t) - wall(S.passAt) > 25
+      const again = stale || !S.first || !S.pass.has(a.i) || wall(t) - wall(S.passAt) > 25
         || (part !== S.passWhere && part !== 'chute' && (headlines || !rest.length || S.pass.size >= Math.min(n, 5)));
       if (fr) { slot = 'frac'; forms = fracForms(fr); }
       else if (!headlines && (forms = troubleForms(o, t, 5))) slot = 'trouble';
-      else if (again && (!headlines || !S.first || part !== S.passWhere)) { slot = 'run'; forms = S.first || t > 8 ? headForms(o, seg) : firstForms(o); }
+      else if (again && (stale || !headlines || !S.first || part !== S.passWhere)) { slot = 'run'; forms = S.first || t > 8 ? headForms(o, seg) : firstForms(o); }
       else if (headlines) { if (w - lastEnd() >= 3) { slot = 'fill'; forms = fillForms(o, t, true); } } // only the leader again, after a long quiet
       else if ((forms = moverForms(o, t))) slot = 'mover';
       else if (rest.length) { slot = 'more'; forms = moreForms(o, rest); }
@@ -857,11 +882,10 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     // A new leader is called while it's news: in a wording that's over within about two and a half seconds
     // of the change, when there is one.
     let soon = room;
-    if (changed) {
+    if (changed && !stale) {
       const e = ev.leads.filter(x => x.t <= t + 0.05 && x.to === a.i).pop();
       if (e) soon = Math.min(room, 2.6 - (w - wall(e.t)));
     }
-    if (!forms) { w += 0.5; continue; }
 
     // The longest form that's over before the next thing coming (the shortest, watching at speed), and
     // never a sentence that's been said already in this race. Where there's more than one thing that
@@ -877,7 +901,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
       return null;
     };
     let line;
-    if (turning && changed) {
+    if (turning && changed && !stale) {
       // Turning for home with a new leader: both at once in a wording that names it, if there's one short
       // enough (or nearly) to be news; otherwise the new leader first, and "they turn for home" after it
       // if there's still time.
@@ -949,12 +973,12 @@ export function liveCall(race, run, names, { lineSeconds, factor = () => 1, bugl
   const live = { lines: first.lines, photo: first.photo, official: first.official, dur: first.dur, gate: first.gate, plans: 1 };
   // Plans the rest of the race again from `clock`. The line being said is let finish (by the estimate),
   // unless `wait` says how long the voice needs, as after a cancel.
-  function again(clock, now, wait = null) {
+  function again(clock, now, wait = null, jumped = false) {
     const said = live.lines.filter(l => l.t <= seen);
     if (said.some(l => l.wire)) return; // the call at the wire has been made: what's left follows it
     madeFor = factor();
     const left = wait ?? (upLine ? Math.max(0, upLine.d - (now - upAt)) : 0);
-    live.lines = raceCall(race, run, names, { lineSeconds, speed, from: clock, wait: left, said }).lines;
+    live.lines = raceCall(race, run, names, { lineSeconds, speed, from: clock, wait: left, said, jumped }).lines;
     live.plans++;
   }
   // The line that has come up by `clock`, if it's a new one. `now` is the time in real seconds.
@@ -970,7 +994,7 @@ export function liveCall(race, run, names, { lineSeconds, factor = () => 1, bugl
   // The watching speed has changed: no line is cut off for it, and the rest is planned for the new speed.
   live.setSpeed = (s, clock, now) => { if (s !== speed) { speed = s; again(clock, now); } };
   // The race has been skipped ahead to `clock`, and the voice cancelled: plan from there.
-  live.skip = (clock, now) => again(clock, now, 0.3);
+  live.skip = (clock, now) => again(clock, now, 0.3, true);
   return live;
 }
 

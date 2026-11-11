@@ -1110,7 +1110,13 @@ const at2 = await page.evaluate(async () => {
   button('Skip').click();
   for (const going = until('the end of the call at 2x', 60000); going() && !spoke(l => l.placings);) await wait(50);
   const lines = window.__read();
-  return { lines, skipped, jumped: w.winT - 12 > T, cancels: heard.slice(window.__from).filter(x => x.ev === 'cancel').map(x => (Math.abs(x.at - skipped) < 100 ? 'skip' : (lines.find(l => l.at > x.at) || {}).slot)) };
+  // The first line said after the skip, if it calls a new leader: how long that horse had had its head in front.
+  const { stateAt } = await import('./js/sim.js');
+  const first = w.call.lines.find(l => l.say === (lines.find(x => x.at > skipped) || {}).text);
+  const front = t => stateAt(w.run, w.t0 + t, []).reduce((a, x, i, st) => (x.p > st[a].p ? i : a), 0);
+  let old = 0;
+  if (first && first.change) while (old < 20 && front(first.t - old - 0.1) === first.lead) old += 0.1;
+  return { lines, skipped, old, jumped: w.winT - 12 > T, cancels: heard.slice(window.__from).filter(x => x.ev === 'cancel').map(x => (Math.abs(x.at - skipped) < 100 ? 'skip' : (lines.find(l => l.at > x.at) || {}).slot)) };
 });
 const after2 = at2.lines.filter(l => l.at > at2.skipped && l.slot !== 'official');
 assert.ok(at2.jumped, 'the race was nearly over before Skip, and this checked nothing');
@@ -1120,6 +1126,9 @@ assert.deepEqual(at2.lines.filter(l => l.age > (l.slot === 'placings' ? 6 : 1.5)
 assert.deepEqual(at2.lines.filter(l => l.slot === 'not in the call').map(l => l.text), [], 'at 2x something was read that is no line of the call');
 // (Twelve seconds of race at 2x is six of talk: a line or two, the winner's line, then second, third and the time.)
 assert.ok(after2.length >= 2 && after2[after2.length - 1].slot === 'placings', `after Skip the caller said ${after2.map(l => l.text).join(' / ') || 'nothing'}`);
+// He picks it up with who leads now. A new leader is only called as one if the change is news: the horse
+// that was in front when Skip was tapped is forty seconds ago by then.
+assert.ok(at2.old <= 3.05, `after Skip the caller's first words were "${after2[0].text}", of a horse ${at2.old.toFixed(1)} s in front`);
 assert.deepEqual([after2.find(l => l.slot === 'wire').rate, after2.find(l => l.slot === 'placings').rate], [1.2, 1.15], "the winner's line and the placings aren't at their own pace at 2x");
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 await page.evaluate(() => window.postTime.nav.go('card'));
