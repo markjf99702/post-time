@@ -1,0 +1,76 @@
+The caller's downloaded voice: what is in this folder
+
+Post Time's race caller can read the call in a voice the player downloads once and keeps (js/joe.js).
+Nothing in this folder is Post Time's own work but this note and manifest.json. The rest is other
+people's, published under the licences below, and the game fetches it only when the player asks for the
+voice. manifest.json lists the files that are downloaded, each with its size and SHA-256.
+tools/voice-files.mjs made them from the published packages and says exactly how.
+
+1. The voice: Piper's "Joe" (en_US-joe-medium)
+
+   joe/en_US-joe-medium.onnx.part0 to .part3
+       The voice's model, cut into four parts of at most 16 MB so that it can be pushed to the repository
+       and fetched a part at a time. Put end to end they are the published file, byte for byte:
+       63,221,984 bytes, SHA-256 abf4b998e34045cbd00eaf050de2de620f81ded6eb8b85a24b022a1c2b3f08d2.
+   joe/en_US-joe-medium.onnx.json    its settings, as published
+   joe/MODEL_CARD                    its model card, as published
+
+   From   https://huggingface.co/rhasspy/piper-voices (en/en_US/joe/medium), at commit
+          cf910fb59f1d79ab3b625a63993a108751c6c25d.
+   Licence   CC0. The model card says so of its dataset, and that it was fine-tuned from a base that is
+          CC0 as well. Piper lists the voice among those "whose entire training chain uses recordings
+          whose licenses permit commercial use"
+          (https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/COMMERCIAL_USE.md), and asks: "When you
+          ship a voice, ship its MODEL_CARD with it." It is here, and in the download.
+
+2. onnxruntime-web 1.22.0, which runs the model
+
+   ort/ort.wasm.min.mjs, ort/ort-wasm-simd-threaded.mjs, ort/ort-wasm-simd-threaded.wasm
+       As published (the package's dist/ folder; its plain WebAssembly build).
+
+   From   https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.22.0.tgz
+          (source: https://github.com/microsoft/onnxruntime, tag v1.22.0)
+   Licence   MIT, Copyright (c) Microsoft Corporation. The text is ort/LICENSE.
+
+3. The phonemizer, which turns the words into the sounds the voice says
+
+   phonemize/piper_phonemize.js, phonemize/piper_phonemize.wasm
+       As published: piper-phonemize built for the browser, with espeak-ng compiled into it.
+       (The package's third file, piper_phonemize.data, is not used: see 4.)
+
+   From   https://registry.npmjs.org/@diffusionstudio/piper-wasm/-/piper-wasm-1.0.0.tgz (5 July 2024),
+          source https://github.com/diffusion-studio/piper-wasm. Its README gives the build: Emscripten
+          3.1.47, https://github.com/wide-video/piper-phonemize (a fork of
+          https://github.com/rhasspy/piper-phonemize) and https://github.com/rhasspy/espeak-ng, each
+          cloned at its head in June 2024.
+   Licence   The package and piper-phonemize are MIT (Copyright (c) 2023 Michael Hansen; the text is
+          phonemize/LICENSE.md). espeak-ng, which is inside piper_phonemize.wasm, is under the GNU General
+          Public License, version 3 or later: the text is espeak-ng-data/COPYING, and its source is the
+          rhasspy/espeak-ng repository above.
+
+4. espeak-ng's data for English
+
+   espeak-ng-data/en.tar
+       A plain tar of espeak-ng's compiled data as Python Piper 1.8.0 ships it (piper/espeak-ng-data in its
+       wheel), with two changes:
+       - The other languages' dictionaries are left out (every *_dict file but en_dict). The voice speaks
+         English, and without them the download is 17 MB smaller.
+       - Three bytes of phonindex are changed (at 830: 01 0d 00 20 becomes 02 0d b2 ca). In the source
+         that is phsource/phonemes, under "phoneme ;": "ipa NULL" becomes "ipa ʲ". The data told espeak-ng
+         not to write the linking sound between a word ending in "ee" and a vowel ("the early lead"). The
+         espeak-ng in Python Piper writes it all the same, so Python Piper gives it to the voice; the
+         older espeak-ng in piper_phonemize.wasm obeys the data and leaves it out. With the change the
+         browser gives the voice the same sounds as Python Piper does: test/joe.test.mjs checks that on
+         1,634 lines of race calls.
+
+   From   https://pypi.org/project/piper-tts/1.8.0/
+          (piper_tts-1.8.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl,
+          SHA-256 25b4d3f31ff70c8fa7151908e00aaa5650cbdf16bca8fcf21299f3941b89a7d3). Piper builds it from
+          espeak-ng at commit 724808c (CMakeLists.txt at
+          https://github.com/OHF-Voice/piper1-gpl/tree/v1.8.0), so the source of the data is
+          https://github.com/espeak-ng/espeak-ng/tree/724808c (dictsource/ and phsource/).
+   Licence   GNU General Public License, version 3 or later (espeak-ng; Piper 1.8.0 is under the same).
+          The text is espeak-ng-data/COPYING.
+
+How the game uses them: its own code (js/joe.js, js/joe-worker.js, js/joe-speech.js) loads these files as
+they are, in a worker, and passes text in and sound out. None of them is built into the game's code.

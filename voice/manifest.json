@@ -1,0 +1,83 @@
+{
+ "voice": "en_US-joe-medium",
+ "cache": "post-time-voice-joe-1",
+ "bytes": 76448447,
+ "whole": {
+  "joe/en_US-joe-medium.onnx": {
+   "bytes": 63221984,
+   "sha256": "abf4b998e34045cbd00eaf050de2de620f81ded6eb8b85a24b022a1c2b3f08d2",
+   "parts": [
+    "joe/en_US-joe-medium.onnx.part0",
+    "joe/en_US-joe-medium.onnx.part1",
+    "joe/en_US-joe-medium.onnx.part2",
+    "joe/en_US-joe-medium.onnx.part3"
+   ]
+  }
+ },
+ "files": [
+  {
+   "path": "joe/en_US-joe-medium.onnx.json",
+   "bytes": 5465,
+   "sha256": "7b5f0293c0bf5bda8e377be1696da84af798befeef31038e43beefc01fe858da"
+  },
+  {
+   "path": "joe/MODEL_CARD",
+   "bytes": 423,
+   "sha256": "4b319248135916e8f5433ce7a9fe5271026b05cb598bab05807b22cb17fd129b"
+  },
+  {
+   "path": "joe/en_US-joe-medium.onnx.part0",
+   "bytes": 16777216,
+   "sha256": "c4ce826db5d6a40a7960f798ac382cdc59a69a7eb210994b474408ba07e541a8",
+   "of": "joe/en_US-joe-medium.onnx"
+  },
+  {
+   "path": "joe/en_US-joe-medium.onnx.part1",
+   "bytes": 16777216,
+   "sha256": "72ced304597de332a28932a5e026d694dc83ab8a6f548598d6fa3376b7eb18ec",
+   "of": "joe/en_US-joe-medium.onnx"
+  },
+  {
+   "path": "joe/en_US-joe-medium.onnx.part2",
+   "bytes": 16777216,
+   "sha256": "d495f0a909e3b035a5a45cbf55fdc8e3f4414db482a90d5a107cfba594c1a544",
+   "of": "joe/en_US-joe-medium.onnx"
+  },
+  {
+   "path": "joe/en_US-joe-medium.onnx.part3",
+   "bytes": 12890336,
+   "sha256": "4bfd130158d2a16167a49a39347b8228e20de615c17aa645e9ada8dc09d1cb68",
+   "of": "joe/en_US-joe-medium.onnx"
+  },
+  {
+   "path": "ort/ort.wasm.min.mjs",
+   "bytes": 48259,
+   "sha256": "6ef726f355b791129f7ddf3f62e7877a16b9b777abe87004b8ab306e6b9cf265"
+  },
+  {
+   "path": "ort/ort-wasm-simd-threaded.mjs",
+   "bytes": 20856,
+   "sha256": "30dd851d9c00622940500f71ddd2ff8820c5cb65270816080175b958705385a8"
+  },
+  {
+   "path": "ort/ort-wasm-simd-threaded.wasm",
+   "bytes": 11210254,
+   "sha256": "71aef04959c5c1b6de461b6538e2058e306610034a85aad2742d0c7fd4533fe4"
+  },
+  {
+   "path": "phonemize/piper_phonemize.js",
+   "bytes": 120714,
+   "sha256": "fef0c2fc442d24fdef5c7c7cc37d5da2314407640fe11ab1bfe347c723dff19b"
+  },
+  {
+   "path": "phonemize/piper_phonemize.wasm",
+   "bytes": 635212,
+   "sha256": "b777cd107a91d2bcc6a1ea46f2c26a662a7407394fe84589198aeaa83dd7a9d6"
+  },
+  {
+   "path": "espeak-ng-data/en.tar",
+   "bytes": 1185280,
+   "sha256": "a67e9013d4ebb68302010bf62a6b206b17144a5f44e98b48f2dde7f79a24badc"
+  }
+ ]
+}
