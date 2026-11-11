@@ -145,6 +145,26 @@ test('the world builds a full card with past performances that happened', () => 
   assert.ok(JSON.stringify(w).length < 900_000, 'the save stays small');
 });
 
+// A stakes was weighted from 116 with a floor of 112: in one meet 83 of 168 stakes starters carried 112, and
+// the top weight in a race was 116 at the median and never over 117.
+test('a stakes is weighted from the top down: 124 for the best, 126 in a Handicap, and nobody under 114', () => {
+  const w = createWorld('stakes-weights', '2026-09-26');
+  const tops = [], all = [];
+  for (let d = 0; d < 10; d++) {
+    const stk = w.cards[w.day].races.find(r => r.cls === 'STK');
+    const wts = stk.entries.map(e => e.wt);
+    tops.push([stk.name, Math.max(...wts)]);
+    all.push(...wts);
+    for (const r of w.cards[w.day].races) applyResult(w, r, simulateRace(r, w, { record: false }), r.entries.map(() => 5));
+    nextDay(w);
+  }
+  for (const [name, top] of tops) assert.equal(top, /Handicap/.test(name) ? 126 : 124, `the top weight in the ${name}`);
+  assert.ok(tops.some(([name]) => /Handicap/.test(name)) && tops.some(([name]) => !/Handicap/.test(name)), 'ten race days without both kinds of stakes');
+  assert.ok(all.every(x => x >= 114 && x <= 126), `stakes weights ${Math.min(...all)} to ${Math.max(...all)}`);
+  const floor = all.filter(x => x === 114).length;
+  assert.ok(floor < all.length / 3, `${floor} of ${all.length} stakes starters carried the 114 floor`);
+});
+
 test('horses that ship in are three, four or five on the day they arrive, whatever year the meet began', () => {
   // A newcomer's foaling year was counted from the meet's first race day, so one drawn at three after a
   // New Year arrived at four, after two New Years at five, and so on: no three-year-old ever came
@@ -428,8 +448,10 @@ test('the weeks before the meet are bet on the tote: the favourite on those line
   const median = favs[Math.floor(favs.length / 2)];
   assert.ok(median < 2.2, `the median favourite before the meet is ${median}-1`);
   // And the regulars' records are the tote's: a winning pick is paid a tote's price, in steps of 20 cents.
-  // (The stand-in book paid in steps of 10. None of this meet's winning picks paid the $2.10 least.)
-  for (const [who, r] of Object.entries(w.tipsters)) assert.ok(Math.abs(r.back * 5 - Math.round(r.back * 5)) < 1e-6, `${who} was paid ${r.back} on ${r.wins} winners`);
+  // (The stand-in book paid in steps of 10. A winner at the $2.10 least leaves a dime over, and one of this
+  // meet's winning picks paid that.)
+  const steps20 = x => Math.abs(x * 5 - Math.round(x * 5)) < 1e-6;
+  for (const [who, r] of Object.entries(w.tipsters)) assert.ok(steps20(r.back) || steps20(r.back - 2.1), `${who} was paid ${r.back} on ${r.wins} winners`);
 });
 
 // A claim moves a horse to another owner as well as another trainer. (The new owner was drawn from all

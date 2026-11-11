@@ -357,13 +357,25 @@ function fillRaces(world, races, R, day, busy = new Set()) {
     const byChance = race.entries.map(e => ({ e, k: (est.get(world.horses[e.hid]) || 70) + R.gauss() * 2.83 })).sort((a, b) => b.k - a.k).map(x => x.e);
     const riders = JOCKEYS.map((j, i) => ({ i, k: j.skill + R.gauss() * 0.45 })).sort((a, b) => b.k - a.k);
     byChance.forEach((e, k) => { e.j = riders[k].i; });
+    const top = race.cls === 'STK' ? Math.max(...race.entries.map(e => est.get(world.horses[e.hid]) ?? 70)) : 0;
     for (const e of race.entries) {
       const h = world.horses[e.hid];
-      e.wt = race.cls === 'STK' ? Math.round(116 + clamp((est.get(h) - race.par) * 0.6, -4, 8)) : R.pick([118, 120, 120, 121, 122, 124]) - (h.sex === 'f' || h.sex === 'm' ? (race.fm ? 0 : 2) : 0);
+      e.wt = race.cls === 'STK' ? stakesWeight(race, top - (est.get(h) ?? 70)) : R.pick([118, 120, 120, 121, 122, 124]) - (h.sex === 'f' || h.sex === 'm' ? (race.fm ? 0 : 2) : 0);
       e.rating = dayRating(h, race, e, R);
       e.pdk = paddockNote(h, R);
     }
   }
+}
+
+// A stakes is weighted from the top down: the best horse in it, as the trainers see it, carries 124 pounds
+// (126 in a race named a Handicap), and the rest come down from there, three fifths of a pound for each
+// point they're thought to be worse, to no less than 114. (It was worked out from 116, up or down from the
+// race's par with a floor of 112, so more than half of every stakes field carried 112 and the top weight
+// was 116 or 117: a handicap's top weight at a track is 126 or more, and 112 is an everyday race's floor.)
+// `below` is how many points the horse is thought to be below the best in the race.
+export function stakesWeight(race, below) {
+  const top = /Handicap/.test(race.name || '') ? 126 : 124;
+  return Math.max(114, Math.round(top - Math.max(0, below) * 0.6));
 }
 
 function dayRating(h, race, entry, R) {
