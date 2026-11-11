@@ -204,6 +204,11 @@ const FIRST1 = [[0, 'breaks on top'], [1, 'is quickest away'], [2, 'goes right t
 const FIRST2 = [[0, 'go at it early'], [1, 'vie for the early lead'], [2, 'break together'], [3, 'are away together'], [4, 'show the early speed']];
 const FIRST3 = [[0, (a, b, c) => `${a}, ${b} and ${c} are three across early`], [1, (a, b, c) => `${a}, ${b} and ${c} all go for the lead`], [2, (a, b, c) => `${a}, ${b} and ${c} break in a line`], [3, (a, b, c) => `${a}, ${b} and ${c} are away together`]];
 const NEAR = [[0, 'right there'], [1, 'close up'], [2, 'just behind']];
+// A horse that was just called for stumbling or breaking slowly, and is up with the leaders at the first
+// call all the same: it has recovered, to lead, to be level with another, or to be second or third.
+const RECOVER1 = [[0, 'recovers to lead'], [1, 'recovers and leads'], [2, 'has recovered to lead'], [3, 'recovers quickly to lead']];
+const RECOVER2 = [[0, (x, y) => `${x} recovers to go with ${y}`], [1, (x, y) => `${x} recovers and is up with ${y}`], [2, (x, y) => `${x} has recovered to join ${y} up front`], [3, (x, y) => `${x} recovers to race with ${y}`]];
+const RECOVERS = [[0, 'recovers to be'], [1, 'has recovered to be'], [2, 'recovers quickly to be']];
 // Where they are. `into` wordings are for a leader who has only just got there, `mid` for one about halfway.
 const WHERE = {
   backstretch: [[0, 'Down the backstretch'], [1, 'Along the backstretch'], [2, 'On the backstretch'], [3, 'Into the backstretch', 'into'], [4, 'Midway down the backstretch', 'mid']],
@@ -378,7 +383,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
   const S = {
     leader: null, leaderAt: -99, led: new Set(),             // the horse last named in front, and when
     pass: new Set(), passAt: -99, passWhere: null, first: false, lastNamed: null, // the run through the field
-    saidWhere: null, frac: {}, broke: false, turn: false, eighth: false, sixteenth: false,
+    saidWhere: null, frac: {}, broke: false, bad: null, turn: false, eighth: false, sixteenth: false, // `bad`: the horse called for a bad start
     drive: '', driveAt: new Map(), thirdAt: -99, flown: new Set(), troubled: new Set(), movers: new Set(), moverAt: -99, fill: '',
     texts: new Set(), used: new Map(), last: new Map(), off: false,
   };
@@ -394,7 +399,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     if (l.lead !== undefined) { S.leader = l.lead; S.leaderAt = l.t; S.led.add(l.lead); S.pass.add(l.lead); }
     else if (l.pair) { if (S.leader === null) S.leader = l.pair[0]; S.leaderAt = l.t; }
     if (l.kind === 'off') S.off = true;
-    if (l.slot === 'break') S.broke = true;
+    if (l.slot === 'break') { S.broke = true; if (l.who !== undefined) S.bad = l.who; }
     if (l.slot === 'run') {
       if (l.fresh) { S.pass = new Set(); S.passAt = l.t; S.passWhere = l.where; }
       S.first = true;
@@ -457,25 +462,35 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
   // The first call: who went to the front. One horse clear of the next (by a quarter of a length, four
   // seconds out of the gate) is the leader; two together "vie for the lead", and a third within a
   // quarter of a length of them makes three across. A third horse is "right there" only within a length.
+  //
+  // The horse just called for stumbling or breaking slowly can be one of them (what a bad start costs is
+  // the race's business; this is only the words). "Scotch Tape stumbles at the start!" was followed by
+  // "Southern Thunder, Scotch Tape and Mystery Key are three across early." Now no wording has that horse
+  // breaking with the others: it has recovered to be where it is, or the line stops short of it.
   function firstForms(o) {
     const [a, b, c] = o;
     const g = b ? gapOf(a, b) : Infinity, g2 = c ? gapOf(b, c) : Infinity;
     const say = { fresh: true, where: segmentAt(run.path, a.p).name };
+    const k = S.bad === null ? -1 : [a, b, c].findIndex(z => z && z.i === S.bad); // where the horse with the bad start is, of the first three
+    const back = { recovered: S.bad };
+    const rec = k > 0 ? pick('recovers', RECOVERS)[1] : '';
     if (g >= PAIR) {
-      const v = `${nm(a.i)} ${pick('first1', FIRST1)[1]}`;
+      const v = `${nm(a.i)} ${k === 0 ? pick('recover1', RECOVER1)[1] : pick('first1', FIRST1)[1]}`;
+      const lead = { ...say, lead: a.i, ...(k === 0 ? back : null) };
       const out = [];
-      if (c) out.push(form(`${v}. ${nm(b.i)} second, ${nm(c.i)} third.`, { ...say, lead: a.i, named: [a.i, b.i, c.i] }));
-      if (b) out.push(form(`${v}, ${nm(b.i)} second.`, { ...say, lead: a.i, named: [a.i, b.i] }));
-      out.push(form(`${v}.`, { ...say, lead: a.i, named: [a.i] }));
+      if (c) out.push(form(`${v}. ${nm(b.i)} ${k === 1 ? `${rec} ` : ''}second, ${nm(c.i)} ${k === 2 ? `${rec} ` : ''}third.`, { ...lead, named: [a.i, b.i, c.i], ...(k > 0 ? back : null) }));
+      if (b) out.push(form(`${v}, ${nm(b.i)} ${k === 1 ? `${rec} ` : ''}second.`, { ...lead, named: [a.i, b.i], ...(k === 1 ? back : null) }));
+      out.push(form(`${v}.`, { ...lead, named: [a.i] }));
       return out;
     }
     // Two together, or three: nobody is named as the leader.
-    const two = `${nm(a.i)} and ${nm(b.i)} ${pick('first2', FIRST2)[1]}`;
+    const pair = { ...say, pair: [a.i, b.i], ...(k === 0 || k === 1 ? back : null) };
+    const two = k === 0 || k === 1 ? pick('recover2', RECOVER2)[1](nm(S.bad), nm(k ? a.i : b.i)) : `${nm(a.i)} and ${nm(b.i)} ${pick('first2', FIRST2)[1]}`;
     const out = [];
-    if (c && g2 < PAIR) out.push(form(`${pick('first3', FIRST3)[1](nm(a.i), nm(b.i), nm(c.i))}.`, { ...say, pair: [a.i, b.i], named: [a.i, b.i, c.i], across: c.i }));
-    else if (c && g2 < 1) out.push(form(`${two}, ${nm(c.i)} ${pick('near', NEAR)[1]}.`, { ...say, pair: [a.i, b.i], named: [a.i, b.i, c.i], near: c.i }));
-    else if (c) out.push(form(`${two}, ${nm(c.i)} third, ${gapWords(g2)} back.`, { ...say, pair: [a.i, b.i], named: [a.i, b.i, c.i] }));
-    out.push(form(`${two}.`, { ...say, pair: [a.i, b.i], named: [a.i, b.i] }));
+    if (c && g2 < PAIR && k < 0) out.push(form(`${pick('first3', FIRST3)[1](nm(a.i), nm(b.i), nm(c.i))}.`, { ...pair, named: [a.i, b.i, c.i], across: c.i }));
+    else if (c && g2 < 1) out.push(form(`${two}, ${nm(c.i)} ${k === 2 ? `${rec} ` : ''}${pick('near', NEAR)[1]}.`, { ...pair, named: [a.i, b.i, c.i], near: c.i, ...(k === 2 ? back : null) }));
+    else if (c) out.push(form(`${two}, ${nm(c.i)} ${k === 2 ? `${rec} ` : ''}third, ${gapWords(g2)} back.`, { ...pair, named: [a.i, b.i, c.i], ...(k === 2 ? back : null) }));
+    out.push(form(`${two}.`, { ...pair, named: [a.i, b.i] }));
     return out;
   }
 

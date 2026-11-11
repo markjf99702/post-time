@@ -121,7 +121,7 @@ function shapeOf(text, names) {
 // The wordings that put a horse in front, as they read once the names are taken out.
 const LEADS = [/N leads\b/, /[Ii]t's N( by|[.!]| in front)/, /N shows the way/, /N is in front/, /N sets the pace/, /N has the lead/,
   /N (breaks on top|is quickest away|goes right to the front|shoots to the lead|is first to show|takes them along)/,
-  /N takes over/, /takes the lead!/, /N strikes the front/, /N goes to the lead/, /N is the new leader/, /Now it's N/,
+  /N (recovers|has recovered)( quickly)? (to lead|and leads)/, /N takes over/, /takes the lead!/, /N strikes the front/, /N goes to the lead/, /N is the new leader/, /Now it's N/,
   /N is back in front/, /N fights back to lead/, /N comes again/, /N takes it back/, /N by G/, /N continues to lead/, /Still N/,
   /N on the lead/, /N still shows the way/, /N keeps the lead/, /N (is )?still in front/, /Up front it's N/, /N has G on N/,
   /N out in front/, /N in front/, /N opens up/, /N is (G )?clear/, /N widens/, /N kicks away/, /N goes on/, /N holds (N off|on!)/,
@@ -170,7 +170,7 @@ function callAgainstRace(race, run, call, names, speed = 1) {
   const troubles = run.events.filter(e => e.type === 'checked');
   const texts = new Set(), led = new Set(), movers = new Set(), drives = [];
   const shapes = [];
-  let lastNamed = null, pace = null, firstRun = null, threeQuarters = false;
+  let lastNamed = null, pace = null, firstRun = null, threeQuarters = false, slowAway = null;
   call.lines.forEach((l, k) => {
     const st = stateAt(run, run.t0 + l.t);
     const o = order(l.t);
@@ -218,6 +218,17 @@ function callAgainstRace(race, run, call, names, speed = 1) {
     if (l.near !== undefined) { count('near'); if (o[2].i !== l.near || gap(o[1].i, o[2].i) >= 1) bad('near', l, `${gap(o[1].i, o[2].i).toFixed(2)} lengths behind the pair`); }
     if (/three across|all go for the lead|break in a line|, N and N are away together/.test(shape) !== (l.across !== undefined)) bad('near', l, 'three together, not marked');
     if (l.across !== undefined) { count('three across'); if (gap(o[0].i, o[1].i) >= 0.25 || gap(o[1].i, o[2].i) >= 0.25) bad('near', l, 'not three across'); }
+    // A horse called for stumbling or breaking slowly, and then named in the first call: it "recovers" to
+    // be there, and no wording has it breaking with the rest.
+    if (/recover/.test(x) !== (l.recovered !== undefined)) bad('recovered', l, 'not marked');
+    if (l.slot === 'run' && !firstRun && slowAway && l.t - slowAway.t < 6) {
+      const z = slowAway.who, n = names[z];
+      if (x.includes(n)) {
+        count('recovered');
+        const even = shape.replace(n, 'N') !== shape && (/three across|all go for the lead|break in a line|, N and N are away together/.test(shape) || new RegExp(`${n} (breaks on top|is quickest away|goes right to the front|shoots to the lead|is first to show|takes them along|and [^,.]+ (go at it early|vie for the early lead|break together|are away together|show the early speed))|and ${n} (go at it early|vie for the early lead|break together|are away together|show the early speed)`).test(x));
+        if (l.recovered !== z || even || !new RegExp(`${n} (recovers|has recovered)`).test(x) || o.findIndex(y => y.i === z) > 2) bad('recovered', l, `after "${slowAway.text}"`);
+      }
+    }
     if (l.slot === 'run' && !firstRun) { firstRun = l; if (l.lead === undefined && !(gap(o[0].i, o[1].i) < 0.5)) bad('near', l, 'vying for the lead from more than half a length apart'); }
     // Where a horse is said to be running: on the rail, on the outside, so many wide. A horse making a
     // move, or flying, with no word on where, is between horses.
@@ -295,6 +306,7 @@ function callAgainstRace(race, run, call, names, speed = 1) {
     if (l.clean) { count('clean break'); if (run.results.some(r => r.bumped || r.slow || r.stumble)) bad('break', l, 'somebody bumped, stumbled or broke slowly'); }
     if (l.slot === 'break' && !l.clean) {
       count('break');
+      if (l.who !== undefined) slowAway = l;
       const r = i => run.results.find(z => z.h === i);
       const ok = /stumble/.test(x) ? r(l.who).stumble && x.includes(names[l.who]) : /slow/.test(x) ? r(l.who).slow && x.includes(names[l.who])
         : /bump|come together/.test(x) && run.results.filter(z => z.bumped).every(z => x.includes(names[z.h]));
@@ -956,6 +968,15 @@ test("the finish is called by the chart's margin, on the wire, and 'going away' 
   assert.ok(total(races, 'holds on') > 10, `holding on called ${total(races, 'holds on')} times`);
 });
 
+test("a horse that stumbles or breaks slowly isn't then called as breaking with the leaders: it recovers", () => {
+  // "Scotch Tape stumbles at the start!" and then "Southern Thunder, Scotch Tape and Mystery Key are three
+  // across early." Now the first call says it has recovered, or leaves it out of the group.
+  const races = playLongMeet();
+  assert.deepEqual(told(races, 'recovered'), []);
+  assert.ok(total(races, 'recovered') > 5, `a horse recovers from a bad start in only ${total(races, 'recovered')} first calls`);
+  note(`first calls that name the horse that stumbled or broke slowly, as recovered: ${total(races, 'recovered')}`);
+});
+
 test('the opening quarter is called fast or slow for its own distance', () => {
   // With one par for everything from six and a half furlongs up, "a fast pace" was said in half the races
   // at six and a half and seven furlongs, and never in a shorter sprint.
@@ -1005,7 +1026,7 @@ test('watched at 2x the call is its shorter lines, and at 4x only the headlines,
   // at 2x each line is in its shortest wording, and at 4x there's the off, the leader on each part of the
   // track, lead changes, the turn for home, a furlong out and the winner.
   const fast = playLongMeet().flatMap(r => r.fast || []);
-  for (const kind of ['leader', 'pair', 'crowded', 'long', 'twice', 'change', 'passed', 'sure', 'closing', 'place', 'mover', 'flying', 'near', 'places', 'where', 'trouble', 'break', 'poles', 'fraction', 'stretch', 'finish', 'words']) assert.deepEqual(told(fast, kind), [], kind);
+  for (const kind of ['leader', 'pair', 'crowded', 'long', 'twice', 'change', 'passed', 'recovered', 'sure', 'closing', 'place', 'mover', 'flying', 'near', 'places', 'where', 'trouble', 'break', 'poles', 'fraction', 'stretch', 'finish', 'words']) assert.deepEqual(told(fast, kind), [], kind);
   const [twice, four] = [2, 4].map(speed => fast.filter(r => r.speed === speed));
   assert.equal(twice.length, 120);
   for (const r of fast) {
