@@ -96,6 +96,25 @@ test('a stumble and a slow break each cost about what a bump does', () => {
   for (const k of ['stumble', 'slow']) assert.ok(vs(k) > 0.4 && vs(k) < 0.85, `a horse with a ${k} start wins ${(100 * rate(k)).toFixed(1)}% to ${(100 * rate('clean')).toFixed(1)}% for a clean start`);
 });
 
+// Posts 1 and 2 won 34% of races of a mile or more and post 1 a sixth of all races: the field went into
+// the first turn in the lanes it broke from, and nothing was against the rail. Now riders drawn wide get
+// over before the turn, horses with early speed get away quicker, and the rail horse is often squeezed at
+// the break: riders dread drawing the rail.
+test('the rail is no gift: post 1 wins less than posts 2 and 3, and the outside posts get their share', () => {
+  const wins = (f, surface, N) => {
+    const w = Array(9).fill(0);
+    for (let s = 0; s < N; s++) w[runRace(race(f, surface, `posts${f}${surface}:${s}`), realField(`posts${f}${surface}:${s}`, 9, f), { record: false }).results[0].h]++;
+    return w.map(x => x / N);
+  };
+  for (const [f, surface] of [[6, 'dirt'], [8.5, 'dirt'], [8, 'turf']]) {
+    const w = wins(f, surface, 500), fair = 1 / 9;
+    const say = `${f}f ${surface}: ${w.map(x => (100 * x).toFixed(0)).join(' ')}`;
+    assert.ok(w[0] < (w[1] + w[2]) / 2, `post 1 wins more than posts 2 and 3 at ${say}`);
+    assert.ok(w[0] + w[1] < 3 * fair, `posts 1 and 2 win too often at ${say}`);
+    assert.ok((w[6] + w[7] + w[8]) / 3 > 0.5 * fair, `posts 7 to 9 win too seldom at ${say}`);
+  }
+});
+
 test('the same race run twice comes out the same', () => {
   const field = Array.from({ length: 9 }, (_, i) => horse({ rating: 75 + i, style: i / 9 }));
   const a = runRace(race(8.5, 'dirt', 'same'), field);

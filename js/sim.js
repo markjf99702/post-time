@@ -112,6 +112,10 @@ export function runRace(race, entrants, { record = true } = {}) {
   const n = entrants.length;
   // The gate sits a little behind the start; the clock starts when the first horse reaches it.
   const runup = D < 1300 ? 14 : 18;
+  // Riders drawn wide get over toward the rail before the first turn and round it (see the moves across the
+  // track, below).
+  const turn1 = path.find(sg => sg.kind === 'turn');
+  const tuckUntil = turn1 ? turn1.end : 0;
   let t0 = null;
   const hs = entrants.map((e, i) => {
     const eng = engine(e, D, race.surface, race.cond);
@@ -133,7 +137,7 @@ export function runRace(race, entrants, { record = true } = {}) {
       reserveAtKick: Math.max(floor, reserveAtKick), reserveCap: Math.max(floor, reserveAtKick) + 0.14,
       empty: 0, finished: false, time: 0, blocked: 0, blockedT: 0, wideSum: 0, turnT: 0,
       targetO: null, noise: 0, stuckT: 0, checkT: 0, wantOut: false, bumped: false, lastBlockedAt: -99, ledT: 0, duelT: 0,
-      trace: [], fin: 0, isBlocked: false, restrained: false, boxed: false, finishSpeed: 0, checked: false,
+      trace: [], fin: 0, tuck: false, isBlocked: false, restrained: false, boxed: false, finishSpeed: 0, checked: false,
     };
   });
 
@@ -142,6 +146,17 @@ export function runRace(race, entrants, { record = true } = {}) {
     const a = R.int(1, n - 2);
     hs[a].bumped = true; hs[a + 1].bumped = true;
     hs[a].react += 0.18; hs[a + 1].react += 0.12;
+  }
+  // The posts nearest the rail are squeezed at the break: the horses outside come over toward the rail, and
+  // the rail horse, if it's away slower than the one next to it, is shut off and has to take back. That's
+  // why riders dread drawing the rail. It's likelier, and costs more, in a race of a mile or more, where
+  // the field comes over hard for a first turn that's close. Post 2 is squeezed less often by post 3.
+  // (The rail had nothing against it: posts 1 and 2 won 34% of races of a mile or more.)
+  const long = D >= 8 * FURLONG - 1;
+  for (let i = 0; i < Math.min(2, n - 1); i++) {
+    if (hs[i].react <= hs[i + 1].react || hs[i].bumped) continue;
+    const chance = i ? 0.35 : long ? 1 : 0.7;
+    if (R.chance(chance)) { hs[i].bumped = true; hs[i].react += i === 0 && long ? R.range(0.3, 0.55) : R.range(0.2, 0.4); }
   }
 
   const frames = [];
@@ -224,6 +239,7 @@ export function runRace(race, entrants, { record = true } = {}) {
           }
         }
       }
+      if (h.tuck) want *= 0.95; // taking back to slot in behind a horse inside
       if (h.stumbleT > 0 && t > h.react + 0.3) { want = Math.min(want, h.v * 0.9); h.stumbleT -= DT; }
       if (!h.finished) {
         if (Math.floor(t * 2) !== Math.floor((t - DT) * 2)) h.noise = R.gauss() * 0.004;
@@ -270,7 +286,10 @@ export function runRace(race, entrants, { record = true } = {}) {
       } else h.stuckT = 0;
 
       // Accelerate or ease.
-      const acc = t < 5 ? 6.8 * (1 - h.v / (h.vtop + 3)) : 1.6;
+      // Out of the gate a horse with early speed gets going quicker than one that likes to come from behind.
+      // (When they all broke alike, the field went into the first turn of a route nine across, and the horse
+      // on the rail, with the least ground to cover, was in front at the first call 45% of the time.)
+      const acc = t < 5 ? 6.8 * (1 + 0.2 * (h.e.style - 0.5)) * (1 - h.v / (h.vtop + 3)) : 1.6;
       const dec = h.isBlocked ? 5 : 1.4;
       if (want > h.v) h.v = Math.min(want, h.v + acc * DT);
       else h.v = Math.max(want, h.v - dec * DT);
@@ -323,6 +342,7 @@ export function runRace(race, entrants, { record = true } = {}) {
       const step = (t < 6 ? 0.55 : 0.8) * DT;
       if (h.finished) continue;
       h.boxed = false;
+      h.tuck = false;
       if (h.wantOut) {
         const out = h.o + LANE;
         if (clearAt(hs, h, out) && out < 14) { h.targetO = out; h.wantOut = false; h.checkT = 0; }
@@ -342,10 +362,17 @@ export function runRace(race, entrants, { record = true } = {}) {
         const tired = h.W <= 0 && segmentAt(path, h.p).kind === 'turn';
         if (tired) h.targetO = Math.min(14, h.o + 0.35);
         else if (h.o - step >= RAIL && clearAt(hs, h, h.o - 0.3)) h.targetO = Math.max(RAIL, h.o - 0.3);
+        else if (h.p < tuckUntil && h.o > RAIL + 0.3 && h.e.style < 0.6) {
+          // Drawn wide with a horse inside, before the first turn or on it: a rider who doesn't need the lead
+          // takes back a little to slot in behind that horse, and saves the ground. (Riders kept their lanes
+          // until there was room, and a horse from post 9 went round the first turn of a route three metres
+          // off the rail: posts 8 to 11 won half their share of the races of a mile or more.)
+          for (const o of hs) if (o !== h && o.o < h.o && h.o - o.o < 1.2 && o.p - h.p > -REACH && o.p - h.p <= REACH * 1.05) { h.tuck = true; break; }
+        }
       }
       if (h.targetO !== null) {
         const d = h.targetO - h.o;
-        const mv = Math.sign(d) * Math.min(Math.abs(d), step * (h.isBlocked ? 1.6 : 1));
+        const mv = Math.sign(d) * Math.min(Math.abs(d), step * (h.isBlocked || (h.p < tuckUntil && d < 0) ? 1.6 : 1));
         // Don't move into someone.
         const next = h.o + mv;
         let hit = false;
