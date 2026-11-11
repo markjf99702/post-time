@@ -433,8 +433,8 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
       S.last.set(slot, id);
     }
     if (l.lead !== undefined) { S.leader = l.lead; S.leaderAt = l.t; S.led.add(l.lead); S.pass.add(l.lead); S.ledAt.set(l.lead, l.t); }
-    if (l.tired !== undefined) S.tired.add(l.tired);
     else if (l.pair) { if (S.leader === null) S.leader = l.pair[0]; S.leaderAt = l.t; }
+    if (l.tired !== undefined) S.tired.add(l.tired);
     if (l.kind === 'off') S.off = true;
     if (l.slot === 'break') { S.broke = true; if (l.who !== undefined) S.bad = l.who; }
     if (l.slot === 'run') {
@@ -981,8 +981,12 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     if (changed) { const e = ev.all.filter(x => x.t <= t + 0.05).pop(); if (e && e.to === a.i) tookIt = e.t; }
     // Picking the race up after a skip, a horse that has had its head in front for a while is the leader,
     // even if it only drew a quarter of a length clear this second: nobody watched the two of them at it.
-    if (changed && jumped && lines.length === said.length) { while (tookIt > t - NEWS - 1 && ord(tookIt - 0.1)[0].i === a.i) tookIt -= 0.1; }
-    const stale = changed && w - wall(tookIt) > NEWS;
+    // And "a while" is three seconds of the race there, whatever the watching speed: none of it was seen,
+    // so 2x and 4x don't make it any newer. (Counted in real seconds, a horse six seconds in front at 2x
+    // was still "the new leader" as the first words after Skip, in about one race in twelve.)
+    const pickedUp = changed && jumped && lines.length === said.length;
+    if (pickedUp) { while (tookIt > t - NEWS - 1 && ord(tookIt - 0.1)[0].i === a.i) tookIt -= 0.1; }
+    const stale = changed && (w - wall(tookIt) > NEWS || (pickedUp && t - tookIt > NEWS));
     const turning = inStretch && !S.turn && t - ev.tS <= 1.9; // within two seconds of the leader getting there, or not at all
     if (turning) { slot = 'turn'; forms = turnForms(o); }
     else if (changed && !stale) { slot = 'change'; forms = changeForms(o); }

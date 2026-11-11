@@ -72,6 +72,7 @@ function playLongMeet(days = 60) {
         ...callAgainstRace(race, run, call, names),
         fast: races.length % 4 ? null : [2, 4].map(speed => ({ speed, ...at, ...callAgainstRace(race, run, raceCall(race, run, names, { speed }), names, speed) })),
         skip: afterSkip(race, run, names),
+        skipFast: [2, 4].map(speed => afterSkip(race, run, names, speed)),
       });
     }
     advanceDay();
@@ -87,19 +88,20 @@ function playLongMeet(days = 60) {
 // The race watched for 22 seconds and then skipped, the way the Skip button does it (to twelve seconds
 // before the wire): the first line the caller gives from there, and, when it calls a new leader, how long
 // that horse had had its head in front by then.
-function afterSkip(race, run, names) {
+function afterSkip(race, run, names, speed = 1) {
   const fin = run.finalTime, to = fin - 12;
   if (to <= 23) return null;
   const live = callFor(race, run);
   let now = 0;
-  for (let t = -run.t0; t <= 22; t += 0.1) { live.next(t, now); now += 0.1; }
+  if (speed !== 1) live.setSpeed(speed, -run.t0, now);
+  for (let t = -run.t0; t <= 22; t += 0.1 * speed) { live.next(t, now); now += 0.1; }
   live.skip(to, now);
   const first = live.lines.find(l => l.t >= to);
   if (!first) return null;
   const front = t => stateAt(run, run.t0 + t, []).reduce((a, x, i, st) => (x.p > st[a].p ? i : a), 0);
   let old = 0;
   if (first.change) while (old < first.t && front(first.t - old - 0.1) === first.lead) old += 0.1;
-  return { text: first.text, t: first.t, change: !!first.change, lead: first.lead !== undefined || !!first.pair, old };
+  return { speed, text: first.text, t: first.t, change: !!first.change, lead: first.lead !== undefined || !!first.pair, old };
 }
 
 // The forum thread for a race, taken down before it's run: what each regular posted, and what the card
@@ -953,6 +955,12 @@ test('after Skip the caller picks the race up with who leads, and calls a new le
   assert.ok(skips.length > 400, `only ${skips.length} races were skipped`);
   const stale = skips.filter(r => r.skip.change && r.skip.old > 3.05);
   assert.deepEqual(stale.map(r => `race day ${r.day}, race ${r.no}: "${r.skip.text}" at ${r.skip.t.toFixed(1)} s, in front for ${r.skip.old.toFixed(1)} s by then`), []);
+  // And the same watching at 2x and 4x, by the race's clock: none of what was skipped was seen, so the speed
+  // doesn't make a change any newer. (The three seconds were real ones, and at 2x a horse six seconds in
+  // front was "the new leader" as the first words after Skip in about one race in twelve.)
+  const fast = playLongMeet().flatMap(r => (r.skipFast || []).filter(Boolean).map(skip => ({ ...r, skip })));
+  assert.ok(fast.length > 800, `only ${fast.length} races were skipped at 2x and 4x`);
+  assert.deepEqual(fast.filter(r => r.skip.change && r.skip.old > 3.05).map(r => `at ${r.skip.speed}x, race day ${r.day}, race ${r.no}: "${r.skip.text}", in front for ${r.skip.old.toFixed(1)} s by then`), []);
   const leads = skips.filter(r => r.skip.lead).length;
   assert.ok(leads >= skips.length * 0.9, `the first line after Skip says who leads in ${leads} of ${skips.length} races`);
   note(`after Skip at 22 s: the first line says who leads in ${leads} of ${skips.length} races, and calls a new leader in ${skips.filter(r => r.skip.change).length} (none in front for more than three seconds by then); the rest: ${[...new Set(skips.filter(r => !r.skip.lead).map(r => r.skip.text))].slice(0, 6).join(' / ')}`);
