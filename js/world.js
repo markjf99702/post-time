@@ -462,7 +462,12 @@ export function applyResult(world, race, run, odds) {
       pp.claimed = { from: h.trainer, price: race.claim };
       e.ran = { owner: h.owner, trainer: h.trainer };
       h.trainer = to;
-      h.owner = R.int(0, OWNERS.length - 1);
+      // A new owner too: any of them but the one it has. (One draw from all thirty, the present owner among
+      // them, left one claimed horse in thirty with the people it was claimed from, in the same silks. A
+      // draw that lands on them takes the next owner in the list, so it's still one draw and every other
+      // claim goes where it went.)
+      const owner = R.int(0, OWNERS.length - 1);
+      h.owner = owner === h.owner ? (owner + 1) % OWNERS.length : owner;
     }
     h.pps.push(pp);
     if (h.pps.length > 10) h.pps.shift();

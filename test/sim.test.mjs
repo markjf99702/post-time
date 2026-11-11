@@ -425,6 +425,31 @@ test('the weeks before the meet are bet on the tote: the favourite on those line
   for (const [who, r] of Object.entries(w.tipsters)) assert.ok(Math.abs(r.back * 5 - Math.round(r.back * 5)) < 1e-6, `${who} was paid ${r.back} on ${r.wins} winners`);
 });
 
+// A claim moves a horse to another owner as well as another trainer. (The new owner was drawn from all
+// thirty, the present one included: one claim in thirty left the horse in the same silks under a line
+// saying "Claimed from".)
+test('a horse claimed out of a race goes to a different owner', () => {
+  const w = createWorld('claims', '2026-10-03');
+  let claims = 0;
+  const same = [];
+  for (let d = 0; d < 20; d++) {
+    for (const r of w.cards[w.day].races) {
+      const run = simulateRace(r, w, { record: false });
+      applyResult(w, r, run, board(makeTote(r, w), 1).odds);
+      for (const e of r.entries) {
+        if (!e.ran) continue;
+        claims++;
+        const h = w.horses[e.hid];
+        if (h.owner === e.ran.owner) same.push(`${h.name}, race day ${d + 1} race ${r.no}`);
+        assert.notEqual(h.trainer, e.ran.trainer, `${h.name} was claimed by its own trainer`);
+      }
+    }
+    nextDay(w);
+  }
+  assert.ok(claims >= 40, `only ${claims} claims in twenty race days`);
+  assert.deepEqual(same, [], `of ${claims} claimed horses, these stayed with the owner they ran for`);
+});
+
 test('the board words a price at or just under what it pays: every whole number above 10-1', () => {
   // The board rounded down to the morning line's steps, which above 10-1 go 12, 15, 20, 30, 50, 99: "30-1"
   // over "$2 pays ~$97", and 463 of 1,411 final prices in one meet reading more than 10% under what was paid.
