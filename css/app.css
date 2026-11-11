@@ -574,21 +574,33 @@ a { color: var(--link); }
 .w-tix .count, .w-tix.sum .full { display: none; }
 .w-tix.sum .count { display: inline; }
 .watch.low .w-ctl .hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.w-ctl { display: flex; gap: 8px; padding: 8px 12px 12px; align-items: center; flex-wrap: wrap; }
+.w-ctl { display: flex; gap: 6px; padding: 8px 12px 12px; align-items: center; flex-wrap: wrap; }
 .w-ctl button {
   background: #232b25; color: #f1ead6; border: 1px solid rgba(255,255,255,.12); border-radius: 7px; padding: 12px; cursor: pointer;
   font: 500 14px/1 var(--display); letter-spacing: .08em; text-transform: uppercase;
 }
 .w-ctl button[aria-pressed="true"] { background: var(--amber); color: #111; }
+/* The Caller button is a microphone, as small as a button can be and still be tapped: the row is nearly full on a phone. */
+.w-ctl button.caller { display: inline-flex; align-items: center; justify-content: center; padding: 0; width: 40px; height: 40px; }
+.w-ctl .mic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.w-ctl button.caller[aria-pressed="false"] .mic { opacity: .55; }
 .w-ctl .spacer { flex: 1; }
-.w-ctl .btn { padding: 0 16px; height: 40px; } /* Results, the height of the buttons it joins, so the row and the picture above it stay as they are */
+.w-ctl .btn { padding: 0 12px; height: 40px; } /* Results, the height of the buttons it joins, so the row and the picture above it stay as they are */
 .w-ctl .hint { font-size: 12.5px; color: #8f8a78; width: 100%; }
+/* With the Caller button the row is six: on a phone under 380 wide and in the race screen's right-hand column
+   the buttons are a little narrower, so Skip, and Results in its place, stay on the row (at 375 wide Skip went
+   to a row of its own, and at 390 Results did). */
+@media (max-width: 380px) {
+  .w-ctl button { padding: 12px 10px; }
+  .w-ctl .btn { padding: 0 10px; }
+}
 /* On the narrowest phones the five buttons are one row, not four and Skip on a row of its own, and Results
    fits in Skip's place: the picture has the 42 px. */
 @media (max-width: 340px) {
-  .w-ctl { gap: 6px; }
-  .w-ctl button { padding: 12px 9px; }
-  .w-ctl .btn { padding: 0 12px; }
+  .w-ctl { gap: 4px; padding-left: 8px; padding-right: 8px; }
+  .w-ctl button { padding: 12px 7px; }
+  .w-ctl button.caller { width: 34px; padding: 0; }
+  .w-ctl .btn { padding: 0 8px; }
   .w-ctl .spacer { display: none; }
 }
 
@@ -615,6 +627,9 @@ a { color: var(--link); }
   .w-tix { grid-column: 2; grid-row: 4; }
   .w-ctl { grid-column: 2; grid-row: 5; }
   .w-ctl .spacer { display: none; } /* Results takes Skip's place in the row, which is no taller for it */
+  .w-ctl button { padding: 12px 10px; }
+  .w-ctl .btn { padding: 0 10px; }
+  .w-ctl button.caller { width: 36px; }
 }
 /* On the phone the column is narrower and its type smaller, the tickets go under the picture, where a line
    of them has room, and the line about following a horse is left out. */
@@ -627,6 +642,7 @@ a { color: var(--link); }
   /* The buttons keep their old height here, 34 px: they're on two rows in this column, and 6 px more for each
      came out of the call's box, where a line of four lines then ran 6 px past the bottom. */
   .w-ctl button { padding: 9px 12px; }
+  .w-ctl button.caller { width: 34px; height: 34px; padding: 0; }
   .w-ctl .btn { padding: 0 16px; height: 34px; }
   .w-ctl .hint { display: none; }
 }
@@ -718,6 +734,7 @@ a { color: var(--link); }
   .w-ctl .btn { padding: 0 14px; }
   .seg button[aria-pressed="true"] { border: 3px solid Highlight; padding: 10px 8px; }
   .w-ctl button[aria-pressed="true"] { border: 3px solid Highlight; padding: 10px; }
+  .w-ctl button.caller { padding: 0; }
   .picks-grid button[aria-pressed="true"] { border: 4px solid Highlight; }
   .order button[aria-pressed="true"] { outline: 2px solid Highlight; }
   .tabs button { border-bottom-color: Canvas; }

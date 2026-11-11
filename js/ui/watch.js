@@ -78,25 +78,31 @@ export function renderWatch(el, nav, params) {
   const callBox = h('div', { class: 'call' }, prev, now);
   const mineList = myTickets(race);
   const speedBtns = [1, 2, 4].map(s => h('button', { type: 'button', 'aria-pressed': String(s === 1), onclick: () => setSpeed(s) }, `${s}×`));
-  // Turned off here, Sound quiets the caller too, until it's turned back on: the menu, where reading the call
-  // aloud has a tick of its own, can't be reached during a race. The next race is read aloud again if that
-  // tick is on, whether Sound is or not.
-  let quiet = false;
+  // Sound is the effects: the bugle, the bell, the crowd and the hooves. The caller has a button of his own
+  // beside it, which does what the menu's "Read the race call aloud" does (the menu can't be reached during a
+  // race): turned off, he stops mid-line and the rest of the race is written out only; turned on, he picks the
+  // race up at the next line.
   const soundBtn = h('button', { type: 'button', 'aria-pressed': String(game.player.settings.sound), onclick: () => {
     game.player.settings.sound = !game.player.settings.sound;
     audio.setSound(game.player.settings.sound);
     soundBtn.setAttribute('aria-pressed', String(game.player.settings.sound));
-    quiet = !game.player.settings.sound;
-    if (quiet) audio.hush();
     if (game.player.settings.sound && T > 0 && T < endT) audio.startRace();
     save(); // the same setting as Sound in the menu, kept the same way
   } }, 'Sound');
+  const callerBtn = h('button', { type: 'button', class: 'caller', title: 'Caller', 'aria-label': 'Caller', 'aria-pressed': String(!!game.player.settings.voice), onclick: () => {
+    const on = !game.player.settings.voice;
+    game.player.settings.voice = on;
+    audio.setVoice(on); // off, that stops him mid-line
+    if (on) audio.primeVoice(); // inside the tap, so a phone lets him speak
+    callerBtn.setAttribute('aria-pressed', String(on));
+    save();
+  } }, micIcon());
   const skipBtn = h('button', { type: 'button', onclick: skip }, 'Skip ▸▸');
   const doneBtn = h('button', { class: 'btn brass', type: 'button', hidden: true, onclick: () => leave('result') }, 'Results ▸');
   const HINT = 'Tap a number in the running order to follow that horse. Tap it again to follow the leaders.';
   const HINT_SHORT = 'Tap a number to follow that horse.';
   const hint = h('div', { class: 'hint' }, HINT);
-  const ctl = h('div', { class: 'w-ctl' }, ...speedBtns, soundBtn, skipBtn, h('span', { class: 'spacer' }), doneBtn, hint);
+  const ctl = h('div', { class: 'w-ctl' }, ...speedBtns, soundBtn, callerBtn, skipBtn, h('span', { class: 'spacer' }), doneBtn, hint);
   el.append(
     h('div', { class: 'w-top' },
       h('span', {}, `Race ${race.no}`),
@@ -244,7 +250,7 @@ export function renderWatch(el, nav, params) {
     now.style.animation = 'none'; void now.offsetWidth; now.style.animation = '';
     // (`room` is for a voice that knows a line's length to the sample: one that would still be going when
     // the call at the wire is due is left out, not cut off.)
-    if (!quiet) audio.say(line, { ...pace(line, winT - T), clock: callClock, room: () => call.toWire(callClock() - t0) });
+    audio.say(line, { ...pace(line, winT - T), clock: callClock, room: () => call.toWire(callClock() - t0) });
   }
 
   // A long line on a narrow screen gets a smaller size rather than spilling out of the box. The line
@@ -523,6 +529,21 @@ export function renderWatch(el, nav, params) {
   // Debug hook for tests and screenshots.
   window.__watch = { setT: t => { T = t; scene.lastT = null; }, get T() { return T; }, winT, endT, t0, leave, run, call, pause: () => { speed = 0; }, get cam() { return scene.cam; }, get horizon() { return scene.hor / scene.H; } };
   return teardown;
+}
+
+// The Caller button's picture: a microphone, drawn in the button's own colour.
+function micIcon() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', 'mic');
+  for (const d of ['M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z', 'M6 11a6 6 0 0 0 12 0M12 17v4M8.5 21h7']) {
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', d);
+    svg.append(path);
+  }
+  return svg;
 }
 
 function fieldText(race) {

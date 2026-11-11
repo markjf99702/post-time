@@ -824,9 +824,10 @@ await page.selectOption('#optVoiceName', '');
 assert.equal(await page.evaluate(() => 'voiceName' in JSON.parse(localStorage.getItem('post-time/player')).settings), false);
 await page.click('#menuBtn');
 
-// The race's Sound button quiets the caller too: turned off during a race, it cuts off the line being read
-// and the ones after it until it's turned back on. The next race is read again with Sound off, since
-// reading the call aloud has a tick of its own in the menu.
+// The race's Caller button turns the caller off and on, as the menu's tick does: off during a race, it cuts
+// off the line being read and he says nothing more until it's on again, when he picks the race up at the
+// next line. Sound is the effects only: turned off, the caller carries on. The next race is read again with
+// Sound off, since reading the call aloud has a setting of its own.
 await page.waitForFunction(() => window.__quiet()); // the line Hear it said is over
 await page.evaluate(() => window.__voice.splice(0));
 await page.click('#menuBtn');
@@ -839,23 +840,36 @@ await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 const quieted = await page.evaluate(async () => {
   const w = window.__watch, lines = w.call.lines, v = window.__voice;
   const reach = async k => { w.setT(w.t0 + lines[k].t + 0.05); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); };
+  const caller = document.querySelector('.w-ctl button.caller');
   const sound = () => [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === 'Sound').click();
   const readSince = i => v.slice(i).filter(x => x !== '(cancel)');
-  const mid = Math.max(3, Math.floor(lines.length / 2));
+  const saved = () => JSON.parse(localStorage.getItem('post-time/player')).settings.voice;
+  const third = Math.max(3, Math.floor(lines.length / 3));
+  const pressed = [caller.getAttribute('aria-pressed'), caller.getAttribute('aria-label')];
   await reach(2);
   const read = readSince(0).length > 0;
-  sound(); // off
+  caller.click(); // off
   const cut = v[v.length - 1] === '(cancel)';
   const off = v.length;
-  await reach(mid);
+  await reach(third);
   const whileOff = readSince(off);
-  sound(); // on again
+  const offState = [caller.getAttribute('aria-pressed'), saved(), document.getElementById('optVoice').checked];
+  caller.click(); // on again
   const on = v.length;
-  await reach(mid + 1);
+  await reach(third + 1);
   await new Promise(r => setTimeout(r, 400)); // a line waits a quarter of a second after a cancel
-  return { read, cut, whileOff, again: readSince(on).length > 0 };
+  const again = readSince(on).length > 0;
+  sound(); // the effects off: the caller goes on
+  const effects = v.length;
+  await reach(third + 2);
+  // (The line before may still be being read: the new one waits for it.)
+  for (const end = performance.now() + 8000; !readSince(effects).length && performance.now() < end;) await new Promise(r => setTimeout(r, 50));
+  const soundOff = { cancelled: v.slice(effects).includes('(cancel)'), saidSince: readSince(effects).length > 0 };
+  sound(); // the effects back on
+  return { pressed, read, cut, whileOff, offState, again, soundOff, back: [caller.getAttribute('aria-pressed'), saved()] };
 });
-assert.deepEqual(quieted, { read: true, cut: true, whileOff: [], again: true }, "the race's Sound button doesn't quiet the caller, or doesn't let it carry on when it's back on");
+assert.deepEqual(quieted, { pressed: ['true', 'Caller'], read: true, cut: true, whileOff: [], offState: ['false', false, false], again: true, soundOff: { cancelled: false, saidSince: true }, back: ['true', true] },
+  "the race's Caller button doesn't turn the caller off and back on, or Sound still quiets him");
 await page.locator('.w-ctl button', { hasText: /^sound$/i }).click(); // off, and left off for the next race
 await page.evaluate(() => window.__watch.setT(window.__watch.endT - 0.05));
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
@@ -1265,9 +1279,9 @@ await page.waitForSelector('.races');
     await mute.waitForSelector('#voiceNone', { state: 'hidden' });
     assert.deepEqual(await voiceRow(mute), { line: '', list: true, hearIt: true, note: 'Reading in Chrome OS US English 4', ticked: true }, 'a voice turned up, and the choice is not back');
     await mute.uncheck('#optVoice');
-    // How to play says where the call is, and that it can be read aloud.
+    // How to play says where the call is, and that it can be read aloud, from the menu or the race's Caller button.
     await mute.click('#menu [data-go="help"]');
-    assert.match(await mute.locator('#app .help').textContent(), /The caller's lines are written out as the race is run, under the picture or beside it\. Tick Read the race call aloud in the menu to have them spoken\./);
+    assert.match(await mute.locator('#app .help').textContent(), /The caller's lines are written out as the race is run, under the picture or beside it\. Tick Read the race call aloud in the menu to have them spoken, or tap the microphone beside Sound during a race\./);
     await mute.close();
   }
 
@@ -2584,10 +2598,10 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
     browser: window.__said.filter(u => !u.silent).length, wire: window.__wire, stats: window.__audio.callStats(), asked: window.__asked.length, up: window.__joe.running(),
     outputs: window.__outputs.length, behind: 'callerBehind' in JSON.parse(localStorage.getItem('post-time/player')).settings,
   }));
-  // One voice: his. Every line of the plan and then the winner's, once each, through the game's one sound
-  // output, played as made. Nothing more was asked of his worker, which stayed down.
+  // One voice: his. Every line of the plan, the winner's and what he paid, once each, through the game's one
+  // sound output, played as made. Nothing more was asked of his worker, which stayed down.
   assert.deepEqual([called.browser, called.clips.length, called.outputs, called.clips.every(c => c.through && c.pace === 1), called.asked, called.up, called.behind],
-    [0, plan.lines.length + 1, 1, true, rehearsed.asked.length, false, false]);
+    [0, plan.lines.length + 2, 1, true, rehearsed.asked.length, false, false]);
   assert.deepEqual([called.stats.cut, called.stats.dropped, called.stats.unmade, called.stats.unfit], [0, 0, 0, 0], 'lines of his call were cut off or left out');
   called.clips.forEach((clip, k) => {
     const line = plan.lines[k], ran = (clip.ended - clip.at) / 1000;
@@ -2608,7 +2622,7 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
 
   // Watch again, in the same visit. The race's clips went with it, so nothing is made; but this device has
   // been timed by now, and at its rate each line will be made before it's needed, so he takes the race
-  // and makes them as it runs. The Sound button stops him in the middle of a line, at once, and he says
+  // and makes them as it runs. The Caller button stops him in the middle of a line, at once, and he says
   // nothing more until it's on again; leaving the race stops him too, lets the clips go and ends his worker.
   // (On a machine too busy to have kept up just now he doesn't take it, and there's nothing to check.)
   await page.evaluate(() => { window.__watch.leave('result'); window.__watch = null; window.__played.length = 0; window.__said.length = 0; });
@@ -2622,11 +2636,11 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
       return { early: !!c.__ended && (c.__ended - c.__at) / 1000 < c.buffer.duration - 0.5, n };
     });
     await midLine();
-    await page.evaluate(() => [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === 'Sound').click());
+    await page.evaluate(() => document.querySelector('.w-ctl button.caller').click());
     const hushed = await stopped();
     await page.waitForTimeout(3500);
-    assert.deepEqual([hushed.early, await page.evaluate(() => window.__played.length)], [true, hushed.n], 'the Sound button did not stop him at once, or he went on with the call');
-    await page.evaluate(() => [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === 'Sound').click());
+    assert.deepEqual([hushed.early, await page.evaluate(() => window.__played.length)], [true, hushed.n], 'the Caller button did not stop him at once, or he went on with the call');
+    await page.evaluate(() => document.querySelector('.w-ctl button.caller').click());
     await page.waitForFunction(n => window.__played.length > n, hushed.n, { timeout: 30000 });
     // At 2x the rest of the race is planned again, and the plan still has the lines that have come up, each
     // with half the room it had. They keep the clips they have: his worker goes on to the lines still to
