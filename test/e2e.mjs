@@ -2219,6 +2219,122 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   assert.equal(sw.match(/const FILES = '([0-9a-f]*)'/)?.[1], files, `a file sw.js keeps for offline has changed: set FILES in sw.js to '${files}'`);
 }
 
+// The copies of the game that aren't the site, and the things beside the game that nothing above opens.
+{
+  const { pathToFileURL } = await import('node:url');
+  const { readdir } = await import('node:fs/promises');
+  const wrong = [];
+  const watched = (page, mayAsk) => {
+    page.on('pageerror', e => wrong.push(e.message));
+    page.on('console', m => { if (m.type() === 'error') wrong.push(m.text()); });
+    page.on('dialog', d => { wrong.push(`a dialog: ${d.message()}`); d.dismiss().catch(() => {}); });
+    page.on('request', r => { if (!mayAsk(r.url())) wrong.push(`asked for ${r.url()}`); });
+    return page;
+  };
+  // A race from the card to its result, by hand: a ticket bought at the window, To the gate, the race run
+  // to the end, Results. `on` is a page, or the frame the game is in.
+  const play = async on => {
+    await on.waitForSelector('.races', { timeout: 60000 });
+    await on.click('.race-row.next');
+    await on.click('.tabs button:nth-child(4)');
+    await on.locator('.pick-row').nth(0).locator('button').nth(0).click();
+    await on.click('.builder .btn');
+    await on.click('.post-bar .btn.brass');
+    await on.waitForSelector('.watch:not([hidden]) .order button');
+    await on.evaluate(() => { const w = window.__watch; w.setT(w.endT); });
+    await on.click('.w-ctl .btn:not([hidden])', { timeout: 40000 });
+    await on.waitForSelector('.official');
+    return on.evaluate(() => ({ tickets: document.querySelectorAll('.official .ticket').length, next: document.querySelector('.post-bar .btn').textContent, bank: document.getElementById('bank').textContent }));
+  };
+  const saving = async on => { await on.evaluate(() => window.postTime.nav.go('help')); return on.locator('.help .saving').textContent(); };
+  const ctx8 = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, colorScheme: 'light' });
+
+  // The one-file build and the Artifact's page are made by the bundler, so they're checked when it's
+  // installed (npm install); the game itself doesn't need it.
+  let bundler = true;
+  try { require.resolve('esbuild'); } catch { bundler = false; }
+  if (!bundler) console.log('esbuild is not installed (npm install): the one-file build and the Artifact copy were not checked');
+  else {
+    execSync('node scripts/build.mjs', { cwd: root, stdio: 'pipe' });
+
+    // dist/post-time.html, opened as a file: a race is played with nothing asked of any server and nothing
+    // going wrong, the meet is kept over a reload, and How to play doesn't say it works offline.
+    const address = pathToFileURL(join(root, 'dist/post-time.html')).href;
+    const file = watched(await ctx8.newPage(), url => url === address || url.startsWith('data:'));
+    await file.goto(address);
+    const played = await play(file);
+    assert.deepEqual([played.tickets, played.next], [1, 'Race 2 ▸'], 'a race played in the one-file build');
+    assert.equal(await saving(file), 'Everything is saved in this browser: your bankroll, tickets, scrapbook and the whole racing world. Nothing is sent anywhere.');
+    await file.reload();
+    await file.waitForSelector('.races');
+    assert.deepEqual([await file.locator('.race-row.done').count(), await file.locator('#bank').textContent()], [1, played.bank], 'the one-file build lost its meet over a reload');
+    await file.close();
+
+    // dist/artifact.html, the page without its wrapper, put in a document the way an Artifact viewer does
+    // and shown in a frame that may run scripts and nothing else: no storage, no dialogs. A race is played,
+    // the line under the header and How to play both say the meet isn't being kept, and the viewer's
+    // light or dark (data-theme on the document) is followed over the system's.
+    const fragment = await readFile(join(root, 'dist/artifact.html'), 'utf8');
+    const host = watched(await ctx8.newPage(), url => /^(about:|data:)/.test(url));
+    await host.setContent('<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><body style="margin:0"></body>');
+    await host.evaluate(doc => {
+      const frame = document.createElement('iframe');
+      frame.setAttribute('sandbox', 'allow-scripts');
+      frame.style.cssText = 'display:block;border:0;width:100vw;height:100vh';
+      frame.srcdoc = doc;
+      document.body.append(frame);
+    }, `<!doctype html><html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${fragment}</body></html>`);
+    const viewer = await (await host.waitForSelector('iframe')).contentFrame();
+    const ground = () => viewer.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    await viewer.waitForSelector('.races', { timeout: 60000 });
+    assert.equal(await ground(), 'rgb(21, 28, 24)', "the Artifact copy isn't dark when its viewer is, on a system set to light");
+    const framed = await play(viewer);
+    assert.deepEqual([framed.tickets, framed.next], [1, 'Race 2 ▸'], 'a race played in the Artifact copy');
+    assert.deepEqual([await viewer.locator('.unsaved').isVisible(), await viewer.locator('.unsaved').textContent()], [true, "This browser isn't keeping your meet, so it will be gone when you close the page."]);
+    assert.equal(await saving(viewer), "This browser isn't keeping anything, so this meet lasts until you close the page. Nothing is sent anywhere.");
+    await host.emulateMedia({ colorScheme: 'dark' });
+    await viewer.evaluate(() => { document.documentElement.dataset.theme = 'light'; });
+    assert.equal(await ground(), 'rgb(245, 238, 220)', "the Artifact copy isn't light when its viewer is, on a system set to dark");
+    await host.close();
+  }
+
+  // The site as Chrome judges it for installing, asked through the browser's own tools on a page the offline
+  // worker has taken charge of: nothing it objects to, and a manifest it reads without complaint. (This
+  // headless Chromium objects to nothing, not even a manifest with no icons, so what Chrome asks of a manifest
+  // is read off it as well: a name, a start address, a display of its own, and PNG icons at 192 and 512 px,
+  // each really the size it says. The list is Chrome's, in "What does it take to be installable?" on web.dev.)
+  const site = watched(await ctx8.newPage(), url => url.startsWith(base));
+  await site.goto(base);
+  await site.waitForFunction(() => navigator.serviceWorker?.controller, null, { timeout: 15000 });
+  const tools = await ctx8.newCDPSession(site);
+  const { installabilityErrors } = await tools.send('Page.getInstallabilityErrors');
+  const manifest = await tools.send('Page.getAppManifest');
+  assert.deepEqual([installabilityErrors, manifest.errors], [[], []], 'Chrome would not offer to install the game');
+  const asked = JSON.parse(manifest.data), pngs = asked.icons.filter(i => i.type === 'image/png');
+  const drawn = await site.evaluate(list => Promise.all(list.map(async src => { const im = new Image(); im.src = src; await im.decode(); return `${im.naturalWidth}x${im.naturalHeight}`; })), pngs.map(i => i.src));
+  assert.deepEqual({ name: asked.name, short: asked.short_name, start: asked.start_url, display: asked.display, sizes: pngs.map(i => i.sizes), drawn },
+    { name: 'Post Time', short: 'Post Time', start: './', display: 'standalone', sizes: ['192x192', '512x512', '512x512'], drawn: ['192x192', '512x512', '512x512'] }, 'what the manifest gives Chrome to install the game with');
+  // The link preview: og.png is 1200 by 630, and the page gives its address and its own at the address in CNAME.
+  const home = `https://${(await readFile(join(root, 'CNAME'), 'utf8')).trim()}/`;
+  const png = await readFile(join(root, 'og.png'));
+  assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [1200, 630], 'the size of og.png');
+  assert.deepEqual(await site.evaluate(() => ['og:image', 'og:url'].map(p => document.querySelector(`meta[property="${p}"]`)?.content)), [`${home}og.png`, home]);
+  await site.close();
+
+  // The pages in dev/, for tuning the drawings by eye: each still draws, and says so, with nothing going wrong.
+  const pages = (await readdir(join(root, 'dev'))).filter(f => f.endsWith('.html')).sort();
+  assert.ok(pages.length >= 4, `only ${pages.length} pages in dev/`);
+  for (const name of pages) {
+    const dev = watched(await ctx8.newPage(), url => url.startsWith(base));
+    await dev.goto(`${base}dev/${name}`);
+    await dev.waitForFunction(() => window.done === true, null, { timeout: 30000 }).catch(() => wrong.push(`dev/${name} never finished drawing`));
+    if (!await dev.locator('canvas').count()) wrong.push(`dev/${name} drew nothing`);
+    await dev.close();
+  }
+  assert.deepEqual(wrong, [], 'problems in the one-file build, the Artifact copy, the installed site or the dev pages');
+  await ctx8.close();
+}
+
 await browser.close();
 server.close();
 console.log('all good');

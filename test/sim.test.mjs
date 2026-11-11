@@ -396,6 +396,12 @@ test('the tote pays like a tote', () => {
     assert.ok(pay.place[order[0]] <= win + 1e-9);
     assert.ok(pay.show[order[0]] <= pay.place[order[0]] + 1e-9);
     assert.ok(pay.exacta.pay >= 2.1 && pay.trifecta.pay >= 1.05);
+    // "A $2 ticket pays in steps of 20 cents, and never less than $2.10", as How to play has it: a payout is
+    // worked out per dollar and rounded down to the dime, so a $2 one is $2.10 or so many 20 cents, and the $1
+    // trifecta $1.05 or so many dimes.
+    const steps = (v, step, least) => v === least || Math.abs(v / step - Math.round(v / step)) < 1e-6;
+    for (const v of [win, ...Object.values(pay.place), ...Object.values(pay.show), pay.exacta.pay]) assert.ok(steps(v, 0.2, 2.1), `a $2 payout of ${v}`);
+    assert.ok(steps(pay.trifecta.pay, 0.1, 1.05), `a $1 trifecta payout of ${pay.trifecta.pay}`);
     // Tickets.
     assert.equal(ticketReturn({ type: 'win', sel: [order[0]], amt: 2 }, pay), win);
     assert.equal(ticketReturn({ type: 'win', sel: [order[1]], amt: 2 }, pay), 0);
@@ -422,6 +428,7 @@ test('the weeks before the meet are bet on the tote: the favourite on those line
   const median = favs[Math.floor(favs.length / 2)];
   assert.ok(median < 2.2, `the median favourite before the meet is ${median}-1`);
   // And the regulars' records are the tote's: a winning pick is paid a tote's price, in steps of 20 cents.
+  // (The stand-in book paid in steps of 10. None of this meet's winning picks paid the $2.10 least.)
   for (const [who, r] of Object.entries(w.tipsters)) assert.ok(Math.abs(r.back * 5 - Math.round(r.back * 5)) < 1e-6, `${who} was paid ${r.back} on ${r.wins} winners`);
 });
 
