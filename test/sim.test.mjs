@@ -9,7 +9,7 @@ import { runRace, figureFor, stateAt, runningOrder } from '../js/sim.js';
 import { coursePath, FURLONG, COURSES } from '../js/track.js';
 import { createWorld, simulateRace, buildCard, applyResult, nextDay, ageOf } from '../js/world.js';
 import { makeTote, board, settle, ticketReturn, cost, TAKEOUT } from '../js/tote.js';
-import { fmtTime, fmtClock, marginShort, marginText, lengthsText } from '../js/chart.js';
+import { fmtTime, fmtClock, marginShort, marginText, lengthsText, tripComment } from '../js/chart.js';
 import { timeWords, timeSay, aloud, raceCall } from '../js/call.js';
 import { forumPosts } from '../js/forum.js';
 import { angles, newcomer, freshBullet, oddsText, oddsValue } from '../js/handicap.js';
@@ -534,6 +534,59 @@ test('margins read the way a chart prints them: nose, head, neck, a half, three 
   // A neck ends where half a length begins, and the plural goes with the number as printed.
   assert.deepEqual([0.059, 0.06, 0.179, 0.18, 0.374, 0.375].map(marginShort), ['no', 'hd', 'hd', 'nk', 'nk', '½']);
   assert.deepEqual([1.1, 1.12, 1.13, 0.9, 2].map(lengthsText), ['1 length', '1 length', '1¼ lengths', '1 length', '2 lengths']);
+});
+
+// A hand-made race of `n` horses for one horse's trip note: where it was at the first call, a furlong out
+// and at the wire, how far behind the winner, and anything that happened to it. The others fill the gaps,
+// a length apart.
+function trip({ n = 8, first, str, pos, behind = pos - 1, third = 1, by = 1, ...happened }) {
+  const at = place => { const order = Array.from({ length: n - 1 }, (_, i) => i + 1); order.splice(place - 1, 0, 0); return order.map((h, i) => ({ h, behind: i })); };
+  const results = at(pos).map((x, i) => ({ h: x.h, pos: i + 1, behind: i, toPrev: i ? 1 : 0, wide: 1, checked: 0, blocked: 0, duel: 0, emptied: 0 }));
+  Object.assign(results[pos - 1], { behind, toPrev: behind - (pos > 1 ? results[pos - 2].behind : 0), ...happened });
+  if (results[2] && pos !== 3) results[2].toPrev = third;
+  if (pos === 1) results[1].toPrev = by; // a winner's margin
+  return tripComment({ calls: [at(first), at(Math.round((first + str) / 2)), at(str)], results }, 0, n);
+}
+
+test('a trip note says how the horse finished: a near miss, a place taken late, a place lost', () => {
+  // Second or third within a neck of the winner was "Even trip" or "Stalked, no rally" more often than not.
+  assert.equal(trip({ first: 2, str: 2, pos: 2, behind: 0.2 }), 'Just missed');
+  assert.equal(trip({ first: 5, str: 4, pos: 2, behind: 0.04 }), 'Missed by a nose');
+  assert.equal(trip({ first: 3, str: 3, pos: 3, behind: 0.37 }), 'Just missed');
+  assert.equal(trip({ first: 1, str: 1, pos: 2, behind: 0.3 }), 'Set pace, just missed');
+  assert.equal(trip({ first: 4, str: 3, pos: 2, behind: 0.375 }), 'Up for place', 'half a length is not a near miss');
+  // Trouble keeps its words, and for a placed horse the note already says how it finished: nothing follows
+  // ("Checked, rallied; Even trip" was on a dozen lines a meet).
+  assert.equal(trip({ first: 5, str: 4, pos: 3, behind: 2, checked: 1 }), 'Checked, rallied');
+  assert.equal(trip({ first: 4, str: 4, pos: 3, behind: 2, blocked: 4 }), 'Blocked, finished well');
+  assert.equal(trip({ first: 4, str: 3, pos: 2, behind: 0.1, checked: 1 }), 'Checked, just missed');
+  assert.equal(trip({ first: 4, str: 3, pos: 2, behind: 0.05, blocked: 4, slow: true }), 'Broke slowly');
+  assert.equal(trip({ first: 6, str: 4, pos: 3, behind: 0.2, slow: true }), 'Broke slowly; Just missed');
+  assert.equal(trip({ first: 5, str: 5, pos: 5, checked: 2, bumped: true }), 'Bumped start; Checked in traffic');
+  assert.equal(trip({ first: 6, str: 6, pos: 5, blocked: 4 }), 'Blocked stretch; Improved position');
+  assert.equal(trip({ first: 6, str: 4, pos: 1, by: 0.3, checked: 1 }), 'Checked, rallied; Up in time', "a winner's note still says how it won");
+  // The placed horses that weren't close: a clear second, a place taken in the last furlong, lost there, or held.
+  assert.equal(trip({ first: 3, str: 2, pos: 2, behind: 3, third: 2 }), 'Second best');
+  assert.equal(trip({ first: 4, str: 2, pos: 2, behind: 3, third: 0.5 }), 'Held place');
+  assert.equal(trip({ first: 2, str: 2, pos: 2, behind: 0.5 }), 'Stalked, held place');
+  assert.equal(trip({ first: 5, str: 4, pos: 3, behind: 4 }), 'Up for show');
+  assert.equal(trip({ first: 4, str: 2, pos: 3, behind: 4 }), 'Outfinished');
+  assert.equal(trip({ first: 2, str: 2, pos: 3, behind: 4 }), 'Stalked, weakened');
+  assert.equal(trip({ first: 3, str: 3, pos: 3, behind: 4 }), 'Stalked, no rally');
+  assert.equal(trip({ first: 1, str: 1, pos: 2, behind: 1 }), 'Set pace, caught late');
+  assert.equal(trip({ first: 1, str: 2, pos: 2, behind: 1 }), 'Set pace, held place', 'it had been caught before the last furlong');
+  assert.equal(trip({ first: 7, str: 5, pos: 2, behind: 1 }), 'Closed well');
+  // In mid-field the note is what happened between the first call and the wire. These were all "Even trip",
+  // a third of every line.
+  assert.equal(trip({ n: 10, first: 6, str: 6, pos: 5 }), 'Improved position');
+  assert.equal(trip({ n: 10, first: 4, str: 5, pos: 5 }), 'Weakened');
+  assert.equal(trip({ n: 10, first: 2, str: 4, pos: 6 }), 'Faded');
+  assert.equal(trip({ n: 10, first: 5, str: 5, pos: 5 }), 'Evenly');
+  assert.equal(trip({ n: 10, first: 7, str: 7, pos: 7 }), 'No rally');
+  assert.equal(trip({ n: 10, first: 5, str: 5, pos: 5, wide: 0.3 }), 'Saved ground, evenly');
+  assert.equal(trip({ n: 10, first: 5, str: 5, pos: 5, wide: 0.3, slow: true }), 'Broke slowly; Evenly');
+  assert.equal(trip({ n: 10, first: 7, str: 7, pos: 6, wide: 3 }), '4 wide, mild rally');
+  assert.equal(trip({ n: 10, first: 6, str: 7, pos: 7, wide: 3 }), '4 wide, no rally');
 });
 
 test('times round up into the next minute instead of reading 60 seconds', () => {

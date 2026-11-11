@@ -63,6 +63,9 @@ function playLongMeet(days = 60) {
         ...at, field: race.entries.length, lines: call.lines.map(l => l.text), photo: call.photo, f: race.f,
         winner: horseOf(race.entries[run.results[0].h]).name, reactions: (race.forumAfter || []).map(p => p.text),
         second: run.results[1] ? horseOf(race.entries[run.results[1].h]).name : null, official: call.official,
+        // Each runner's line for this race: its trip note, where it was at the first call, a furlong out and
+        // at the finish, and how far behind the winner.
+        notes: race.entries.map(e => { const p = horseOf(e).pps.at(-1); return { cm: p.cm, first: p.line[0][0], str: p.line[2][0], fin: p.fin, bl: p.bl }; }),
         ...callAgainstRace(race, run, call, names),
         fast: races.length % 4 ? null : [2, 4].map(speed => ({ speed, ...at, ...callAgainstRace(race, run, raceCall(race, run, names, { speed }), names, speed) })),
       });
@@ -539,6 +542,48 @@ const note = (...what) => { if (process.env.NUMBERS) console.log(...what); };
 const told = (races, kind) => races.flatMap(r => (r.wrong[kind] || []).map(x => `race day ${r.day}, race ${r.no}${r.speed ? ` at ${r.speed}x` : ''}: ${x}`));
 const total = (races, kind) => races.reduce((n, r) => n + (r.said[kind] || 0), 0);
 const sum = (races, key) => races.reduce((n, r) => n + r[key], 0);
+
+test("a trip note doesn't contradict itself or the result, and no note is on every other line", () => {
+  // "Even trip" or "Saved ground, even" was on a third of all lines (468 of 1,411 in one meet), 13 times
+  // after "Checked, rallied" or "Blocked, finished well", and 13 of 24 runners-up beaten a neck or less were
+  // written off with it or with "Stalked, no rally".
+  const races = playLongMeet();
+  const notes = races.flatMap(r => r.notes.map(n => ({ ...n, field: r.field, where: `race day ${r.day}, race ${r.no}: "${n.cm}" (finished ${n.fin}, beaten ${n.bl})` })));
+  const told = n => n.where;
+  assert.deepEqual(notes.filter(n => n.cm.length > 34 || !n.cm || /undefined/.test(n.cm)).map(told), [], 'a note longer than 34 characters, or empty');
+  assert.deepEqual(notes.filter(n => /Even trip|even$/.test(n.cm)).map(told), [], '"Even trip" is not a chart phrase: "Evenly"');
+  // A trouble note that says how the horse finished is followed by nothing that says it again, or unsays
+  // it. (After a winner's it's how it won: "Checked, rallied; Up in time".)
+  const finished = /(Checked|Blocked), (rallied|finished well|just missed|missed by a nose)/;
+  assert.deepEqual(notes.filter(n => n.fin > 1 && new RegExp(`${finished.source}; `).test(n.cm)).map(told), []);
+  assert.deepEqual(notes.filter(n => /rallied|finished well/.test(n.cm) && /Evenly|evenly|No rally|no rally|Weakened|Faded/.test(n.cm)).map(told), []);
+  // Second or third within a neck of the winner nearly won, and its note doesn't say otherwise.
+  const near = notes.filter(n => (n.fin === 2 || n.fin === 3) && n.bl < 0.375);
+  const missed = /[Jj]ust missed|[Mm]issed by a nose/;
+  assert.ok(near.length > 60, `only ${near.length} horses were second or third within a neck of the winner`);
+  assert.deepEqual(near.filter(n => /no rally|evenly|weakened|held|second best|caught late|finished well|, rallied/i.test(n.cm)).map(told), []);
+  const said = near.filter(n => missed.test(n.cm)).length;
+  assert.ok(said > near.length * 0.85, `${said} of ${near.length} are said to have just missed`);
+  // (A line keeps the margin to the hundredth, so a nose can read 0.06.)
+  assert.deepEqual(notes.filter(n => /[Mm]issed by a nose/.test(n.cm) && !(n.bl <= 0.06)).map(told), []);
+  assert.deepEqual(notes.filter(n => missed.test(n.cm) && !(n.fin <= 3 && n.bl < 0.375)).map(told), []);
+  // What a note says of the places a horse made up or lost is what its running line shows: from the first
+  // call to the wire, and for a place taken or lost late, from a furlong out.
+  assert.deepEqual(notes.filter(n => /Improved position|improved position|mild rally/.test(n.cm) && !(n.fin < n.first)).map(told), []);
+  assert.deepEqual(notes.filter(n => /Weakened|Faded|weakened|faded/.test(n.cm) && !(n.fin > n.first)).map(told), []);
+  assert.deepEqual(notes.filter(n => /Evenly|evenly/.test(n.cm) && n.fin !== n.first).map(told), []);
+  assert.deepEqual(notes.filter(n => /Up for (place|show)/.test(n.cm) && !(n.str > n.fin)).map(told), []);
+  assert.deepEqual(notes.filter(n => /[Oo]utfinished/.test(n.cm) && !(n.str < n.fin)).map(told), []);
+  assert.deepEqual(notes.filter(n => /Second best/.test(n.cm) && !(n.fin === 2 && n.bl >= 1)).map(told), []);
+  // The words the ratings, the Troubled trip chip and LongshotLou go by are still written, as they were.
+  const parts = new Map();
+  for (const n of notes) for (const p of n.cm.split('; ')) parts.set(p, (parts.get(p) || 0) + 1);
+  for (const p of ['Stumbled start', 'Broke slowly', 'Bumped start', 'Checked in traffic', 'Checked, rallied', 'Blocked stretch', 'Blocked, finished well', 'Checked, just missed', 'Blocked, just missed']) assert.ok(parts.get(p) > 0, `"${p}" is never written`);
+  for (const p of ['Evenly', 'No rally', 'Weakened', 'Improved position', 'Just missed', 'Missed by a nose', 'Second best', 'Saved ground, evenly']) assert.ok(parts.get(p) > 0, `"${p}" is never written`);
+  const [most, n] = [...parts].sort((a, b) => b[1] - a[1])[0];
+  assert.ok(n / notes.length <= 0.15, `"${most}" is on ${n} of ${notes.length} lines`);
+  note(`${notes.length} trip notes in ${parts.size} wordings; the commonest is "${most}", on ${(100 * n / notes.length).toFixed(1)}% of lines; ${said} of ${near.length} second or third within a neck just missed`);
+});
 
 test("the caller doesn't sound sure of a leader who then gets caught or goes to a photo", () => {
   const races = playLongMeet();
