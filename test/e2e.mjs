@@ -284,7 +284,9 @@ const vsLine = await page.evaluate(() => {
       const ml = c.querySelector('.vs').textContent.match(/(\d+-\d+)$/)[1], arrow = c.querySelector('.vs .arrow').textContent;
       return arrow !== (odds[i] < v(ml) ? '▼' : odds[i] > v(ml) ? '▲' : '');
     }).length,
-    fav: cells.map((c, i) => [!!c.querySelector('.fav-tag'), odds[i] === Math.min(...odds)]).filter(([tag, short]) => tag !== short).length,
+    // (Two horses show the same shortest price on about one board in nine. The favourite is then the one with
+    // more money on it, which the printed odds can't tell apart, so the tag is on one of the shortest.)
+    fav: cells.filter((c, i) => c.querySelector('.fav-tag') && odds[i] !== Math.min(...odds)).length,
     tags: document.querySelectorAll('.fav-tag').length,
     key: document.querySelector('.tote-key').textContent,
   };
