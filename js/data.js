@@ -93,7 +93,7 @@ export const STAKES = [
   { name: 'Thumbtack Stakes', surface: 'turf', f: 5.5 },
   { name: 'Matchbook Handicap', surface: 'dirt', f: 9 },
 ];
-export const BIG_STAKES = { name: 'Larkspur Handicap', surface: 'dirt', f: 9 };
+export const BIG_STAKES = { name: 'Larkspur Handicap', surface: 'dirt', f: 9, purse: 300000 };
 
 // ------------------------------------------------------------------ horse names
 

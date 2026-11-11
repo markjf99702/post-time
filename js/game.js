@@ -2,7 +2,7 @@
 // localStorage. A race is settled the moment you send the horses to the gate, so closing the page
 // halfway through a race doesn't change what happened.
 
-import { buildWorld, simulateRace, makeOfficial, forumThread, nextDay as worldNextDay, ownerSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats } from './world.js';
+import { buildWorld, simulateRace, makeOfficial, forumThread, nextDay as worldNextDay, ownerSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats, ensureMeet, isClosingDay } from './world.js';
 import { makeTote, board, ticketReturn, cost as betCost, legs } from './tote.js';
 import { reactions } from './forum.js';
 import { oddsText, lineText } from './handicap.js';
@@ -46,7 +46,7 @@ export function load() {
       }
       game.world = world;
       game.player = { ...freshPlayer(), ...player };
-      for (const fix of [redrawShort, refundStrays, stopEarlyClocks, countRecords, capMorningLines]) {
+      for (const fix of [redrawShort, refundStrays, stopEarlyClocks, countRecords, capMorningLines, meetsEnd]) {
         try { fix(); } catch { /* a save this can't make sense of loads as it is */ }
       }
       return true;
@@ -126,6 +126,12 @@ function capMorningLines() {
   for (const race of game.world.cards[game.world.day].races) {
     for (const e of race.entries) if (e.mlText) e.mlText = lineText(e.ml, e.mlText);
   }
+}
+
+// A meet saved before meets ended becomes meet 1, closing on its next tenth race day (js/world.js).
+// Its bankroll at the start was $200, with no trip to the ATM: it's the first meet.
+function meetsEnd() {
+  ensureMeet(game.world);
 }
 
 function inRace(race, sel) {
@@ -305,8 +311,27 @@ export function atm() {
   save();
 }
 
+// Your meet: what you started it with (the bankroll it opened with; $200 for the first) and the trips to
+// the ATM, what you bet and got back, the races you bet on and cashed, your biggest ticket, your photos,
+// and what you finished with. `player.meetStart` is the bankroll and the ATM count as the meet opened;
+// there's none in the first meet.
+export function yourMeet(m = game.world.meet, p = game.player) {
+  const start = p.meetStart && p.meetStart.no === m.no ? p.meetStart : { bank: START_BANK, atm: 0 };
+  const inMeet = x => x.day >= m.first && x.day <= m.last;
+  const ledger = p.ledger.filter(inMeet);
+  const bet = round2(ledger.reduce((s, x) => s + x.spent, 0)), back = round2(ledger.reduce((s, x) => s + x.back, 0));
+  return {
+    start: start.bank, atm: round2(p.atm - start.atm), bet, back, races: ledger.length, cashed: ledger.filter(x => x.back > 0).length,
+    best: round2(ledger.reduce((s, x) => Math.max(s, x.best), 0)), photos: p.book.filter(inMeet).length, end: p.bank,
+    bestDay: bestDay(ledger),
+  };
+}
+
 export function advanceDay() {
   const c = card();
+  // Closing day: your meet goes on the meet's line, and the next one opens with your bankroll as it is.
+  const closing = isClosingDay(game.world);
+  const you = closing ? yourMeet() : null;
   const spent = c.races.reduce((s, r) => s + (game.player.settled[raceKey(r)]?.spent || 0), 0);
   const back = c.races.reduce((s, r) => s + (game.player.settled[raceKey(r)]?.back || 0), 0);
   if (spent && (!game.player.best || back - spent > game.player.best.net)) game.player.best = { day: c.day, date: c.date, net: round2(back - spent) };
@@ -314,6 +339,11 @@ export function advanceDay() {
   for (const k of Object.keys(game.player.bets)) if (+k.split(':')[0] < c.day) delete game.player.bets[k];
   for (const k of Object.keys(game.player.opened)) if (+k.split(':')[0] < c.day) delete game.player.opened[k];
   worldNextDay(game.world);
+  if (closing) {
+    const line = game.world.meets[game.world.meets.length - 1];
+    if (line) line.you = you;
+    game.player.meetStart = { no: game.world.meet.no, bank: game.player.bank, atm: game.player.atm };
+  }
   totes.clear();
   save();
 }

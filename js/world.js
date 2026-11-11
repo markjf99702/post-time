@@ -14,6 +14,8 @@ import { makeTote, board, settle } from './tote.js';
 export const HISTORY_DAYS = 10;
 export const BARN = 210;
 export const CARD_SIZE = 8;
+// A meet is ten race days, and the Larkspur Handicap is the last race of the last one, closing day.
+export const MEET_DAYS = 10;
 // The fewest maidens the barn is let run down to: enough for two maiden races a week.
 const MAIDENS = 44;
 
@@ -139,7 +141,7 @@ export function createWorld(seed, start) {
 
 // The same, a day at a time, so a page can show progress: yields the fraction done.
 export function* buildWorld(seed, start) {
-  const world = { v: 1, seed, start, day: -HISTORY_DAYS, horses: [], cards: {}, tipsters: {}, stats: emptyStats() };
+  const world = { v: 1, seed, start, day: -HISTORY_DAYS, horses: [], cards: {}, tipsters: {}, stats: emptyStats(), meet: newMeetOn(1, 0), meets: [] };
   const R = rng(`world:${seed}`);
   const ages = [[3, 40], [4, 30], [5, 17], [6, 9], [7, 4]];
   for (let i = 0; i < BARN; i++) world.horses.push(newHorse(world, R, { age: R.weighted(ages), id: i }));
@@ -154,6 +156,9 @@ export function* buildWorld(seed, start) {
     yield (d + HISTORY_DAYS + 1) / (HISTORY_DAYS + 1);
   }
   world.day = 0;
+  // The forum regulars arrive with a record from those ten weeks: the meet's champion is the one who does
+  // best from here.
+  world.meet.tips = structuredClone(world.tipsters);
   world.cards = { 0: buildCard(world, 0) };
   delete world._names;
   return world;
@@ -161,9 +166,140 @@ export function* buildWorld(seed, start) {
 
 export function nextDay(world) {
   endOfDay(world, world.day);
+  // Closing day is over: the meet goes down in the record, and the next one opens next Saturday with the
+  // same horses.
+  if (world.meet && world.day >= world.meet.last) {
+    (world.meets || (world.meets = [])).push(meetRecord(world));
+    world.meet = newMeetOn(world.meet.no + 1, world.day + 1);
+    world.meet.tips = structuredClone(world.tipsters || {});
+  }
   world.day += 1;
   world.cards = { [world.day]: buildCard(world, world.day) };
   delete world._names; // a Set doesn't survive being saved
+}
+
+// ------------------------------------------------------------------ the meet
+
+// world.meet: the meet being run. `no` counts from 1; `first` and `last` are its first race day and closing
+// day, counted the way world.day is. `tips` is the forum's records as it opened (null for a meet saved
+// before meets ended, whose regulars' records go back to before it). `tally` is the meet's own count of
+// each race made official: riders' and trainers' [starts, wins] by index, each horse's [starts, wins,
+// earnings] by id, the longest-priced winner, and the first two home in every stakes.
+// world.meets: a line for each meet that has closed (meetRecord), with yours added by js/game.js.
+function newMeetOn(no, first) {
+  return { no, first, last: first + MEET_DAYS - 1, tips: null, tally: emptyTally() };
+}
+function emptyTally() {
+  return { j: {}, t: {}, h: {}, long: null, stk: [] };
+}
+
+export const raceDayOf = (world, day = world.day) => day - world.meet.first + 1;
+export const meetDays = world => world.meet.last - world.meet.first + 1;
+export const isClosingDay = (world, day = world.day) => !!world.meet && day === world.meet.last;
+export const isHandicap = race => !!race && race.name === BIG_STAKES.name;
+
+// The stakes on a race day. Each weekly stakes in a meet comes round in turn, all ten of them, and closing
+// day has the Handicap. (It used to come every fifth race day, which was always the turn of the Tape
+// Measure Sprint or the Matchbook Handicap, so those two never ran.) The ten weeks before the first meet
+// keep the stakes they had.
+function stakesFor(world, day) {
+  const m = world.meet;
+  if (!m || day < m.first) return STAKES[((day % STAKES.length) + STAKES.length) % STAKES.length];
+  if (day === m.last) return BIG_STAKES;
+  return STAKES[((m.no - 1) * (MEET_DAYS - 1) + day - m.first) % STAKES.length];
+}
+
+// A meet saved before meets ended is meet 1, from its first race day, and it closes on its next tenth race
+// day: race day 10, 20, 30 and so on. (The card on any of those already has the Handicap: it came every
+// fifth race day.) Its count is made once from the lines its horses hold for the meet, which is as much as
+// can be had back: a horse keeps its last ten lines, and a retired one its last. A purse isn't on a line, so
+// a stakes counts as $150,000, the middle of what they're run for.
+export function ensureMeet(world) {
+  const m = world.meet;
+  const ok = m && typeof m === 'object' && [m.no, m.first, m.last].every(Number.isInteger) && m.first <= world.day && world.day <= m.last
+    && m.tally && typeof m.tally === 'object' && m.tally.j && m.tally.t && m.tally.h && Array.isArray(m.tally.stk);
+  if (ok) { if (!Array.isArray(world.meets)) world.meets = []; return false; }
+  const last = world.day + (MEET_DAYS - 1 - (((world.day % MEET_DAYS) + MEET_DAYS) % MEET_DAYS));
+  world.meet = { no: 1, first: 0, last, tips: null, tally: tallyFromLines(world, 0) };
+  if (!Array.isArray(world.meets)) world.meets = [];
+  return true;
+}
+
+function tallyFromLines(world, first) {
+  const tally = emptyTally();
+  const stk = new Map();
+  for (const h of world.horses) {
+    let then = h.trainer; // who trained it for each race, worked back as in statsFromLines
+    for (let i = h.pps.length - 1; i >= 0; i--) {
+      const p = h.pps[i];
+      if (p.claimed) then = p.claimed.from;
+      if (!(p.d >= first)) continue;
+      const purse = p.cls === 'STK' ? (p.nm === BIG_STAKES.name ? BIG_STAKES.purse : 150000) : CLASSES[p.cls]?.purse || 0;
+      countRace(tally, { j: p.j, t: p.tr ?? then, hid: h.id, pos: p.fin, earn: Math.round(share(p.fin, p.fs) * purse), odds: p.odds, day: p.d, no: p.no });
+      if (p.cls === 'STK' && p.fin <= 2) {
+        const k = `${p.d}:${p.no}`;
+        if (!stk.has(k)) stk.set(k, { day: p.d, no: p.no, name: p.nm, top: [] });
+        stk.get(k).top[p.fin - 1] = h.id;
+      }
+    }
+  }
+  tally.stk = [...stk.values()].sort((a, b) => a.day - b.day).map(s => ({ ...s, top: s.top.filter(x => x !== undefined && x !== null) }));
+  return tally;
+}
+
+function countRace(tally, { j, t, hid, pos, earn, odds, day, no }) {
+  const add = (rec, k) => { const r = rec[k] || (rec[k] = [0, 0]); r[0]++; if (pos === 1) r[1]++; return r; };
+  add(tally.j, j);
+  add(tally.t, t);
+  const r = tally.h[hid] || (tally.h[hid] = [0, 0, 0]);
+  r[0]++; if (pos === 1) r[1]++; r[2] += earn;
+  if (pos === 1 && (!tally.long || odds > tally.long.odds)) tally.long = { hid, odds, day, no };
+}
+
+// The horses pointed to the Handicap: the first two home in each of the meet's weekly stakes, the ones
+// still racing, best first as the trainers see them.
+export function pointedTo(world) {
+  const m = world.meet;
+  if (!m) return [];
+  const ids = new Set(m.tally.stk.filter(s => s.name !== BIG_STAKES.name && s.day >= m.first).flatMap(s => s.top));
+  return [...ids].map(id => world.horses[id]).filter(h => h && !h.retired && !h.maiden);
+}
+
+// Which weekly stakes a horse earned its place in the Handicap in, and how: [{ day, name, pos }].
+export function prepsOf(world, hid) {
+  const m = world.meet;
+  if (!m) return [];
+  return m.tally.stk.filter(s => s.name !== BIG_STAKES.name && s.top.includes(hid)).map(s => ({ day: s.day, name: s.name, pos: s.top.indexOf(hid) + 1 }));
+}
+
+// The meet as it stands, for its closing page, and kept as the meet's line when it closes. Names are kept
+// as well as ids: a horse can be gone from the barn by the time a meet long past is looked at.
+export function meetRecord(world) {
+  const m = world.meet, T = m.tally;
+  const best = (rec, n) => Object.entries(rec).map(([k, [starts, w]]) => ({ i: +k, starts, w })).filter(x => x.i >= 0 && x.i < n)
+    .sort((a, b) => b.w - a.w || a.starts - b.starts || a.i - b.i)[0] || null;
+  const rider = best(T.j, JOCKEYS.length), trainer = best(T.t, TRAINERS.length);
+  const horse = Object.entries(T.h).map(([id, [starts, w, earn]]) => ({ hid: +id, starts, w, earn }))
+    .sort((a, b) => b.earn - a.earn || b.w - a.w || a.hid - b.hid)[0] || null;
+  const nameOf = id => world.horses[id]?.name || '';
+  // The forum's champion: the best return on $2 to win on each pick, among the regulars who picked in at
+  // least a third of the meet's races.
+  const races = Object.values(T.j).reduce((n, [, w]) => n + w, 0);
+  const tips = Object.entries(world.tipsters || {}).map(([id, r]) => {
+    const was = (m.tips && m.tips[id]) || { picks: 0, wins: 0, back: 0 };
+    return { id, picks: r.picks - was.picks, wins: r.wins - was.wins, back: Math.round((r.back - was.back) * 100) / 100 };
+  }).filter(x => x.picks > 0 && x.picks >= races / 3).sort((a, b) => b.back / b.picks - a.back / a.picks || b.wins - a.wins)[0] || null;
+  const handicap = T.stk.find(s => s.name === BIG_STAKES.name && s.day === m.last) || null;
+  return {
+    no: m.no, first: m.first, last: m.last, races, since: !m.tips,
+    rider: rider && { i: rider.i, w: rider.w, starts: rider.starts },
+    trainer: trainer && { i: trainer.i, w: trainer.w, starts: trainer.starts },
+    horse: horse && { ...horse, name: nameOf(horse.hid) },
+    champ: tips,
+    long: T.long && { ...T.long, name: nameOf(T.long.hid) },
+    stakes: T.stk.map(s => ({ day: s.day, name: s.name, hid: s.top[0], horse: nameOf(s.top[0]) })),
+    handicap: handicap && { hid: handicap.top[0], horse: nameOf(handicap.top[0]) },
+  };
 }
 
 function endOfDay(world, day) {
@@ -263,7 +399,7 @@ export function buildCard(world, day) {
     ['ALW', R.pick(['t', 'd'])],
     ['STK', null],
   ];
-  const stakes = day % 5 === 4 ? BIG_STAKES : STAKES[((day % STAKES.length) + STAKES.length) % STAKES.length];
+  const stakes = stakesFor(world, day);
   const races = plan.map(([cls, s], i) => {
     const no = i + 1;
     let surface = s === 't' ? 'turf' : 'dirt';
@@ -276,7 +412,7 @@ export function buildCard(world, day) {
     const fm = cls !== 'STK' && R.chance(0.3);
     return {
       no, day, date, cls, surface, f, distance, cond: surface === 'dirt' ? wx.dirt : wx.turf,
-      par: C.par, claim: C.claim || null, purse: cls === 'STK' ? (stakes === BIG_STAKES ? 300000 : R.pick([100000, 125000, 150000, 200000])) : C.purse,
+      par: C.par, claim: C.claim || null, purse: cls === 'STK' ? (stakes === BIG_STAKES ? BIG_STAKES.purse : R.pick([100000, 125000, 150000, 200000])) : C.purse,
       name: cls === 'STK' ? stakes.name : null, fm, post: postTime(no), seed: `${world.seed}:${day}:${no}`,
       entries: [], status: 'upcoming',
     };
@@ -325,11 +461,23 @@ function fillRaces(world, races, R, day, busy = new Set()) {
     .map(h => { est.set(h, trainerEstimate(h, R)); return h; }));
   const used = new Set();
   const order = races.slice().sort((a, b) => b.par - a.par);
+  // On closing day the horses pointed to the Handicap are entered in it first (the best of them, if there
+  // are more than it takes) whether or not they ran last week: it's the race they were aimed at. It takes
+  // a field of nine to eleven.
+  const pointed = races.some(isHandicap) ? pointedTo(world).filter(free) : [];
+  for (const h of pointed) if (!est.has(h)) est.set(h, trainerEstimate(h, R));
   // `open` is how far the race has been opened up: 0 as written, 1 to any horse that's had a week off,
   // 2 to any horse at all.
   const fill = (race, open = 0) => {
+    const target = isHandicap(race) ? R.int(9, 11) : race.cls === 'STK' ? R.int(7, 10) : R.int(7, 11);
+    const first = isHandicap(race) && !open ? pointed.filter(h => !used.has(h)).sort((a, b) => est.get(b) - est.get(a)).slice(0, target) : [];
+    for (const h of first) used.add(h);
+    fillFrom(race, open, target - first.length, 7 - first.length);
+    race.entries = first.map(h => ({ hid: h.id })).concat(race.entries);
+  };
+  // Up to `target` more, and no fewer than `least` if there are that many to be had.
+  const fillFrom = (race, open, target, least) => {
     const C = CLASSES[race.cls];
-    const target = race.cls === 'STK' ? R.int(7, 10) : R.int(7, 11);
     const from = open >= 2 ? pool.concat(tiredPool()) : pool;
     const cands = from.filter(h => !used.has(h) && (open >= 1 || (C.maiden ? h.maiden : !h.maiden)) && (!race.fm || h.sex === 'f' || h.sex === 'm'))
       .map(h => {
@@ -340,8 +488,8 @@ function fillRaces(world, races, R, day, busy = new Set()) {
         return { h, score };
       })
       .sort((a, b) => b.score - a.score);
-    let picked = cands.filter(c => c.score > -12).slice(0, target);
-    if (picked.length < 7) picked = cands.slice(0, Math.max(7, picked.length));
+    let picked = cands.filter(c => c.score > -12).slice(0, Math.max(0, target));
+    if (picked.length < least) picked = cands.slice(0, Math.max(least, picked.length));
     for (const c of picked) used.add(c.h);
     race.entries = picked.map(c => ({ hid: c.h.id }));
   };
@@ -463,6 +611,8 @@ export function makeOfficial(world, race, run, { tote = makeTote(race, world), b
 }
 
 const SPLIT = [0.6, 0.2, 0.11, 0.05, 0.02];
+// The share of the purse a finishing place earns, in a field of `fs`.
+const share = (pos, fs) => SPLIT[pos - 1] || (pos <= fs ? 0.02 / Math.max(1, fs - 5) : 0);
 
 export function applyResult(world, race, run, odds) {
   const R = rng(`apply:${race.seed}`);
@@ -471,6 +621,7 @@ export function applyResult(world, race, run, odds) {
   const names = run.results.slice(0, 3).map((r, k) => [world.horses[race.entries[r.h].hid].name, k < 2 ? +(run.results[k + 1]?.toPrev || 0).toFixed(2) : 0]);
   const fr = run.fractions.map(f => +f.t.toFixed(2));
   const stats = ensureStats(world);
+  const meet = world.meet && race.day >= world.meet.first && race.day <= world.meet.last ? world.meet : null;
   race.entries.forEach((e, k) => {
     const h = world.horses[e.hid];
     const r = run.results.find(x => x.h === k);
@@ -502,12 +653,16 @@ export function applyResult(world, race, run, odds) {
     for (const rec of [pair(stats.j, e.j), pair(stats.t, pp.tr)]) { rec[0]++; if (r.pos === 1) rec[1]++; }
     h.life.starts++;
     if (r.pos === 1) { h.life.w++; h.maiden = false; } else if (r.pos === 2) h.life.p++; else if (r.pos === 3) h.life.s++;
-    h.life.earn += Math.round((SPLIT[r.pos - 1] || (r.pos <= fs ? 0.02 / Math.max(1, fs - 5) : 0)) * race.purse);
+    const earn = Math.round(share(r.pos, fs) * race.purse);
+    h.life.earn += earn;
+    // And on the meet's own count.
+    if (meet) countRace(meet.tally, { j: e.j, t: pp.tr, hid: h.id, pos: r.pos, earn, odds: pp.odds, day: race.day, no: race.no });
     // A big effort takes something out of a horse; an easy trip leaves it sharp.
     if (prevBest !== null && fig > prevBest + 3) h.form -= (fig - prevBest - 3) * 0.35;
     h.form -= 0.4;
     h.last = race.day;
   });
+  if (meet && race.cls === 'STK') meet.tally.stk.push({ day: race.day, no: race.no, name: race.name, top: run.results.slice(0, 2).map(x => race.entries[x.h].hid) });
   race.status = 'official';
   race.result = {
     order: run.results.map(r => ({ k: r.h, pos: r.pos, behind: +r.behind.toFixed(2), toPrev: +r.toPrev.toFixed(2), time: +r.time.toFixed(2) })),
