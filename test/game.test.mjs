@@ -140,7 +140,7 @@ function shapeOf(text, names) {
 // The wordings that put a horse in front, as they read once the names are taken out.
 const LEADS = [/N leads\b/, /[Ii]t's N( by|[.!]| in front)/, /N shows the way/, /N is in front/, /N sets the pace/, /N has the lead/,
   /N (breaks on top|is quickest away|goes right to the front|shoots to the lead|is first to show|takes them along)/,
-  /N (recovers|has recovered)( quickly)? (to lead|and leads)/, /N takes over/, /takes the lead!/, /N strikes the front/, /N goes to the lead/, /N is the new leader/, /Now it's N/,
+  /N (recovers|has recovered)( quickly)? (to lead|and leads)/, /N from N!/, /N leads N!/, /^N, then N!$/, /N takes over/, /takes the lead!/, /N strikes the front/, /N goes to the lead/, /N is the new leader/, /Now it's N/,
   /N is back in front/, /N fights back to lead/, /N comes again/, /N takes it back/, /N by G/, /N continues to lead/, /Still N/,
   /N on the lead/, /N still shows the way/, /N keeps the lead/, /N (is )?still in front/, /Up front it's N/, /N has G on N/,
   /N out in front/, /N in front/, /N opens up/, /N is (G )?clear/, /N widens/, /N kicks away/, /N goes on/, /N holds (N off|on!)/,
@@ -281,6 +281,36 @@ function callAgainstRace(race, run, call, names, speed = 1) {
       if (l.from === undefined ? back >= 3 : (l.from !== k2 + 1 || !x.includes(`from ${NTH[k2 + 1]}`) && !x.startsWith(`From ${NTH[k2 + 1]}`))) bad('flying', l, `${NTH[k2 + 1]}, ${back.toFixed(1)} lengths back`);
       if (st.some(z => z.v > st[l.who].v) || troubles.some(e => e.h === l.who && e.t > run.t0 + l.t && e.t < run.t0 + l.t + 2)) bad('flying', l, 'not the fastest, or about to be stopped');
     }
+    // ...and it's a horse with a say in the finish: within three lengths of the leader or in the first four,
+    // nearer the leader than two seconds ago, and not one that was itself in front in the last twenty.
+    if (l.drive === 'fly') {
+      const k2 = o.findIndex(z => z.i === l.who), back = gap(o[0].i, l.who);
+      const ago = order(l.t - 2), was = (ago[0].p - ago.find(z => z.i === l.who).p) / LENGTH;
+      let led = false;
+      for (let b = 0; b <= 20 && !led; b += 0.25) led = l.t - b > 0 && order(l.t - b)[0].i === l.who;
+      if (!(back < 3 || k2 < 4)) bad('running on', l, `${NTH[k2 + 1]}, ${back.toFixed(1)} lengths back`);
+      if (back > was) bad('running on', l, `${was.toFixed(1)} lengths back two seconds before, ${back.toFixed(1)} now`);
+      if (led) bad('running on', l, 'led in the last twenty seconds');
+    }
+    // A horse coming for second is going faster than the second horse: the third horse, within two lengths
+    // of it, or one from further back that gets to it by the wire at the speeds the two are going.
+    if (/for second!$/.test(x) !== (l.forSecond !== undefined || l.minor !== undefined)) bad('for second', l, 'not marked');
+    // Two at it for second, behind a leader a length clear or more: the second and third, within
+    // half a length of each other, and inside a quarter of a length when they're "together" or "side by side".
+    if (l.minor) { count('two for second'); if (!l.minor.every(i => (i === o[1].i || i === o[2].i) && x.includes(names[i])) || gap(o[1].i, o[2].i) >= (/together|side by side/.test(x) ? 0.25 : 0.5) || gap(o[0].i, o[1].i) < 1) bad('for second', l, `${names[o[1].i]} leads ${names[o[2].i]} by ${gap(o[1].i, o[2].i).toFixed(2)}, ${gap(o[0].i, o[1].i).toFixed(1)} behind the leader`); }
+    if (l.forSecond !== undefined) {
+      count('for second');
+      const second = st[o[1].i], me = st[l.forSecond], k2 = o.findIndex(z => z.i === l.forSecond);
+      const gets = (me.v - second.v) * (D - second.p) / Math.max(1, second.v) >= second.p - me.p - 1e-6;
+      if (k2 < 2 || !(me.v > second.v) || !((k2 === 2 && gap(o[1].i, l.forSecond) < 2) || gets) || !x.includes(names[l.forSecond])) bad('for second', l, `${names[l.forSecond]} is ${NTH[k2 + 1]}, ${gap(o[1].i, l.forSecond).toFixed(1)} lengths behind the second horse`);
+    }
+    // A horse that "moves up to second" is second, and was third or worse three seconds before.
+    if (/moves up to second!|is second now!|^Now .+ is second!|is into second!/.test(x) !== (l.moved !== undefined)) bad('for second', l, 'a move to second, not marked');
+    if (l.moved !== undefined) {
+      count('up to second');
+      const was = order(l.t - 3).findIndex(z => z.i === l.second);
+      if (o[1].i !== l.second || was < 2 || !x.includes(names[l.second])) bad('for second', l, `${NTH[was + 1]} three seconds before`);
+    }
     if (l.slot === 'trouble') { count('trouble'); if (!troubles.some(e => e.h === l.who && e.t <= run.t0 + l.t && run.t0 + l.t - e.t < 1.2) || !x.includes(names[l.who])) bad('trouble', l, 'nobody was stopped'); }
     // Closing: gaining on the leader, from within three lengths; closing fast, a quarter of a length a second.
     if (l.closing) {
@@ -388,7 +418,16 @@ function callAgainstRace(race, run, call, names, speed = 1) {
   const called = lasting.filter(e => call.lines.some(l => l.lead === e.to && l.t >= e.t - 0.3 && wall(l.t) + l.d <= wall(e.t) + 3 + 1e-6));
   const namedBy = names.filter(n => call.lines.some(l => l.t < fin && l.text.includes(n))).length;
   const slots = new Set(call.lines.map(l => l.slot));
+  // The end of it: whether the last line before the wire names one of the first two home, and whether
+  // the runner-up is named at all from the furlong pole on.
+  const says = (l, i) => new RegExp(`(^|[^A-Za-z'])${names[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z'])`).test(l.text);
+  const lastLine = call.lines.filter(l => l.t < fin && !l.wire).pop();
+  const end = {
+    margin: s ? s.toPrev : 99, last: lastLine ? lastLine.text : '', lastTwo: !!lastLine && !!s && (says(lastLine, w.h) || says(lastLine, s.h)),
+    second: !s || call.lines.some(l => l.t >= tE - 0.5 && l.t < fin && says(l, s.h)),
+  };
   return {
+    end,
     wrong, said, pace, shapes, slots: [...slots], threeQuarters, quiet, secs: wire - off, longest, named: namedBy, changes: lasting.length, called: called.length,
     words: call.lines.filter(l => l.t >= 0 && l.t < fin).reduce((n, l) => n + l.say.split(/\s+/).length, 0), count: call.lines.length,
     turn: call.lines.some(l => l.slot === 'turn'), firstShape: firstRun ? shapeOf(firstRun.text, names) : '',
@@ -974,6 +1013,24 @@ test("what's said of a horse in the running is what it's doing: moving, flying, 
   note(`said: ${['leader', 'pair', 'change', 'mover', 'flying', 'gaining', 'closing', 'sure', 'home free', 'near', 'three across', 'last', 'spread', 'where', 'trouble', 'clean break', 'gets up', 'going away', 'holds on'].map(k => `${k} ${total(races, k)}`).join(', ')}`);
 });
 
+test('the stretch is called about the horses that are deciding it', () => {
+  // The last line before a photo between two horses was "Ask Me Later is finishing well from fourth!", and
+  // "Lonesome Diva makes up ground from sixth!" was the pace-setter, headed and going backwards. Over the
+  // last two and a half seconds the caller keeps to the first two (or one right with them); a horse is
+  // only running on if it's near enough to matter, gaining, and wasn't itself the leader a moment ago;
+  // and a horse coming for second gets called.
+  const races = playLongMeet();
+  assert.deepEqual(told(races, 'running on'), []);
+  assert.deepEqual(told(races, 'for second'), []);
+  assert.ok(total(races, 'for second') > races.length / 20, `a horse comes for second in only ${total(races, 'for second')} races`);
+  assert.ok(total(races, 'up to second') > races.length / 20 && total(races, 'two for second') > races.length / 20, `a horse moves up to second ${total(races, 'up to second')} times, and two are at it for second ${total(races, 'two for second')} times`);
+  const tight = races.filter(r => r.end.margin < 1), named = tight.filter(r => r.end.lastTwo);
+  assert.ok(tight.length > 150 && named.length >= tight.length * 0.95, `in ${tight.length} races won by under a length the last line before the wire names one of the first two home in ${named.length}: ${tight.filter(r => !r.end.lastTwo).slice(0, 5).map(r => r.end.last).join(' / ')}`);
+  const second = races.filter(r => r.end.second);
+  assert.ok(second.length >= races.length * 0.95, `the runner-up is named in the last furlong in ${second.length} of ${races.length} races`);
+  note(`the last line before the wire names one of the first two home in ${named.length} of ${tight.length} races won by under a length (${races.filter(r => r.end.lastTwo).length} of ${races.length} in all); the runner-up is named in the last furlong in ${second.length} of ${races.length}; a horse comes for second ${total(races, 'for second')} times, one moves up to second ${total(races, 'up to second')} times, and two are at it for second ${total(races, 'two for second')} times`);
+});
+
 test('the caller puts a horse on the outside, on the inside or four wide only where it is running', () => {
   // "Is flying on the outside!" was one of three endings picked at random, and was said of horses on the
   // rail; "four wide" was the chart's third path.
@@ -1058,7 +1115,7 @@ test('watched at 2x the call is its shorter lines, and at 4x only the headlines,
   // at 2x each line is in its shortest wording, and at 4x there's the off, the leader on each part of the
   // track, lead changes, the turn for home, a furlong out and the winner.
   const fast = playLongMeet().flatMap(r => r.fast || []);
-  for (const kind of ['leader', 'pair', 'crowded', 'long', 'twice', 'change', 'passed', 'recovered', 'sure', 'closing', 'place', 'mover', 'flying', 'near', 'places', 'where', 'trouble', 'break', 'poles', 'fraction', 'stretch', 'finish', 'words']) assert.deepEqual(told(fast, kind), [], kind);
+  for (const kind of ['leader', 'pair', 'crowded', 'long', 'twice', 'change', 'passed', 'recovered', 'sure', 'closing', 'place', 'mover', 'flying', 'running on', 'for second', 'near', 'places', 'where', 'trouble', 'break', 'poles', 'fraction', 'stretch', 'finish', 'words']) assert.deepEqual(told(fast, kind), [], kind);
   const [twice, four] = [2, 4].map(speed => fast.filter(r => r.speed === speed));
   assert.equal(twice.length, 120);
   for (const r of fast) {

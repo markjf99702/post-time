@@ -163,14 +163,14 @@ export function raceClock(run, speed = 1) {
 // itself out, and who went to the front is what the first call says. When two horses are trading the lead
 // stride for stride, only a change that lasts a second and a half is listed: the voice can't be kept free
 // for every one of them. `all` is every change from four seconds in, with none left out, and the horse in
-// front at four seconds first: it says how long the horse in front has been there. Worked out once for a
-// recording.
+// front at four seconds first: it says how long the horse in front has been there. `front` is the horse
+// with its head in front at each tenth of a second. Worked out once for a recording.
 const SCANS = new WeakMap();
 function scan(run) {
   let s = SCANS.get(run);
   if (s) return s;
   const fin = run.finalTime, D = run.distance, top = run.path[run.path.length - 1].start;
-  s = { leads: [], all: [], tS: fin, tE: fin, tX: fin };
+  s = { leads: [], all: [], front: [], tS: fin, tE: fin, tX: fin };
   const st = [];
   let cur = null;
   for (let t = 0; t < fin; t += 0.1) {
@@ -180,6 +180,7 @@ function scan(run) {
       if (st[i].p > st[a].p) { b = a; a = i; } else if (b < 0 || st[i].p > st[b].p) b = i;
     }
     const lead = st[a].p;
+    s.front.push(a);
     if (s.tS === fin && lead >= top) s.tS = t;
     if (s.tE === fin && D - lead <= FURLONG) s.tE = t;
     if (s.tX === fin && D - lead <= FURLONG / 2) s.tX = t;
@@ -307,6 +308,20 @@ const CLOSING = [
 ];
 const FLYING = [[0, 'is flying late'], [1, 'is finishing fastest of all'], [2, 'is charging'], [3, 'comes with a late run'], [4, 'is coming with a rush']];
 const RUNON = [[0, (x, k) => `${x} is running on from ${k}!`], [1, (x, k) => `${x} is finishing well from ${k}!`], [2, (x, k) => `From ${k}, ${x} is running on!`], [3, (x, k) => `${x} makes up ground from ${k}!`]];
+// A horse that was third or worse three seconds ago and is second now.
+const UP_SECOND = [[0, x => `${x} moves up to second!`], [1, x => `${x} is second now!`], [2, x => `Now ${x} is second!`], [3, x => `${x} is into second!`]];
+// The third horse gaining on the second.
+const FOR_SECOND = [[0, x => `${x} is coming for second!`], [1, x => `Here comes ${x} for second!`], [2, x => `${x} is closing for second!`], [3, (x, b) => `${x} goes after ${b} for second!`]];
+// With the leader gone: the two behind, by name. [id, with the margin between them, without]. And two of
+// them at it for second, behind a leader a length clear or more: within half a length of each other, and
+// inside a quarter of a length for the wordings that have them level.
+const MINOR = [
+  [0, (b, g, c) => `${b} is second, ${g} ahead of ${c}.`, (b, c) => `${b} second, ${c} third.`],
+  [1, (b, g, c) => `${b} has second, ${g} clear of ${c}.`, (b, c) => `${b} has second from ${c}.`],
+  [2, (b, g, c) => `${b} runs second, ${g} in front of ${c}.`, (b, c) => `${b} runs second, ${c} third.`],
+  [3, (b, g, c) => `Second is ${b}, ${g} ahead of ${c}.`, (b, c) => `Second is ${b}, third ${c}.`],
+];
+const MINOR2 = [[0, (b, c) => `${b} and ${c} are together for second!`, 'level'], [1, (b, c) => `${b} and ${c} battle for second!`], [2, (b, c) => `It's ${b} and ${c} for second!`], [3, (b, c) => `${b} and ${c}, side by side for second!`, 'level']];
 const CLEAR = [
   [0, (a, g) => `${a} opens up by ${g}!`, a => `${a} opens up!`], [1, (a, g) => `${a} is ${g} clear!`, a => `${a} is clear!`],
   [2, (a, g) => `${a} widens, ${g} in front!`, a => `${a} widens!`], [3, (a, g) => `${a} kicks away, ${g} clear!`, a => `${a} kicks away!`],
@@ -325,6 +340,8 @@ const STILL = [
   [2, (a, g, b) => `${a} leads ${b} by ${g}!`, a => `${a} leads!`], [3, (a, g) => `${a} still in front by ${g}!`, a => `${a} still in front!`, 'still'],
   [4, (a, g, b) => `It's ${a} by ${g} over ${b}!`, a => `It's ${a}!`], [5, (a, g, b) => `${a} holds ${b} off, ${g} between them!`, a => `${a} holds on!`, 'holds'],
 ];
+// The last strides: the leader and the second horse in a few words.
+const LAST_TWO = [[0, (a, b) => `${a} from ${b}!`], [1, (a, b) => `${a} leads ${b}!`], [2, (a, b) => `It's ${a} from ${b}!`], [3, (a, b) => `${a}, then ${b}!`]];
 // The second horse, when it isn't gaining.
 const CHASE = [
   [0, (b, g) => `${b} is second, ${g} back.`, b => `${b} is second.`],
@@ -389,11 +406,16 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     leader: null, leaderAt: -99, led: new Set(),             // the horse last named in front, and when
     pass: new Set(), passAt: -99, passWhere: null, first: false, lastNamed: null, // the run through the field
     saidWhere: null, frac: {}, broke: false, bad: null, turn: false, eighth: false, sixteenth: false, // `bad`: the horse called for a bad start
-    drive: '', driveAt: new Map(), thirdAt: -99, flown: new Set(), troubled: new Set(), movers: new Set(), moverAt: -99, fill: '',
+    drive: '', driveAt: new Map(), thirdAt: -99, flown: new Set(), upped: new Set(), came: new Set(), troubled: new Set(), movers: new Set(), moverAt: -99, fill: '',
     texts: new Set(), used: new Map(), last: new Map(), off: false,
+    nameAt: new Map(), // when each horse was last named, in any line
   };
+  // The horses a line names. (A name can be part of another: the longer is looked for first, and taken out.)
+  const byLength = names.map((x, i) => [x, i]).sort((x, y) => y[0].length - x[0].length);
+  const namedIn = text => byLength.filter(([x]) => { const at = text.includes(x); if (at) text = text.split(x).join('\u0000'); return at; }).map(([, i]) => i);
   function note(l) {
     S.texts.add(l.text);
+    for (const i of namedIn(l.text)) S.nameAt.set(i, l.t);
     for (const [slot, id, count] of l.picks || []) {
       let seen = S.used.get(slot);
       if (!seen) S.used.set(slot, seen = new Set());
@@ -415,7 +437,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     if (l.slot === 'turn') S.turn = true;
     if (l.slot === 'eighth') S.eighth = true;
     if (l.slot === 'sixteenth') S.sixteenth = true;
-    if (l.slot === 'drive') { S.drive = l.drive; S.driveAt.set(l.drive, l.t); if (l.drive === 'third') S.thirdAt = l.t; if (l.drive === 'fly') S.flown.add(l.who); }
+    if (l.slot === 'drive') { S.drive = l.drive; S.driveAt.set(l.drive, l.t); if (l.drive === 'third') S.thirdAt = l.t; if (l.drive === 'fly') S.flown.add(l.who); if (l.moved) S.upped.add(l.second); if (l.forSecond !== undefined) S.came.add(l.forSecond); }
     if (l.slot === 'trouble') S.troubled.add(l.who);
     if (l.slot === 'mover') { S.movers.add(l.who); S.moverAt = l.t; }
     if (l.slot === 'fill') { S.fill = l.fill; if (l.fill === 'third') S.thirdAt = l.t; }
@@ -450,6 +472,10 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     return null;
   }
   const gapOf = (a, b) => (a.p - b.p) / LENGTH;
+  // A horse not named for six real seconds; and one that's due a mention in the stretch: that, or not
+  // named since the furlong pole.
+  const unsaid = (x, t) => wall(t) - wall(S.nameAt.get(x.i) ?? -99) > 6;
+  const due = (x, t) => unsaid(x, t) || (t >= ev.tE && (S.nameAt.get(x.i) ?? -99) < ev.tE - 0.5);
   const coin = (a, b) => (R.chance(0.5) ? [a, b] : [b, a]); // two horses, in no order that says which leads
 
   // ------------------------------------------------------------ what there is to say
@@ -675,17 +701,20 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     return [out, [form(head)]];
   }
 
+  // The sixteenth pole, with the leader. Its line is over in time for one more before the wire (the words
+  // alone are the last resort).
   function sixteenthForms(o) {
     const [a, b] = o;
     const g = b ? gapOf(a, b) : Infinity;
     const head = pick('sixteenth', SIXTEENTH)[1];
+    const room = { endBy: wall(fin) - 2.4 };
     if (b && g < PAIR) {
       const [x, y] = coin(a, b);
-      return [[form(`${head}, ${nm(x.i)} and ${nm(y.i)} together!`, { pair: [a.i, b.i] }), form(`${head}, ${nm(x.i)} and ${nm(y.i)}!`, { pair: [a.i, b.i] })], [form(`${head}!`)]];
+      return [[form(`${head}, ${nm(x.i)} and ${nm(y.i)} together!`, { pair: [a.i, b.i], ...room }), form(`${head}, ${nm(x.i)} and ${nm(y.i)}!`, { pair: [a.i, b.i], ...room })], [form(`${head}!`)]];
     }
     const out = [];
-    if (b) out.push(form(`${head}, ${nm(a.i)} by ${gapWords(g)}!`, { lead: a.i }));
-    out.push(form(`${head}, ${nm(a.i)} leads!`, { lead: a.i }));
+    if (b) out.push(form(`${head}, ${nm(a.i)} by ${gapWords(g)}!`, { lead: a.i, ...room }));
+    out.push(form(`${head}, ${nm(a.i)} leads!`, { lead: a.i, ...room }));
     return [out, [form(`${head}!`)]];
   }
 
@@ -709,69 +738,139 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     return sure && !fast ? {} : null;
   }
 
-  // The stretch: a line of two to eight words about the first two or three, chosen by what the race shows
+  // A leader three lengths clear whom nobody gets within a length and a half of by the wire, at the speeds
+  // they're all going now.
+  function goneClear(o) {
+    const [a, b] = o;
+    const secs = (D - a.p) / Math.max(1, a.v);
+    return !!b && gapOf(a, b) >= 3 && o.slice(1).every(x => a.p - x.p - (x.v - a.v) * secs >= 1.5 * LENGTH);
+  }
+  // Whether a horse has had its head in front at any time in the last `secs` seconds.
+  const ledLately = (i, t, secs) => { for (let k = Math.max(0, Math.round((t - secs) * 10)); k <= Math.round(t * 10) && k < ev.front.length; k++) if (ev.front[k] === i) return true; return false; };
+
+  // The stretch: a line of two to eight words about the horses deciding it, chosen by what the race shows
   // and never the same kind twice running. First what's happening (a horse stopped, one flying from
   // behind, two head and head, the second closing, the leader drawing off), then who's where (the
   // leader, the second horse, the third), whichever of those was said longest ago. All of them are
   // offered, in case the first has no wording short enough for the time there is.
+  //
+  // The last line before a photo used to be about the horse running on in fourth. So a line about a horse
+  // behind the first two is over two and a half real seconds before the wire (`endBy`; slow motion counts),
+  // unless that horse is within a length of the second and getting to it: the last strides are the first two's.
   function driveForms(o, t) {
     const [a, b, c] = o;
     if (!b) return [form(`${nm(a.i)} in front!`, { drive: 'still', lead: a.i })];
     const g = gapOf(a, b), ago = ord(t - 1);
     const gAgo = gapOf(ago.find(x => x.i === a.i), ago.find(x => x.i === b.i));
-    const trouble = troubleForms(o, t, 4);
-    if (trouble) return trouble.map(f => ({ ...f, slot: 'trouble' }));
+    const others = { endBy: wall(fin) - 2.5 };
+    // ...and getting to the second horse by the wire, at the speeds the two are going.
+    const catching = x => gapOf(b, x) < 1 && (x.v - b.v) * (D - b.p) / Math.max(1, b.v) >= b.p - x.p;
+    // A horse stopped comes first. (Offered with the rest, not in place of them: one behind the first two
+    // can be too late to mention.)
+    const trouble = (troubleForms(o, t, 4) || []).map(f => ({ ...f, slot: 'trouble', ...(f.who === a.i || f.who === b.i ? null : others) }));
     const news = [], places = [];
-    // One behind the first two that's finishing fastest of them all, and not about to be stopped. Within
-    // three lengths it's flying; further back than that it's given its place ("running on from sixth").
-    const top = Math.max(...o.map(x => x.v));
-    const flyer = o.slice(2, 6).find(x => x.v >= top && x.v > a.v + 0.5 && gapOf(a, x) < 6 && !S.flown.has(x.i)
+    // One behind the first two that's finishing fastest of them all, and not about to be stopped: a horse
+    // with a say in the finish. It's within three lengths of the leader or in the first four, it's nearer
+    // the leader than it was two seconds ago, and it wasn't in front itself in the last twenty (a leader
+    // who was headed and is coming again isn't "running on from fourth"). Within three lengths it's
+    // flying; further back than that it's given its place.
+    const top = Math.max(...o.map(x => x.v)), ago2 = ord(t - 2);
+    const backThen = x => (ago2[0].p - ago2.find(z => z.i === x.i).p) / LENGTH;
+    const flyer = o.slice(2, 6).find((x, k) => x.v >= top && x.v > a.v + 0.5 && gapOf(a, x) < 6 && (gapOf(a, x) < 3 || k < 2) && !S.flown.has(x.i)
+      && backThen(x) - gapOf(a, x) >= 0.1 && !ledLately(x.i, t, 20)
       && !run.events.some(e => e.type === 'checked' && e.h === x.i && e.t > t0 + t - 1.2 && e.t < t0 + t + 2));
+    const flyLate = flyer && catching(flyer) ? null : others;
     if (flyer && gapOf(a, flyer) < 3) {
       const off = flyer.o - RAIL;
       const where = off >= OUTSIDE ? ' on the outside' : off < INSIDE ? ' up the rail' : '';
       const w = pick('flying', FLYING)[1];
       const sides = where ? { sides: [{ i: flyer.i, side: off >= OUTSIDE ? 'outside' : 'inside' }] } : null;
       // Where it's running is part of the line when it's on the rail or out wide, in every wording of it.
-      news.push(['fly', where ? [form(`${nm(flyer.i)} ${w}${where}!`, { who: flyer.i, ...sides })] : [form(`${nm(flyer.i)} ${w}!`, { who: flyer.i })]]);
-    } else if (flyer) news.push(['fly', [form(pick('runon', RUNON)[1](nm(flyer.i), nth(o.indexOf(flyer) + 1)), { who: flyer.i, from: o.indexOf(flyer) + 1 })]]);
+      news.push(['fly', where ? [form(`${nm(flyer.i)} ${w}${where}!`, { who: flyer.i, ...sides, ...flyLate })] : [form(`${nm(flyer.i)} ${w}!`, { who: flyer.i, ...flyLate })]]);
+    } else if (flyer) news.push(['fly', [form(pick('runon', RUNON)[1](nm(flyer.i), nth(o.indexOf(flyer) + 1)), { who: flyer.i, from: o.indexOf(flyer) + 1, ...flyLate })]]);
     const sure = sureOf(o, t);
     const closing = g >= PAIR && g < 3 && b.v > a.v + 0.2 && gAgo - g > 0.08;
+    const front = []; // the leader drawing off or home free: said after any news of the horses behind, which won't keep
     if (g < PAIR) {
-      const [x, y] = coin(a, b);
-      news.push(['heads', [form(pick('heads', HEADS)[1](nm(x.i), nm(y.i)), { pair: [a.i, b.i] })]]);
+      // If the wording drawn is too long for the time left, a shorter one of the others will do: two horses
+      // head and head to the wire aren't left without a word.
+      const [x, y] = coin(a, b), v = pick('heads', HEADS);
+      const shorter = brief ? [] : [...HEADS.filter(u => u !== v).map(u => u[1](nm(x.i), nm(y.i))).sort((p, q) => q.length - p.length).slice(-2), `${nm(x.i)}! ${nm(y.i)}!`];
+      news.push(['heads', [v[1](nm(x.i), nm(y.i)), ...shorter].map(text => form(text, { pair: [a.i, b.i] }))]);
     } else if (closing) {
       const w = pick('closing', CLOSING.filter(x => !x[3] || gAgo - g > 0.25)); // "closing fast" is a quarter of a length a second
       news.push(['close', [form(w[1](nm(b.i), nm(a.i)), { who: b.i, lead: a.i, closing: true }), form(w[2](nm(b.i)), { who: b.i, closing: true })]]);
     } else if (sure && sure.free) {
       const w = pick('homefree', HOME_FREE);
-      news.push(['sure', [form(w[1](nm(a.i), nm(sure.free.i)), { lead: a.i, sure: a.i }), form(w[2](nm(a.i)), { lead: a.i, sure: a.i })]]);
-    } else if (sure) news.push(['sure', [form(pick('sure', SURE)[1](nm(a.i)), { lead: a.i, sure: a.i })]]);
+      front.push(['sure', [form(w[1](nm(a.i), nm(sure.free.i)), { lead: a.i, sure: a.i }), form(w[2](nm(a.i)), { lead: a.i, sure: a.i })]]);
+    } else if (sure) front.push(['sure', [form(pick('sure', SURE)[1](nm(a.i)), { lead: a.i, sure: a.i })]]);
     else if (g >= 1.5 && g - gAgo > 0.1) {
       const w = pick('clear', CLEAR);
-      news.push(['clear', [form(w[1](nm(a.i), gapWords(g)), { lead: a.i }), form(w[2](nm(a.i)), { lead: a.i })]]);
+      front.push(['clear', [form(w[1](nm(a.i), gapWords(g)), { lead: a.i }), form(w[2](nm(a.i)), { lead: a.i })]]);
+    }
+    // With the leader gone clear the race is for second: the two behind are called by name, ahead of
+    // another word on the leader, and the plain lines about the second horse and the third give way.
+    const gone = !!c && goneClear(o), g2 = c ? gapOf(b, c) : Infinity;
+    // A horse coming for second: the third horse, if it's within two lengths of the second and gaining on
+    // it, or (inside the last furlong, where it can be trusted) one from further back that gets to the
+    // second horse by the wire at the speeds they're going. Not one just called for flying. If there's more
+    // than one, a horse not called for it yet, and of those the one that gets there first.
+    const cAgo = c ? gapOf(ago.find(x => x.i === b.i), ago.find(x => x.i === c.i)) : 0;
+    const reach = x => (x.v - b.v) * (D - b.p) / Math.max(1, b.v) - (b.p - x.p); // how far past the second horse, in metres
+    const comer = g < PAIR ? null : o.slice(2, 8).filter(x => !S.flown.has(x.i) && ((x === c && g2 < 2 && c.v > b.v + 0.2 && cAgo - g2 > 0.08) || (t >= ev.tE - 0.5 && x.v > b.v + 0.3 && reach(x) >= 0)))
+      .sort((x, y) => S.came.has(x.i) - S.came.has(y.i) || reach(y) - reach(x))[0];
+    const forSecond = !!comer && comer === c;
+    if (comer) {
+      const v = pick('forsecond', FOR_SECOND);
+      news.push(['forsecond', [form(v[1](nm(comer.i), nm(b.i)), { forSecond: comer.i, ...(forSecond ? { third: c.i } : null), ...(catching(comer) ? null : others) })]]);
     }
     if (g >= PAIR) {
-      const w = pick('still', STILL.filter(x => x[3] !== 'holds' || (g < 2 && g <= gAgo + 0.05))); // "holds off" is of a chaser who isn't being left behind
-      places.push(['still', [form(w[1](nm(a.i), gapWords(g), nm(b.i)), { lead: a.i }), form(w[2](nm(a.i)), { lead: a.i })]]);
-      if (!closing) {
-        const v = pick('chase', CHASE);
+      // Either of the two not named lately makes it news.
+      const minor = c && (due(b, t) || due(c, t)) ? news : places;
+      if (c && g >= 1 && g2 < 0.5) {
+        const [x, y] = coin(b, c);
+        minor.push(['minor', [form(pick('minor2', MINOR2.filter(v => !v[2] || g2 < PAIR))[1](nm(x.i), nm(y.i)), { minor: [b.i, c.i] })]]);
+      } else if (gone) {
+        const v = pick('minor', MINOR);
+        minor.push(['minor', [form(v[1](nm(b.i), gapWords(g2), nm(c.i)), { second: b.i, third: c.i }), form(v[2](nm(b.i), nm(c.i)), { second: b.i, third: c.i })]]);
+      }
+      // "Holds off" is of a chaser who isn't being left behind. With a second horse that hasn't had a mention
+      // lately, a wording that names it (the ones that take three things).
+      const hold = g < 2 && g <= gAgo + 0.05, both = due(b, t);
+      const w = pick('still', STILL.filter(x => (x[3] !== 'holds' || hold) && (!both || x[1].length > 2)));
+      // Over the last four seconds there's a line for the two of them in a few words, ahead of the leader's
+      // own when the second horse is due a mention.
+      const two = wall(fin) - wall(t) < 4 ? [['two', [form(pick('lasttwo', LAST_TWO)[1](nm(a.i), nm(b.i)), { lead: a.i })]]] : [];
+      const still = ['still', [form(w[1](nm(a.i), gapWords(g), nm(b.i)), { lead: a.i }), form(w[2](nm(a.i)), { lead: a.i })]];
+      places.push(...(both ? [...two, still] : [still, ...two]));
+      // A horse that has just got to second, once: it was third or worse three seconds ago. That's news.
+      // With the third horse close enough to get to it by the wire, a line about the second horse alone isn't
+      // the last word: it's over in good time, or (inside the last four seconds) it has the leader in it too.
+      const threat = !!c && ((g2 < 1.5 && c.v > b.v - 0.1) || (c.v - b.v) * (D - b.p) / Math.max(1, b.v) >= b.p - c.p);
+      const early = threat ? { endBy: wall(fin) - 1.6 } : null;
+      const was = ord(t - 3).findIndex(x => x.i === b.i);
+      if (was >= 2 && !S.upped.has(b.i) && due(b, t) && !closing) {
+        news.push(['second', [form(pick('upsecond', UP_SECOND)[1](nm(b.i)), { second: b.i, moved: was + 1, ...early })]]);
+      } else if (!gone && !closing) {
+        // The second horse. One that hasn't been named for a while is news: it may have only just got there.
+        const v = pick('chase', CHASE.filter(x => !threat || wall(fin) - wall(t) >= 4 || x[3]));
         const lead = v[3] ? { lead: a.i } : null;
-        places.push(['chase', [form(v[1](nm(b.i), gapWords(g), nm(a.i)), { second: b.i, ...lead }), form(v[2](nm(b.i)), { second: b.i })]]);
+        (both ? news : places).push(['chase', [form(v[1](nm(b.i), gapWords(g), nm(a.i)), { second: b.i, ...lead, ...(v[3] ? null : early) }), form(v[2](nm(b.i)), { second: b.i, ...early })]]);
       }
     } else {
       const [x, y] = coin(a, b);
       places.push(['pair', [form(pick('cry', CRY)[1](nm(x.i), nm(y.i)), { pair: [a.i, b.i] })]]);
     }
-    if (c) {
+    // Otherwise the third horse, where it is.
+    if (c && !forSecond && (!gone || g < PAIR)) {
       const w = pick('third', THIRD);
-      places.push(['third', [form(w[1](nm(c.i), gapWords(gapOf(b, c))), { third: c.i }), form(w[2](nm(c.i)), { third: c.i })]]);
+      places.push(['third', [form(w[1](nm(c.i), gapWords(g2)), { third: c.i, ...others }), form(w[2](nm(c.i)), { third: c.i, ...others })]]);
     }
     const saidAt = kind => S.driveAt.get(kind) ?? -99;
     places.sort((x, y) => saidAt(x[0]) - saidAt(y[0]));
-    const opts = [...news.filter(x => x[0] === 'heads' || x[0] === 'close' || wall(t) - wall(saidAt(x[0])) > 4), ...places];
+    const opts = [...[...news, ...front].filter(x => x[0] === 'heads' || x[0] === 'close' || wall(t) - wall(saidAt(x[0])) > 4), ...places];
     const fresh = opts.filter(x => x[0] !== S.drive);
-    return (fresh.length ? fresh : opts).map(([kind, forms]) => forms.map(f => ({ ...f, drive: kind })));
+    return [...(trouble.length ? [trouble] : []), ...(fresh.length ? fresh : opts).map(([kind, forms]) => forms.map(f => ({ ...f, drive: kind })))];
   }
 
   // The stretch, picked up from the middle with the caller's leader out of date: who leads now, by how
@@ -798,7 +897,9 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
   // for home are news, and only give way to each other and the wire; anything else gives way to a fraction
   // and the poles as well.
   const news = [...ev.leads.map(e => e.t), ev.tS, fin].sort((a, b) => a - b);
-  const hard = (headlines ? [...news, ev.tE] : [...news, ...fracs.map(f => f.t + 0.2), ev.tE, ev.tX]).sort((a, b) => a - b);
+  // (Not the sixteenth pole: it's called if the voice is free as the leader gets there, and the horses
+  // behind him aren't cut short to keep it free.)
+  const hard = (headlines ? [...news, ev.tE] : [...news, ...fracs.map(f => f.t + 0.2), ev.tE]).sort((a, b) => a - b);
 
   const lineAt = (f, t, slot, kind = 'call') => {
     const urgent = kind === 'off' ? 'off' : f.wire ? 'wire' : f.change ? 'change' : f.placings ? 'placings' : 'other';
@@ -807,7 +908,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     return line;
   };
   let w = -Infinity; // when the voice is next free, in real seconds from the off
-  const give = line => { line.picks = picking; lines.push(line); note(line); w = wall(line.t) + line.d; };
+  const give = line => { line.picks = picking; delete line.endBy; lines.push(line); note(line); w = wall(line.t) + line.d; };
 
   let gate = 5.2; // how long the horses stand in the gate before the off, in seconds
   if (fresh) {
@@ -858,7 +959,8 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     else if (!S.first && t < FIRST) { w = wall(FIRST); continue; }
     else if (inStretch) {
       if (!S.eighth && t >= ev.tE - 0.2 && t - ev.tE <= 2.5) { slot = 'eighth'; forms = eighthForms(o, t); }
-      else if (!headlines && !S.sixteenth && t >= ev.tX - 0.2 && t - ev.tX <= 1.2 && wall(fin) - w > 2.6) { slot = 'sixteenth'; forms = sixteenthForms(o); }
+      // (The sixteenth pole gives way to a second horse that's due a mention: there's time for one or the other.)
+      else if (!headlines && !S.sixteenth && t >= ev.tX - 0.2 && t - ev.tX <= 1.2 && wall(fin) - w > 2.6 && !(b && g >= PAIR && due(b, t))) { slot = 'sixteenth'; forms = sixteenthForms(o); }
       else if (stale) { slot = headlines ? 'fill' : 'drive'; forms = headlines ? fillForms(o, t, true) : pickUpForms(o); }
       else if (!headlines) { slot = 'drive'; forms = driveForms(o, t); }
     } else {
@@ -895,7 +997,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
       for (const group of (Array.isArray(list[0]) ? list : [list])) {
         const made = group.filter(f => !S.texts.has(f.text)).map(f => lineAt(f, t, as, as === 'frac' ? 'frac' : 'call'));
         any = any || made.length > 0;
-        const found = (shortest ? made.slice().reverse() : made).find(l => l.d <= limit);
+        const found = (shortest ? made.slice().reverse() : made).find(l => l.d <= limit && !(w + l.d > l.endBy));
         if (found) return found;
       }
       return null;
