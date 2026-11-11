@@ -351,7 +351,7 @@ function forumPanel(panel, race) {
   };
   for (const p of posts) panel.append(post(p, false));
   if (race.forumAfter) for (const p of race.forumAfter) panel.append(post(p, true));
-  panel.append(h('p', { class: 'note' }, 'Records are this meet: how many of their top picks won, and what a $2 win bet on each pick would have paid back on average. Anything under $2.00 is losing money.'));
+  panel.append(h('p', { class: 'note' }, 'Records run from ten weeks before the meet opened: how many of their top picks won, and what a $2 win bet on each pick would have paid back on average. Anything under $2.00 is losing money.'));
 }
 
 // ------------------------------------------------------------------ betting

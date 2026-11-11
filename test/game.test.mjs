@@ -41,9 +41,20 @@ function playLongMeet(days = 60) {
   if (longMeet) return longMeet;
   build('long-meet');
   const races = [];
+  // Riders' and trainers' records, held against a count made here from each result: `off` lists the races
+  // after which they differ, and `overnight` the race days after which a record changed with no race run.
+  const records = { off: [], overnight: [], opening: meetStats(game.world) };
+  let was = records.opening;
   for (let d = 0; d < days; d++) {
     for (const race of card().races) {
       const { run } = goToGate(race);
+      const want = structuredClone(was);
+      race.entries.forEach((e, k) => {
+        const rows = [want.jockeys[e.j], want.trainers[(e.ran || horseOf(e)).trainer]];
+        for (const row of rows) { row.starts++; if (k === run.results[0].h) row.w++; }
+      });
+      was = meetStats(game.world);
+      if (JSON.stringify(was) !== JSON.stringify(want)) records.off.push(`race day ${d + 1}, race ${race.no}`);
       const call = callFor(race, run);
       const names = race.entries.map(e => horseOf(e).name);
       const at = { day: d + 1, no: race.no };
@@ -56,7 +67,12 @@ function playLongMeet(days = 60) {
       });
     }
     advanceDay();
+    const next = meetStats(game.world);
+    if (JSON.stringify(next) !== JSON.stringify(was)) records.overnight.push(`after race day ${d + 1}`);
+    was = next;
   }
+  records.closing = was;
+  races.records = records;
   return (longMeet = races);
 }
 
@@ -442,6 +458,57 @@ test('a long meet keeps running: sixty race days, and every race has a field', (
   assert.equal(races.length, 60 * 8);
   assert.deepEqual(races.filter(r => r.field < 5).map(r => `race day ${r.day}, race ${r.no}: ${r.field} horses`), []);
   assert.deepEqual(races.filter(r => r.lines.some(l => /undefined|NaN/.test(l))).map(r => `race day ${r.day}, race ${r.no}`), []);
+});
+
+test("riders' and trainers' records add up: one win a race, for the rider and the trainer it ran for, and none goes down", () => {
+  // The records beside every rider and trainer on the form were counted from the lines horses still hold.
+  // A horse keeps ten and a retired one a single line, so they lost races: in a meet of 20 race days the
+  // wins shown rose by 96 while 160 races were run, and a record went down overnight 46 times.
+  const races = playLongMeet();
+  const { off, overnight, opening, closing } = races.records;
+  assert.deepEqual(off, [], 'records that differ from a count of the results');
+  assert.deepEqual(overnight, [], 'records that changed between race days');
+  const wins = rows => rows.reduce((n, r) => n + r.w, 0), starts = rows => rows.reduce((n, r) => n + r.starts, 0);
+  // Ten weeks of eight races were run before the meet opened.
+  for (const who of ['jockeys', 'trainers']) {
+    assert.equal(wins(opening[who]), 80, `the ${who} have ${wins(opening[who])} wins from the 80 races before the meet`);
+    assert.equal(wins(closing[who]), 80 + races.length);
+    assert.equal(starts(closing[who]) - starts(opening[who]), races.reduce((n, r) => n + r.field, 0));
+  }
+});
+
+test('a meet saved before records were counted gets them from the lines its horses hold, and counts up from there', () => {
+  // The live version's save has no count. It's made once when the save loads, and kept from then on.
+  buildOn('records', '2026-10-03');
+  for (const race of card().races) goToGate(race);
+  advanceDay();
+  save();
+  const old = JSON.parse(store.get('post-time/world'));
+  delete old.stats;
+  store.set('post-time/world', JSON.stringify(old));
+  assert.equal(load(), true);
+  const lines = meetStats({ horses: game.world.horses }); // a world with no count is counted from its lines
+  assert.deepEqual(meetStats(game.world), lines);
+  save();
+  assert.deepEqual(Object.keys(JSON.parse(store.get('post-time/world')).stats), ['j', 't'], 'the count is not kept with the meet');
+  // Two race days on, with the page opened again in between: a win a race, and nothing lost overnight.
+  const wins = () => meetStats(game.world).jockeys.reduce((n, r) => n + r.w, 0);
+  const before = wins();
+  let run = 0;
+  for (let d = 0; d < 2; d++) {
+    for (const race of card().races) {
+      goToGate(race);
+      assert.equal(wins(), before + ++run, `race day ${game.world.day + 1}, race ${race.no}`);
+    }
+    const end = meetStats(game.world);
+    advanceDay();
+    assert.deepEqual(meetStats(game.world), end, 'a record changed overnight');
+    load();
+    assert.deepEqual(meetStats(game.world), end, 'a record changed when the page was opened again');
+  }
+  // By now horses have retired and their lines have gone, and the records still have those rides.
+  const rides = stats => stats.jockeys.reduce((n, r) => n + r.starts, 0);
+  assert.ok(rides(meetStats(game.world)) > rides(meetStats({ horses: game.world.horses })), 'no line has gone from a card, so this meet shows nothing');
 });
 
 test("two regulars don't post the same reaction after a race", () => {

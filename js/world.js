@@ -136,7 +136,7 @@ export function createWorld(seed, start) {
 
 // The same, a day at a time, so a page can show progress: yields the fraction done.
 export function* buildWorld(seed, start) {
-  const world = { v: 1, seed, start, day: -HISTORY_DAYS, horses: [], cards: {}, tipsters: {} };
+  const world = { v: 1, seed, start, day: -HISTORY_DAYS, horses: [], cards: {}, tipsters: {}, stats: emptyStats() };
   const R = rng(`world:${seed}`);
   const ages = [[3, 40], [4, 30], [5, 17], [6, 9], [7, 4]];
   for (let i = 0; i < BARN; i++) world.horses.push(newHorse(world, R, { age: R.weighted(ages), id: i }));
@@ -428,6 +428,7 @@ export function applyResult(world, race, run, odds) {
   const fs = race.entries.length;
   const names = run.results.slice(0, 3).map((r, k) => [world.horses[race.entries[r.h].hid].name, k < 2 ? +(run.results[k + 1]?.toPrev || 0).toFixed(2) : 0]);
   const fr = run.fractions.map(f => +f.t.toFixed(2));
+  const stats = ensureStats(world);
   race.entries.forEach((e, k) => {
     const h = world.horses[e.hid];
     const r = run.results.find(x => x.h === k);
@@ -450,6 +451,8 @@ export function applyResult(world, race, run, odds) {
     }
     h.pps.push(pp);
     if (h.pps.length > 10) h.pps.shift();
+    // The race goes on the rider's record, and on the record of the trainer it ran for.
+    for (const rec of [pair(stats.j, e.j), pair(stats.t, pp.tr)]) { rec[0]++; if (r.pos === 1) rec[1]++; }
     h.life.starts++;
     if (r.pos === 1) { h.life.w++; h.maiden = false; } else if (r.pos === 2) h.life.p++; else if (r.pos === 3) h.life.s++;
     h.life.earn += Math.round((SPLIT[r.pos - 1] || (r.pos <= fs ? 0.02 / Math.max(1, fs - 5) : 0)) * race.purse);
@@ -476,24 +479,46 @@ function erf(x) { // Abramowitz and Stegun 7.1.26
   return s * y;
 }
 
+// Riders' and trainers' records: starts and wins, from ten weeks before the meet opened. They're kept as
+// a running count on the world, `stats`: { j: [[starts, wins], ...], t: [...] }, one pair for each rider
+// and each trainer, added to as each race is made official. They used to be counted from the lines horses
+// still hold, and a horse keeps ten lines and a retired one a single line, so a record lost races as the
+// meet went on: over 20 race days the wins shown rose by 96 while 160 races were run, and a rider's record
+// went down overnight 46 times.
 export function meetStats(world) {
-  const j = JOCKEYS.map(() => ({ starts: 0, w: 0 }));
-  const t = TRAINERS.map(() => ({ starts: 0, w: 0 }));
-  for (const h of world.horses) for (const p of h.pps) {
-    j[p.j].starts++; if (p.fin === 1) j[p.j].w++;
-  }
-  // A race counts for whoever trained the horse that day. A line from before that was written on it says
-  // only who the horse was claimed from, so those are worked back from the trainer it has now.
+  const st = world.stats || statsFromLines(world);
+  const rows = list => list.map(([starts, w]) => ({ starts, w }));
+  return { jockeys: rows(JOCKEYS.map((_, i) => pair(st.j, i))), trainers: rows(TRAINERS.map((_, i) => pair(st.t, i))) };
+}
+
+function emptyStats() {
+  return { j: JOCKEYS.map(() => [0, 0]), t: TRAINERS.map(() => [0, 0]) };
+}
+function pair(list, i) { return list[i] || (list[i] = [0, 0]); }
+
+// A meet saved before the count was kept gets it once, from the lines as they stand: the most that can be
+// had back. From then on it's exact.
+export function ensureStats(world) {
+  const ok = list => Array.isArray(list) && list.every(x => Array.isArray(x) && x.length === 2 && x.every(Number.isFinite));
+  if (!world.stats || !ok(world.stats.j) || !ok(world.stats.t)) world.stats = statsFromLines(world);
+  return world.stats;
+}
+
+function statsFromLines(world) {
+  const st = emptyStats();
+  const add = (rec, p) => { rec[0]++; if (p.fin === 1) rec[1]++; };
   for (const h of world.horses) {
+    // A race counts for whoever trained the horse that day. A line from before that was written on it says
+    // only who the horse was claimed from, so those are worked back from the trainer it has now.
     let then = h.trainer;
     for (let i = h.pps.length - 1; i >= 0; i--) {
       const p = h.pps[i];
       if (p.claimed) then = p.claimed.from;
-      const tr = t[p.tr ?? then];
-      tr.starts++; if (p.fin === 1) tr.w++;
+      add(pair(st.j, p.j), p);
+      add(pair(st.t, p.tr ?? then), p);
     }
   }
-  return { jockeys: j, trainers: t };
+  return st;
 }
 
 export { formRating };

@@ -2,7 +2,7 @@
 // localStorage. A race is settled the moment you send the horses to the gate, so closing the page
 // halfway through a race doesn't change what happened.
 
-import { buildWorld, simulateRace, applyResult, nextDay as worldNextDay, ownerSilks, firstSaturday, CLASSES, redrawShortRaces } from './world.js';
+import { buildWorld, simulateRace, applyResult, nextDay as worldNextDay, ownerSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats } from './world.js';
 import { makeTote, board, settle, ticketReturn, cost as betCost, legs } from './tote.js';
 import { forumPosts, reactions, scoreTipsters } from './forum.js';
 import { oddsText } from './handicap.js';
@@ -43,7 +43,7 @@ export function load() {
       }
       game.world = world;
       game.player = { ...freshPlayer(), ...player };
-      for (const fix of [redrawShort, refundStrays, stopEarlyClocks]) {
+      for (const fix of [redrawShort, refundStrays, stopEarlyClocks, countRecords]) {
         try { fix(); } catch { /* a save this can't make sense of loads as it is */ }
       }
       return true;
@@ -109,6 +109,12 @@ function stopEarlyClocks() {
   if (!c || !game.player.opened) return;
   const up = c.races.find(r => r.status !== 'official');
   for (const r of c.races) if (r !== up && r.status !== 'official') delete game.player.opened[raceKey(r)];
+}
+
+// Riders' and trainers' records are a running count kept with the meet. A meet saved before that has none:
+// it starts from the lines its horses hold today, and counts every race from here on.
+function countRecords() {
+  ensureStats(game.world);
 }
 
 function inRace(race, sel) {
