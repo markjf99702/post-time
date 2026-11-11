@@ -117,8 +117,24 @@ export function angles(race, h, day = race.day) {
   return out;
 }
 
+// What the betting public, the line maker and the late money think a post is worth, in points of rating.
+// In a race of a mile or more the field comes over for a first turn that's close: posts 2 and 3 do best, the
+// rail horse is often squeezed at the break, and from post 7 out a horse loses ground or position. In a
+// sprint it matters less, and the rail is the post riders dread. These follow how the posts win at
+// Larkspur (npm run sim), which follow the published figures for one-mile tracks; they used to be priced at
+// nothing, and $2 on post 1 in every race made a profit.
+const POST_EDGE = {
+  sprint: [-0.6, 0.3, 0.8, 0.8, 0.3, -0.2, -0.3, -0.6, -1, -1.6, -2.2, -2.8],
+  route: [0.6, 1.6, 1.5, 0.4, -0.2, -0.5, -1.1, -1.8, -2, -2.6, -3.2, -3.8],
+};
+export function postEdge(race, pp) {
+  const t = POST_EDGE[race.distance >= 8 * FURLONG - 1 ? 'route' : 'sprint'];
+  return t[Math.min(t.length, Math.max(1, pp)) - 1];
+}
+
 export function publicRating(h, race, entry) {
   let r = formRating(h, race);
+  if (entry.pp) r += postEdge(race, entry.pp);
   r += (JOCKEYS[entry.j]?.skill || 0) * 1.4;
   const f = race.distance / FURLONG;
   // Never tried the distance or surface: the public is wary.

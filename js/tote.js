@@ -3,7 +3,7 @@
 // knows a little more than the early money.
 
 import { rng, hash } from './rng.js';
-import { publicRating, probsFrom, oddsText } from './handicap.js';
+import { publicRating, postEdge, probsFrom, oddsText } from './handicap.js';
 
 export const TAKEOUT = { win: 0.16, place: 0.16, show: 0.16, exacta: 0.2, trifecta: 0.25 };
 export const BASE = { win: 2, place: 2, show: 2, exacta: 2, trifecta: 1 };
@@ -20,7 +20,8 @@ export function makeTote(race, world) {
   // doing today: its day rating, give or take about seven points. It's most of the pool by the off, so
   // what it knows is in the final price as well as in the way the odds moved.
   const L = rng(`late:${race.seed}`);
-  const late = probsFrom(seen.map((r, i) => 0.062 * r + 0.101 * (race.entries[i].rating + L.gauss() * 7)), 1);
+  // (It knows the draw as the public does: the post is in what it sees, and in its idea of the day rating.)
+  const late = probsFrom(seen.map((r, i) => 0.062 * r + 0.101 * (race.entries[i].rating + postEdge(race, race.entries[i].pp) + L.gauss() * 7)), 1);
   const size = (POOL[race.cls] || 80000) * (race.purse >= 300000 ? 2.2 : 1) * R.range(0.8, 1.25) * (race.no === 8 ? 1.3 : 1);
   const wig = [...Array(n)].map(() => R.range(0, 1000));
   return { n, early: norm(early), late: norm(late), size, wig, seed: race.seed };

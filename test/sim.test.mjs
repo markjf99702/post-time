@@ -13,7 +13,7 @@ import { makeTote, board, settle, ticketReturn, cost, TAKEOUT } from '../js/tote
 import { fmtTime, fmtClock, fmtWork, marginShort, marginText, lengthsText, tripComment } from '../js/chart.js';
 import { timeWords, timeSay, aloud, raceCall } from '../js/call.js';
 import { forumPosts } from '../js/forum.js';
-import { angles, newcomer, freshBullet, oddsText, oddsValue } from '../js/handicap.js';
+import { angles, newcomer, freshBullet, oddsText, oddsValue, morningLine } from '../js/handicap.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const race = (f, surface = 'dirt', seed = 'x') => {
@@ -566,6 +566,19 @@ test('a horse claimed out of a race goes to a different owner', () => {
   }
   assert.ok(claims >= 40, `only ${claims} claims in twenty race days`);
   assert.deepEqual(same, [], `of ${claims} claimed horses, these stayed with the owner they ran for`);
+});
+
+// The public, the morning line and the late money took no account of the draw, and $2 to win on post 1 in
+// every race made a profit. Now they price it the way the posts win at Larkspur: the rail is the post
+// riders dread, posts 2 and 3 are best in a race of a mile or more, and the outside posts worst there.
+test('the morning line knows the draw: nine horses alike are priced by their posts', () => {
+  const horses = Array.from({ length: 9 }, (_, i) => ({ id: i, pps: [], works: [], sire: 'nobody', life: { starts: 0 } }));
+  const line = f => morningLine({ distance: f * FURLONG, surface: 'dirt', cls: 'ALW', par: 85, entries: horses.map(h => ({ hid: h.id, pp: h.id + 1 })) }, horses).map(x => x[0]);
+  const route = line(8.5), sprint = line(6);
+  assert.ok(route[1] < route[0] && route[2] < route[0], `a route: ${route.join(', ')}`);
+  assert.ok(route[8] > route[3] && route[8] >= Math.max(...route), `a route: ${route.join(', ')}`);
+  assert.ok(sprint[0] > sprint[2] && sprint[0] > sprint[3], `a sprint: ${sprint.join(', ')}`);
+  assert.ok(Math.max(...route) / Math.min(...route) > Math.max(...sprint) / Math.min(...sprint), 'the draw counts for more in a route');
 });
 
 test('the board words a price at or just under what it pays: every whole number above 10-1', () => {
