@@ -95,7 +95,7 @@ export function renderWatch(el, nav, params) {
   let orderAt = -1;
   let following = null;
   // The picture follows the size of its box (the screen turning, the buttons changing at the finish).
-  const onResize = () => { fitOrder(); scene.resize(); scene.draw(Math.max(0, T)); fitCall(); fitPhoto(); };
+  const onResize = () => { fitOrder(); scene.resize(); scene.draw(Math.max(0, T)); fitCall(); fitPhoto(); showFractions(T - t0, true); };
   const resizer = typeof ResizeObserver === 'function' ? new ResizeObserver(onResize) : null;
   if (resizer) resizer.observe(stage); else window.addEventListener('resize', onResize);
   const stopResizing = () => { if (resizer) resizer.disconnect(); else window.removeEventListener('resize', onResize); };
@@ -146,12 +146,11 @@ export function renderWatch(el, nav, params) {
       if (game.player.settings.sound) { audio.bell(); audio.startRace(); }
     }
     scene.draw(Math.max(0, T));
-    scene.drawMap(mapC.getContext('2d'), 220, 108, Math.max(0, T));
+    scene.drawMap(mapC.getContext('2d'), mapC.width, mapC.height, Math.max(0, T));
 
     // Clock and fractions.
     clock.textContent = T < 0 ? clockText(race.post) : clockT < 0 ? '0:00.0' : fmtClock(Math.min(clockT, run.results[0].time));
-    const fr = run.fractions.filter(f => f.t <= clockT);
-    frs.textContent = fr.length ? fr.map((f, i) => `${i === fr.length - 1 && f.at >= race.distance - 1 ? 'Final' : fracName(f.at)} ${fmtTime(f.t)}`).join('   ') : fieldText(race);
+    showFractions(clockT);
 
     // The call: the line that has come up, if it's a new one, with the one before it.
     const line = call.next(callClock() - t0, seconds());
@@ -180,6 +179,19 @@ export function renderWatch(el, nav, params) {
 
     if (!ended && T >= endT - 0.01) finish();
     raf = requestAnimationFrame(frame);
+  }
+
+  // The fractions so far, written when there's a new one (or the screen has changed size). On a screen too
+  // narrow for all of them the earliest go, so the latest is always there: at 320 wide a route's line was cut
+  // off before its final time.
+  let frCount = -1;
+  function showFractions(clockT, again = false) {
+    const fr = run.fractions.filter(f => f.t <= clockT);
+    if (fr.length === frCount && !again) return;
+    frCount = fr.length;
+    const parts = fr.map((f, i) => `${i === fr.length - 1 && f.at >= race.distance - 1 ? 'Final' : fracName(f.at)} ${fmtTime(f.t)}`);
+    frs.textContent = parts.length ? parts.join('   ') : fieldText(race);
+    while (parts.length > 1 && frs.scrollWidth > frs.clientWidth) { parts.shift(); frs.textContent = parts.join('   '); }
   }
 
   // The caller's new line, with the one before it above, read aloud. The voice is given the line's
@@ -235,6 +247,11 @@ export function renderWatch(el, nav, params) {
     hint.textContent = low ? HINT_SHORT : HINT;
     hint.style.minHeight = `${hint.offsetHeight}px`;
     showHint();
+    // The map in the corner is smaller on a picture this short: at its full size it's a third of the height
+    // of a 200 px picture, and sits over the leaders.
+    const small = stage.offsetHeight < 230;
+    stage.classList.toggle('small', small);
+    if (mapC.width !== (small ? 168 : 220)) { mapC.width = small ? 168 : 220; mapC.height = small ? 88 : 108; }
   }
   // Under the buttons: how to follow a horse or, while one is followed, which. Once the race is official
   // there's nothing left to follow, and the line is blank (it keeps its room, so nothing moves). Where the

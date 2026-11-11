@@ -1549,19 +1549,49 @@ await page.waitForSelector('.races');
   // and the picture is what gives way. From the gate on, six tickets are a count and what they cost on one
   // line, and the line under the buttons is one line, so the picture has more of the screen and nothing
   // scrolls. (With the six tickets on three lines and the line under the buttons on two, the picture had
-  // 150 px of 548, and the screen scrolled.) A taller phone has the tickets in full, as before.
-  for (const [width, height, least] of [[375, 548, 190], [360, 560, 200], [320, 568, 170], [390, 844, 350]]) {
+  // 150 px of 548, and the screen scrolled.) A taller phone has the tickets in full, as before. On a picture
+  // under 230 px tall the map in the corner is smaller (at its full size it was a third of the height of a
+  // 200 px picture), and at 320 wide the five buttons are one row, which is 42 px more for the picture.
+  for (const [width, height, least] of [[375, 548, 190], [360, 560, 200], [320, 568, 210], [390, 844, 350]]) {
     await watch(width, height);
     const short = await win.evaluate(() => {
       const box = s => document.querySelector(s).getBoundingClientRect(), screen = document.getElementById('watch'), tix = document.querySelector('.w-tix');
-      return { picture: Math.round(box('.w-stage').height), tickets: tix.innerText, lines: [tix, document.querySelector('.w-ctl .hint')].map(x => Math.round(x.getBoundingClientRect().height)), hint: document.querySelector('.w-ctl .hint').textContent, scrolls: screen.scrollHeight - screen.clientHeight, cut: tix.scrollWidth > tix.clientWidth };
+      return { picture: Math.round(box('.w-stage').height), map: Math.round(box('.w-map').width), tickets: tix.innerText, lines: [tix, document.querySelector('.w-ctl .hint')].map(x => Math.round(x.getBoundingClientRect().height)), hint: document.querySelector('.w-ctl .hint').textContent, scrolls: screen.scrollHeight - screen.clientHeight, cut: tix.scrollWidth > tix.clientWidth };
     });
     assert.ok(short.picture >= least && short.scrolls <= 0, `${width} by ${height}: the picture is ${short.picture} px tall, and the screen scrolls by ${short.scrolls} px`);
+    assert.equal(short.map < 100, short.picture < 230, `${width} by ${height}: the map is ${short.map} px wide on a picture ${short.picture} px tall`);
     if (height < 700) {
       assert.match(short.tickets, /^Your tickets: 6, \$\d+\.00$/, `${width} by ${height}: the tickets line`);
       assert.ok(short.lines[0] < 32 && short.lines[1] < 22 && !short.cut && short.hint === 'Tap a number to follow that horse.', `${width} by ${height}: the tickets line is ${short.lines[0]} px tall and the line under the buttons ${short.lines[1]}: ${short.hint}`);
     } else assert.match(short.tickets, /^Your tickets: \$2 Win \d+ · \$2 Exacta \d+-\d+ · .* · \$100 Trifecta \d+-\d+-\d+$/, 'on a tall phone the tickets are listed');
     await card();
+  }
+
+  // The narrowest phone, 320 wide, with the day's longest race. The five buttons are one row, and the row is
+  // no taller when Results takes Skip's place. The line of fractions always ends with the latest one: at the
+  // wire that's the final time, with the earliest fractions left out if the line is too long for the screen.
+  // (Skip was on a row of its own, and a route's line was cut off before the final time.)
+  {
+    const longest = await win.evaluate(() => window.postTime.card().races.reduce((a, r) => (r.distance > a.distance ? r : a)).no);
+    await watch(320, 568, longest);
+    const row = () => win.evaluate(() => {
+      const buttons = [...document.querySelectorAll('.w-ctl button')].filter(b => !b.hidden).map(b => b.getBoundingClientRect());
+      return { rows: new Set(buttons.map(b => Math.round(b.top))).size, off: buttons.filter(b => b.right > innerWidth).length, tall: Math.round(document.querySelector('.w-ctl').getBoundingClientRect().height) };
+    });
+    const racing = await row();
+    const line = await win.evaluate(async () => {
+      const w = window.__watch, fr = document.querySelector('.w-frs .fr');
+      w.setT(w.winT + 0.2);
+      for (let i = 0; i < 3; i++) await new Promise(r => requestAnimationFrame(r));
+      const at = { text: fr.textContent, cut: fr.scrollWidth > fr.clientWidth, fractions: w.run.fractions.length };
+      w.setT(w.endT);
+      return at;
+    });
+    assert.ok(/Final [\d:.]+$/.test(line.text) && !line.cut, `at 320 wide the fractions at the wire read "${line.text}"${line.cut ? ', cut off' : ''} (${line.fractions} fractions)`);
+    await win.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 40000 });
+    assert.deepEqual([racing.rows, racing.off, await row()], [1, 0, racing], 'at 320 wide the buttons take more than one row, or the row changes when Results appears');
+    await win.evaluate(() => window.__watch.leave('card'));
+    await win.waitForSelector('.races');
   }
 
   // The photo finish on those short phones, with the biggest field and the six tickets: the photo is most of
