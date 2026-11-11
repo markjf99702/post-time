@@ -1,6 +1,6 @@
 // The race card: today's date and weather, the eight races, and what happened in the ones already run.
 
-import { h, money, cloth, jdFoot } from './dom.js';
+import { h, money, cloth, jdFoot, dotted } from './dom.js';
 import { game, card, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay } from '../game.js';
 import { longDate, clockText } from '../world.js';
 import { distanceName } from '../track.js';
@@ -101,7 +101,7 @@ function raceRow(r, nxt, nav) {
   h('div', { class: 'no' }, h('small', {}, 'Race'), String(r.no)),
   h('div', { class: 'what' }, raceLabel(r)),
   state,
-  h('div', { class: 'sub' }, `${distanceName(r.distance)}${r.surface === 'dirt' ? ' · Dirt' : ''} · ${r.entries.length} horses · $${(r.purse / 1000).toFixed(0)}k purse`, tags.length ? ' ' : '', ...tags.flatMap(t => [t, ' '])),
+  h('div', { class: 'sub' }, dotted([distanceName(r.distance), r.surface === 'dirt' ? 'Dirt' : null, `${r.entries.length} horses`, `$${(r.purse / 1000).toFixed(0)}k purse`]), tags.length ? ' ' : '', ...tags.flatMap(t => [t, ' '])),
   );
 }
 

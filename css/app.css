@@ -179,6 +179,7 @@ a { color: var(--link); }
 .kicker { font: 500 12px/1.2 var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 .h2 { font: 600 24px/1.15 var(--display); letter-spacing: .02em; margin: 0; }
 .muted { color: var(--muted); }
+.bit { display: inline-block; } /* a piece of a dotted line: the line breaks between pieces, not inside one */
 .money { font-variant-numeric: tabular-nums; }
 .pos { color: var(--win); }
 .neg { color: var(--red); }

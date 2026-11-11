@@ -48,6 +48,13 @@ export function jdFoot() {
   );
 }
 
+// The pieces of a line with a dot between them ("1 mile · Dirt · 7 horses"), each in a box of its own with
+// its dot in front, so the line breaks only between pieces: no "purse" alone on a second line, and no dot
+// left hanging at the end of the first.
+export function dotted(bits) {
+  return bits.filter(Boolean).flatMap((bit, k) => [k ? ' ' : null, h('span', { class: 'bit' }, k ? '· ' : '', bit)]);
+}
+
 export function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); return el; }
 
 export function plural(n, one, many = one + 's') { return `${n} ${n === 1 ? one : many}`; }

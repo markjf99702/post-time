@@ -1,6 +1,6 @@
 // A race before it runs: the past performances, the paddock, the forum and the betting window.
 
-import { h, money, cloth, silksCanvas, clear, ago, plural } from './dom.js';
+import { h, money, cloth, silksCanvas, clear, ago, plural, dotted } from './dom.js';
 import { game, card, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor } from '../game.js';
 import { ownerSilks, ageOf, shortDate, clockText, CLASSES, meetStats } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
@@ -176,7 +176,7 @@ function entryCard(race, e, i, stats, board) {
     silksCanvas(silks, 30),
     h('div', { class: 'nm' }, hs.name),
     h('div', { class: 'ml' }, h('small', {}, race.status === 'official' ? 'Final' : 'Odds'), race.status === 'official' ? race.result.oddsText[i] : board.text[i]),
-    h('div', { class: 'who' }, `${JOCKEYS[e.j].name} (${js.w}-${js.starts}) · Tr. ${TRAINERS[trainer]} (${ts.w}-${ts.starts}) · ${e.wt} lb · ML ${e.mlText}`),
+    h('div', { class: 'who' }, dotted([`${JOCKEYS[e.j].name} (${js.w}-${js.starts})`, `Tr. ${TRAINERS[trainer]} (${ts.w}-${ts.starts})`, `${e.wt} lb`, `ML ${e.mlText}`])),
   );
   head.addEventListener('click', () => {
     const open = more.hidden;

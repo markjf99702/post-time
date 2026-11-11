@@ -1370,6 +1370,22 @@ await page.waitForSelector('.races');
   const even = rows => Math.max(...rows) - Math.min(...rows) <= 1;
   for (const [width, height] of [[390, 844], [320, 568]]) {
     await shop.setViewportSize({ width, height });
+    // A line made of pieces with dots between them (a race's small line on the card, a horse's rider and
+    // trainer in the form) breaks only between pieces, and a dot goes to the next line with what follows
+    // it. ("purse" used to be left alone on a second line, or a dot left hanging at the end of the first.)
+    const pieces = { n: 0, broken: [] };
+    for (const [screen, params] of [['card', {}], ['race', { no: 8 }]]) {
+      await shop.evaluate(([screen, params]) => window.postTime.nav.go(screen, params), [screen, params]);
+      const seen = await shop.evaluate(() => {
+        const bits = [...document.querySelectorAll('.race-row .sub .bit, .entry .who .bit')];
+        const tall = b => b.getBoundingClientRect().height > parseFloat(getComputedStyle(b).lineHeight) * 1.5;
+        return { n: bits.length, broken: bits.filter(b => tall(b) || (b.previousElementSibling && !b.textContent.startsWith('· '))).map(b => b.textContent) };
+      });
+      pieces.n += seen.n;
+      pieces.broken.push(...seen.broken);
+    }
+    assert.ok(pieces.n >= 40, `only ${pieces.n} pieces of dotted lines on the card and in a race's form`);
+    assert.deepEqual(pieces.broken, [], `${width} wide: a piece of a dotted line is broken across two lines, or has lost its dot`);
     // A field that takes two rows on the tote board has them as near the same length as can be: seven as
     // four and three, ten as five and five (they were six and one, six and four). Every race's board is
     // looked at, and the picks of the race that's up, which are set out the same way.
