@@ -91,7 +91,7 @@ export function renderHelp(root, nav) {
       ),
       h('h3', {}, 'The race'),
       h('p', {}, 'The camera follows the leaders. Tap a number in the running order to follow one horse instead. The little map shows the whole field on the oval. In a close finish the placing judges read the photo. It comes from a finish-line camera that only sees the line, so the horses in it are stretched and squashed by their speed.'),
-      h('p', {}, "The caller's lines run under the picture as the race goes. Tick Read the race call aloud in the menu to have them spoken."),
+      h('p', {}, "The caller's lines are written out as the race is run, under the picture or beside it. Tick Read the race call aloud in the menu to have them spoken."),
       h('p', {}, "Back the winner and you're in the winner's circle photo. It goes in your scrapbook."),
       h('h3', {}, 'Saving'),
       h('p', { class: 'saving' }, savingText()),

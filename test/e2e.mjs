@@ -1232,7 +1232,7 @@ await page.waitForSelector('.races');
     const seen = id => { const el = document.getElementById(id); return !!el && el.getClientRects().length > 0; };
     return { line: seen('voiceNone') ? document.getElementById('voiceNone').textContent : '', list: seen('optVoiceName'), hearIt: seen('hearIt'), note: seen('voiceNote') ? document.getElementById('voiceNote').textContent : '', ticked: document.getElementById('optVoice').checked };
   });
-  const NO_VOICE = 'This browser has no voice to read the call. The call is still shown under the picture.';
+  const NO_VOICE = 'This browser has no voice to read the call. The call is still written out as the race is run.';
   await first.click('#menuBtn');
   assert.deepEqual(await voiceRow(first), { line: '', list: false, hearIt: false, note: '', ticked: false });
   await first.check('#optVoice');
@@ -1264,7 +1264,7 @@ await page.waitForSelector('.races');
     await mute.uncheck('#optVoice');
     // How to play says where the call is, and that it can be read aloud.
     await mute.click('#menu [data-go="help"]');
-    assert.match(await mute.locator('#app .help').textContent(), /The caller's lines run under the picture as the race goes\. Tick Read the race call aloud in the menu to have them spoken\./);
+    assert.match(await mute.locator('#app .help').textContent(), /The caller's lines are written out as the race is run, under the picture or beside it\. Tick Read the race call aloud in the menu to have them spoken\./);
     await mute.close();
   }
 
