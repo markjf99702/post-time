@@ -858,7 +858,9 @@ test('with a voice 15% slower or quicker than it was taken to be, no lead change
     if (process.env.NUMBERS) console.log(`a voice ${name}: ${lines} lines in ${races.length} races, ${left.length} left out, the call planned ${plans} times, the voice timed at ${timed.factor().toFixed(3)} of the model`);
     assert.ok(left.length <= lines / 200, `a voice ${name}: ${left.length} of ${lines} lines were left out: ${left.slice(0, 5).join(' / ')}`);
     assert.equal(dropped, left.length, 'the queue counts the lines it leaves out');
-    assert.ok(lines > 2000, `only ${lines} lines`);
+    // (Enough lines to judge by: about 25 a race. It was 2,000 for these ten race days, which have 1,986
+    // since the racing was rebalanced and they came out differently.)
+    assert.ok(lines > races.length * 24, `only ${lines} lines in ${races.length} races`);
     // A voice as quick as planned is never planned for again; one that isn't, once: in its first race,
     // when it has read three lines. From then on the call is planned to its pace at the gate.
     assert.equal(plans, races.length + (syllablesASecond === 4.3 ? 0 : 1), `a voice ${name}: the call was planned ${plans} times for ${races.length} races`);
