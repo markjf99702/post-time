@@ -105,7 +105,15 @@ export function renderResult(root, nav, params) {
   root.append(h('div', { class: 'actions' },
     h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('circle', { no: race.no }) }, "Winner's circle ▸"),
     h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('watch', { no: race.no }) }, 'Watch again'),
-    nxt ? h('button', { class: 'btn', type: 'button', onclick: () => nav.go('race', { no: nxt.no }) }, `Race ${nxt.no} ▸`) : h('button', { class: 'btn', type: 'button', onclick: () => nav.go('card') }, 'The card ▸'),
+  ));
+  // The way on is in a bar at the bottom of the screen, where a race's page has To the gate: what the race
+  // did for you on the left, and the next race (the card, after the last one) as the button. (It was the
+  // third button of the row above, at the end of the page: 1,700 px down a phone's 664 after an ordinary
+  // race and 2,250 after one with six tickets, two and a half to three and a half screens.)
+  const cashed = bets.length && settled ? settled.back : null;
+  root.append(h('div', { class: 'post-bar' },
+    h('div', { class: 'info' }, cashed > 0 ? ['You cashed ', h('b', { class: 'money' }, money(cashed))] : cashed === 0 ? 'No luck this time' : h('span', { class: 'muted' }, 'No tickets')),
+    nxt ? h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('race', { no: nxt.no }) }, `Race ${nxt.no} ▸`) : h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('card') }, 'The card ▸'),
   ));
 }
 

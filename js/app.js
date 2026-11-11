@@ -2,7 +2,7 @@
 
 import { h, clear, money } from './ui/dom.js';
 import { game, load, save, notSaved, newMeet, card, nextRace } from './game.js';
-import { renderCard } from './ui/card.js';
+import { renderCard, upNextInView } from './ui/card.js';
 import { renderRace } from './ui/race.js';
 import { renderWatch } from './ui/watch.js';
 import { renderResult, renderCircle } from './ui/results.js';
@@ -33,6 +33,7 @@ const nav = {
     closeMenu();
     render();
     if (screen !== 'watch') window.scrollTo(0, 0);
+    if (screen === 'card' && !waiting) upNextInView();
   },
   refresh() { nav.go(view.screen, view.params); },
   // A race's tabs change its entry in the history rather than adding one, so Back doesn't step through them.
@@ -87,6 +88,9 @@ window.addEventListener('popstate', e => {
 // A reload keeps the history entry it happened on, which may be a screen's. The game opens on the card,
 // so that entry is the card's now.
 try { if (history.state && history.state.postTime) history.replaceState(null, ''); } catch { /* see remember() */ }
+// Where a screen opens is the game's to say (the top, or on the card the race that's up). Left to itself the
+// browser puts the page back where it was when the card was last left, a moment after the card is drawn.
+try { history.scrollRestoration = 'manual'; } catch { /* see remember() */ }
 
 function render() {
   clear(app);

@@ -82,10 +82,10 @@
 [hidden] { display: none !important; }
 /* A control the keyboard moves to, and anything else brought into view, comes to rest clear of what's fixed over
    the page: the header, a race's tabs under it, and the bar at the bottom (the race's page says how tall that is
-   just now, as --bar). */
+   just now, as --bar; a result's is always one row). */
 html { -webkit-text-size-adjust: 100%; scroll-padding: calc(70px + env(safe-area-inset-top)) 0 16px; }
 html:has(.tabs) { scroll-padding-top: calc(112px + env(safe-area-inset-top)); }
-html:has(.post-bar) { scroll-padding-bottom: calc(var(--bar, 62px) + 14px); }
+html:has(.post-bar) { scroll-padding-bottom: calc(var(--bar, calc(62px + env(safe-area-inset-bottom))) + 14px); }
 body {
   margin: 0;
   background: var(--paper);

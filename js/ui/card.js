@@ -28,6 +28,19 @@ export function redraw(nav) {
   window.scrollTo(0, y);
 }
 
+// The card opens at the top, unless the race that's up is off the bottom of the screen: then it opens with
+// that race in the middle of what shows under the header. (After five races the Up next row started 772 px
+// down a phone's 664, so every return to the card began with a scroll to find it.) Not when the money has
+// run out, when the ATM under the date is the thing to see.
+export function upNextInView() {
+  const row = document.querySelector('.race-row.next');
+  if (!row || document.querySelector('.day .atm')) return;
+  const r = row.getBoundingClientRect();
+  if (r.bottom <= window.innerHeight) return;
+  const under = document.getElementById('top')?.getBoundingClientRect().bottom || 0;
+  window.scrollTo(0, Math.round(r.top + window.scrollY - (under + window.innerHeight - r.height) / 2));
+}
+
 export function renderCard(root, nav) {
   const c = card();
   const w = game.world;

@@ -578,7 +578,7 @@ await page.waitForSelector('.official');
 await page.setViewportSize({ width: 390, height: 844 });
 
 // A new meet starts on race day 1 again: its betting slip and tote are its own, not the last meet's.
-await page.locator('.actions .btn', { hasText: /^Race 3/ }).click();
+await page.locator('.post-bar .btn', { hasText: /^Race 3/ }).click();
 await page.waitForSelector('.entry');
 await page.click('.tabs button:nth-child(4)');
 await page.locator('.pick-row').nth(0).locator('button').last().click();
@@ -853,7 +853,7 @@ await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 await page.click('.w-ctl .btn');
 await page.waitForSelector('.official');
 await page.waitForFunction(() => window.__quiet());
-await page.locator('.actions .btn', { hasText: /^Race 2/ }).click();
+await page.locator('.post-bar .btn', { hasText: /^Race 2/ }).click();
 await page.click('.post-bar .btn.brass');
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 const nextRace = await page.evaluate(async () => {
@@ -900,7 +900,7 @@ assert.ok(toResults.saying, 'the caller had finished before Results was tapped, 
 assert.equal(await page.evaluate(at => window.__heard.some(x => x.ev === 'cancel' && x.at > at), toResults.at), false, 'the caller was cut off on the way to the results');
 await page.waitForFunction(({ saying, at }) => window.__heard.some(x => x.ev === 'end' && x.text === saying && x.at > at), toResults, { timeout: 15000 });
 await page.waitForFunction(() => window.__quiet());
-await page.locator('.actions .btn', { hasText: /^Race 3/ }).click();
+await page.locator('.post-bar .btn', { hasText: /^Race 3/ }).click();
 await page.click('.post-bar .btn.brass');
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 // The page goes out of sight in the middle of a race (another tab, the phone locked): the voice stops, the
@@ -1132,7 +1132,7 @@ await page.waitForSelector('.official');
 await page.waitForFunction(() => window.__quiet());
 // The next race at 2x from the gate, then skipped ahead once a line has said who leads: Skip cancels the
 // line being said, and the caller picks the race up twelve seconds from the wire.
-await page.locator('.actions .btn', { hasText: /^Race \d/ }).click();
+await page.locator('.post-bar .btn', { hasText: /^Race \d/ }).click();
 const at2 = await page.evaluate(async () => {
   const heard = window.__heard;
   const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -1948,6 +1948,73 @@ await page.waitForSelector('.races');
   await tapTab(3);
   await tapTab(1);
   assert.equal(await between.locator('.entry-more:not([hidden])').count(), 0, 'a horse shut on the form came back open');
+
+  // After a race the way on is in a bar at the bottom of the screen: what the race did for you, and the next
+  // race as the button. (It was the last button on the page, 1,700 px down this 664 px screen and more.) The
+  // winner's circle and Watch again are still at the end of the page, and clear the bar when it's scrolled
+  // there. A race is run here with a winning ticket and a losing one, the next with a losing one, the third
+  // with none. `run` sends the race that's up to the gate with tickets chosen from how it will finish.
+  const run = kind => between.evaluate(async kind => {
+    const { game, nextRace, nav } = window.postTime;
+    const { simulateRace } = await import('./js/world.js');
+    const { placeBet, goToGate } = await import('./js/game.js');
+    const race = nextRace(), order = simulateRace(race, game.world, { record: true }).results.map(r => r.h);
+    if (kind !== 'none') placeBet(race, { type: 'win', sel: [order.at(-1)], amt: 2 });
+    if (kind === 'cash') placeBet(race, { type: 'win', sel: [order[0]], amt: 2 });
+    const { back } = goToGate(race);
+    nav.go('result', { no: race.no });
+    return { no: race.no, back };
+  }, kind);
+  const resultBar = () => between.evaluate(() => {
+    const box = s => document.querySelector(s).getBoundingClientRect(), bar = box('.post-bar'), btn = box('.post-bar .btn');
+    scrollTo(0, document.documentElement.scrollHeight);
+    return {
+      said: document.querySelector('.post-bar .info').textContent, button: document.querySelector('.post-bar .btn').textContent,
+      onScreen: bar.bottom <= innerHeight + 0.5 && btn.top >= bar.top && btn.right <= innerWidth && getComputedStyle(document.querySelector('.post-bar')).position === 'fixed',
+      inPage: [...document.querySelectorAll('.actions .btn')].map(b => b.textContent),
+      clear: Math.round(box('.post-bar').top - box('.actions').bottom) >= 0,
+    };
+  });
+  const shown = { onScreen: true, inPage: ["Winner's circle ▸", 'Watch again'], clear: true };
+  // The card opens on the race that's up: at the top while that race is on the screen from there, as race 2
+  // is. After five races Up next is off the bottom of this screen (it started 772 px down its 664), and the
+  // card opens with that row in the middle of what shows under the header. The same from a result's back
+  // button, where the browser used to put the page back wherever the card was last left.
+  const upNext = () => between.evaluate(() => {
+    const r = document.querySelector('.race-row.next').getBoundingClientRect(), under = document.getElementById('top').getBoundingClientRect().bottom;
+    return { y: Math.round(scrollY), whole: r.top >= under && r.bottom <= innerHeight, offCentre: Math.round(Math.abs((r.top + r.bottom) / 2 - (under + innerHeight) / 2)) };
+  });
+  const cash = await run('cash');
+  assert.deepEqual(await resultBar(), { said: `You cashed $${cash.back.toFixed(2)}`, button: 'Race 2 ▸', ...shown }, 'the bar on a result with a ticket cashed');
+  await between.click('.rhead .back');
+  await between.waitForSelector('.races');
+  assert.deepEqual([(await upNext()).y, (await upNext()).whole], [0, true], 'with race 2 up, the card should open at the top');
+  await go('result', { no: 1 });
+  await between.click('.post-bar .btn');
+  assert.deepEqual([await between.locator('.rhead .kicker').textContent(), await between.locator('.post-bar .btn').textContent()], ['Race 2 · Post 3:02', 'To the gate ▸'], "the result's button didn't go to race 2");
+  await run('lose');
+  assert.deepEqual(await resultBar(), { said: 'No luck this time', button: 'Race 3 ▸', ...shown }, 'the bar on a result with a ticket lost');
+  await run('none');
+  assert.deepEqual(await resultBar(), { said: 'No tickets', button: 'Race 4 ▸', ...shown }, 'the bar on a result with no tickets');
+  await run('none');
+  await run('none');
+  await between.evaluate(() => window.scrollTo(0, 300));
+  await between.click('.rhead .back');
+  await between.waitForSelector('.races');
+  await between.waitForTimeout(150); // (the browser put the page back a moment after the card was drawn)
+  const sixth = await upNext();
+  assert.ok(sixth.y > 100 && sixth.whole && sixth.offCentre <= 2, `with race 6 up, the card opened ${sixth.y} px down with Up next ${sixth.offCentre} px off the middle`);
+  // Out of money, the card opens at the top, where the ATM is.
+  await between.evaluate(() => { const { game, nav } = window.postTime; window.had = game.player.bank; game.player.bank = 0; nav.go('card'); });
+  assert.deepEqual([await scrollY(), await between.locator('.day .atm').count()], [0, 1], 'out of money, the card should open on the ATM');
+  await between.evaluate(() => { const { game, nav } = window.postTime; game.player.bank = window.had; nav.go('card'); });
+  // After the last race the button goes to the card, which opens at the top, where Next race day is.
+  await run('none');
+  await run('none');
+  const last = await run('cash');
+  assert.deepEqual([last.no, (await resultBar()).button], [8, 'The card ▸']);
+  await between.click('.post-bar .btn');
+  assert.deepEqual([await between.locator('.day-over .btn').textContent(), await scrollY()], ['Next race day ▸', 0]);
 
   await ctx7.close();
 }
