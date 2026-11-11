@@ -1985,10 +1985,14 @@ await page.waitForSelector('.races');
   await between.locator('.seg button', { hasText: /^Trifecta$/ }).click();
   for (const [row, k] of [[0, 2], [1, 3], [2, 5]]) await between.locator('.pick-row').nth(row).locator('button').nth(k).click();
   await between.click('.builder .btn');
-  // (The tickets whose numbers aren't a piece of their own, or are a piece broken across two lines.)
+  // (The tickets whose numbers aren't a piece of their own, or are a piece that starts part-way along a line
+  // and is broken. Numbers too long for a line by themselves start a line and then break: at 320 wide, five
+  // of them beside a stamp that says "PAID $6,066.20".)
   const split = () => between.evaluate(() => [...document.querySelectorAll('.ticket .what')].filter(w => {
     const numbers = w.querySelector('.bit');
-    return !numbers || numbers.getBoundingClientRect().height > parseFloat(getComputedStyle(numbers).lineHeight) * 1.5;
+    if (!numbers) return true;
+    const at = numbers.getBoundingClientRect();
+    return at.height > parseFloat(getComputedStyle(numbers).lineHeight) * 1.5 && at.left > w.getBoundingClientRect().left + 1;
   }).map(w => w.textContent));
   assert.deepEqual(await between.locator('.ticket .what').allTextContents(), ['$100 TRIFECTA BOX 1, 2, 3, 4, 5', '$100 TRIFECTA 3-4-6']);
   for (const width of [390, 320]) {
@@ -2104,6 +2108,22 @@ await page.waitForSelector('.races');
     });
     assert.deepEqual([caption.oneLine, caption.date], [true, date], `${width} wide: the photo's caption has "${caption.text}"`);
     assert.match(caption.text, date === 'short' ? /^[A-Z][a-z]{2} \d+, \d{4}$/ : /^[A-Z][a-z]{2,} \d+, \d{4}$/);
+  }
+
+  // In a wide window the bar under a race's page, and under its result, keeps what's in it to the page's
+  // column: its words start 14 px inside the column's left edge and its button ends 14 px inside the right.
+  // (They started at the window's left edge and ended at its right, 250 px outside the column at 1280 wide.)
+  // On a phone the column is the screen, and nothing has moved.
+  for (const width of [1280, 1920, 390]) {
+    await between.setViewportSize({ width, height: 800 });
+    for (const screen of ['race', 'result']) {
+      await go(screen, { no: 8 });
+      const bar = await between.evaluate(() => {
+        const box = s => document.querySelector(s).getBoundingClientRect(), column = box('#app'), all = box('.post-bar');
+        return { left: Math.round(box('.post-bar .info').left - column.left), right: Math.round(column.right - box('.post-bar .btn').right), ground: [Math.round(all.left), Math.round(innerWidth - all.right)], column: Math.round(column.width) };
+      });
+      assert.deepEqual(bar, { left: 14, right: 14, ground: [0, 0], column: Math.min(width, 760) }, `${width} wide: the bar under a ${screen}`);
+    }
   }
 
   await ctx7.close();
