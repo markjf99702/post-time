@@ -236,9 +236,10 @@ const TOGETHER = [
 ];
 const TAIL = [[0, (b, c) => `, ${b} second, ${c} third`], [1, (b, c) => ` over ${b}, then ${c}`], [2, (b, c) => `, then ${b} and ${c}`], [3, (b, c) => `, ${b} is second and ${c} third`]];
 // The rest of the field, a few at a time.
-const NEXT = [[0, x => `then ${x}`, 'list'], [1, (x, k) => `${x} is ${k}`], [2, x => `${x} next`], [3, x => `behind them, ${x}`, 'list'], [4, x => `then comes ${x}`, 'list'], [5, (x, k) => `${x} runs ${k}`]];
+// (The ones marked `list` carry on from the horse before, so they only follow a line of the run through the field.)
+const NEXT = [[0, x => `then ${x}`, 'list'], [1, (x, k) => `${x} is ${k}`], [2, x => `${x} next`, 'list'], [3, x => `behind them, ${x}`, 'list'], [4, x => `then comes ${x}`, 'list'], [5, (x, k) => `${x} runs ${k}`]];
 const PLACE = [[0, (x, k) => `${x} is ${k}`], [1, (x, k) => `${x} runs ${k}`], [2, (x, k) => `in ${k}, ${x}`], [3, (x, k) => `${x} sits ${k}`]];
-const GAP0 = [[0, (x, g) => `${g} back to ${x}`], [1, (x, g) => `then a gap of ${g} to ${x}`], [2, (x, g) => `${g} further back, ${x}`], [3, (x, g) => `it's ${g} back to ${x}`]];
+const GAP0 = [[0, (x, g) => `${g} back to ${x}`], [1, (x, g) => `then a gap of ${g} to ${x}`, 'list'], [2, (x, g) => `${g} further back, ${x}`], [3, (x, g) => `it's ${g} back to ${x}`]];
 const GAP1 = [[0, (x, g) => `, ${g} back to ${x}`], [1, (x, g) => `, then ${g} to ${x}`], [2, (x, g) => `, a gap of ${g} to ${x}`]];
 const ALONG = [[0, x => `, with ${x} alongside`], [1, x => `, ${x} alongside`]];
 const LAST = [[0, 'trails'], [1, 'is last'], [2, 'brings up the rear'], [3, 'is at the back']];
@@ -265,7 +266,7 @@ const STRUNG = [[0, n => `They're strung out, ${n} from first to last.`], [1, n 
 const SPREAD = [[0, n => `${up(n)} from first to last.`], [1, n => `The field covers ${n}.`], [2, n => `From front to back it's ${n}.`], [3, n => `${up(n)} separate first and last.`]];
 const THIRD = [
   [0, (c, g) => `${c} is third, ${g} back.`, c => `${c} is third.`], [1, (c, g) => `${c} runs third, ${g} behind them.`, c => `${c} runs third.`],
-  [2, (c, g) => `Then ${c}, ${g} away in third.`, c => `Then ${c} in third.`], [3, (c, g) => `${up(g)} back to ${c} in third.`, c => `${c} third.`],
+  [2, (c, g) => `Then ${c}, ${g} away in third.`, c => `Then ${c} in third.`, 'list'], [3, (c, g) => `${up(g)} back to ${c} in third.`, c => `${c} third.`],
   [4, (c, g) => `${c} sits third, ${g} off them.`, c => `${c} sits third.`],
 ];
 const MOVER = [[0, 'is on the move'], [1, 'is picking them off'], [2, 'starts to roll'], [3, 'is making a run'], [4, 'is moving up'], [5, 'is making up ground']];
@@ -348,7 +349,14 @@ const CHASE = [
   [1, (b, g, a) => `${b} chases ${a}, ${g} behind!`, b => `${b} gives chase!`, 'leader'],
   [2, (b, g) => `${b} runs second, ${g} off the leader.`, b => `${b} runs second.`],
   [3, (b, g, a) => `${b} keeps after ${a}!`, b => `${b} keeps on!`, 'leader'],
-  [4, (b, g) => `Then ${b}, ${g} away.`, b => `Then ${b}.`],
+  [4, (b, g) => `Then ${b}, ${g} away.`, b => `Then ${b}.`, '', 'list'],
+];
+// A horse that was called the leader not long ago and has stopped. [id, with the place it's back to, without].
+const TIRING = [
+  [0, (x, k) => `${x} is tiring, back in ${k}.`, x => `${x} is tiring.`],
+  [1, (x, k) => `${x} drops back to ${k}.`, x => `${x} drops back.`],
+  [2, (x, k) => `${x} gives way, ${k} now.`, x => `${x} gives way.`],
+  [3, (x, k) => `${x} has had enough, back in ${k}.`, x => `${x} has had enough.`],
 ];
 const CRY = [[0, (a, b) => `${a} and ${b}!`], [1, (a, b) => `${a}, ${b}, to the wire!`], [2, (a, b) => `It's ${a} and ${b}!`], [3, (a, b) => `${a}! ${b}!`]];
 // The wire. Every one ends with the chart's margin.
@@ -409,6 +417,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     drive: '', driveAt: new Map(), thirdAt: -99, flown: new Set(), upped: new Set(), came: new Set(), troubled: new Set(), movers: new Set(), moverAt: -99, fill: '',
     texts: new Set(), used: new Map(), last: new Map(), off: false,
     nameAt: new Map(), // when each horse was last named, in any line
+    ledAt: new Map(), tired: new Set(), // when each was last called the leader, and the ones called for tiring
   };
   // The horses a line names. (A name can be part of another: the longer is looked for first, and taken out.)
   const byLength = names.map((x, i) => [x, i]).sort((x, y) => y[0].length - x[0].length);
@@ -423,7 +432,8 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
       if (seen.size >= count) { seen.clear(); seen.add(id); } // every wording has had a turn: start round again
       S.last.set(slot, id);
     }
-    if (l.lead !== undefined) { S.leader = l.lead; S.leaderAt = l.t; S.led.add(l.lead); S.pass.add(l.lead); }
+    if (l.lead !== undefined) { S.leader = l.lead; S.leaderAt = l.t; S.led.add(l.lead); S.pass.add(l.lead); S.ledAt.set(l.lead, l.t); }
+    if (l.tired !== undefined) S.tired.add(l.tired);
     else if (l.pair) { if (S.leader === null) S.leader = l.pair[0]; S.leaderAt = l.t; }
     if (l.kind === 'off') S.off = true;
     if (l.slot === 'break') { S.broke = true; if (l.who !== undefined) S.bad = l.who; }
@@ -472,6 +482,9 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     return null;
   }
   const gapOf = (a, b) => (a.p - b.p) / LENGTH;
+  // Whether the line just given was part of the run through the field: "Then ..." only follows one of those.
+  const inRun = () => { const p = lines[lines.length - 1]; return !!p && (p.slot === 'run' || p.slot === 'more'); };
+  const justNamed = x => { const p = lines[lines.length - 1]; return !!p && S.nameAt.get(x.i) === p.t; };
   // A horse not named for six real seconds; and one that's due a mention in the stretch: that, or not
   // named since the furlong pole.
   const unsaid = (x, t) => wall(t) - wall(S.nameAt.get(x.i) ?? -99) > 6;
@@ -576,8 +589,8 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
         if (last) back = { last: z.i, ...(tail ? { off: Math.round(off) } : null) };
         if (j === 0) {
           if (last) bit = `${x} ${once('last', j, LAST)[1]}${tail}`;
-          else if (follows && gp >= GAP) bit = once('gap0', j, GAP0)[1](x, gapWords(gp));
-          else if (follows) { const w = once('next', j, NEXT); bit = w[1](x, nth(k + 1)); list = w[2] === 'list'; plain = true; }
+          else if (follows && gp >= GAP) bit = once('gap0', j, GAP0.filter(w => !w[2] || inRun()))[1](x, gapWords(gp));
+          else if (follows) { const w = once('next', j, NEXT.filter(v => !v[2] || inRun())); bit = w[1](x, nth(k + 1)); list = w[2] === 'list'; plain = true; }
           else { bit = once('place', j, PLACE)[1](x, nth(k + 1)); plain = true; }
         } else if (last) bit = `, and ${x} ${once('last', j, LAST)[1]}${tail}`;
         else if (!follows) bit = `, ${x} ${nth(k + 1)}`;
@@ -619,7 +632,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
         const [key, list] = spread <= n * 0.75 ? ['b', BUNCHED] : spread >= n * 1.6 ? ['s', STRUNG] : ['m', SPREAD];
         out.push([form(pick('spread', list.map(w => [key + w[0], w[1]]))[1](lengthsWords(Math.round(spread))), { fill, spread: Math.round(spread) })]);
       } else if (fill === 'third' && c && t - S.thirdAt > 12) {
-        const w = pick('third', THIRD);
+        const w = pick('third', THIRD.filter(v => !v[3] || inRun()));
         out.push([form(w[1](nm(c.i), gapWords(gapOf(b, c))), { fill, third: c.i }), form(w[2](nm(c.i)), { fill, third: c.i })]);
       }
     }
@@ -636,6 +649,20 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     const off = z.o - RAIL;
     const where = off >= OUTSIDE ? `, ${numWords(Math.round(off) + 1)} wide` : off < INSIDE ? ` ${pick('inner', INNER)[1]}` : '';
     return [form(`${nm(z.i)} ${pick('mover', MOVER)[1]}${where}.`, { who: z.i, ...(where ? { sides: [{ i: z.i, side: off >= OUTSIDE ? 'wide' : 'inside' }] } : null) })];
+  }
+
+  // A horse that was called the leader in the last twenty seconds and has stopped: third or worse by now and
+  // a length behind the leader, or two lengths behind, going slower than the leader and further back than a
+  // second ago. The
+  // horse in front turning for home often finishes out of the first three, and was never named again. Once
+  // for each horse.
+  function tiredForms(o, t) {
+    const ago = ord(t - 1), a = o[0];
+    const z = o.find((x, k) => k > 0 && !S.tired.has(x.i) && t - (S.ledAt.get(x.i) ?? -99) <= 20 && ((k >= 2 && gapOf(a, x) >= 1) || gapOf(a, x) >= 2) && x.v < a.v - 0.2
+      && gapOf(a, x) > (ago[0].p - ago.find(y => y.i === x.i).p) / LENGTH);
+    if (!z) return null;
+    const k = o.indexOf(z), w = pick('tiring', TIRING);
+    return [...(k >= 2 ? [form(w[1](nm(z.i), nth(k + 1)), { tired: z.i })] : []), form(w[2](nm(z.i)), { tired: z.i })];
   }
 
   // A horse that has just had to take a hold with nowhere to go, if it's near enough the front to matter.
@@ -808,6 +835,9 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
       const w = pick('clear', CLEAR);
       front.push(['clear', [form(w[1](nm(a.i), gapWords(g)), { lead: a.i }), form(w[2](nm(a.i)), { lead: a.i })]]);
     }
+    // A leader of a moment ago that has stopped: said after the two in front, when they're at it.
+    const tired = tiredForms(o, t);
+    if (tired) news.push(['tired', tired.map(f => ({ ...f, ...others }))]);
     // With the leader gone clear the race is for second: the two behind are called by name, ahead of
     // another word on the leader, and the plain lines about the second horse and the third give way.
     const gone = !!c && goneClear(o), g2 = c ? gapOf(b, c) : Infinity;
@@ -851,9 +881,10 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
       const was = ord(t - 3).findIndex(x => x.i === b.i);
       if (was >= 2 && !S.upped.has(b.i) && due(b, t) && !closing) {
         news.push(['second', [form(pick('upsecond', UP_SECOND)[1](nm(b.i)), { second: b.i, moved: was + 1, ...early })]]);
-      } else if (!gone && !closing) {
-        // The second horse. One that hasn't been named for a while is news: it may have only just got there.
-        const v = pick('chase', CHASE.filter(x => !threat || wall(fin) - wall(t) >= 4 || x[3]));
+      } else if (!gone && !closing && !justNamed(b)) {
+        // The second horse, unless the line before has just named it. One that hasn't been named for a while
+        // is news: it may have only just got there.
+        const v = pick('chase', CHASE.filter(x => (!threat || wall(fin) - wall(t) >= 4 || x[3]) && (!x[4] || inRun())));
         const lead = v[3] ? { lead: a.i } : null;
         (both ? news : places).push(['chase', [form(v[1](nm(b.i), gapWords(g), nm(a.i)), { second: b.i, ...lead, ...(v[3] ? null : early) }), form(v[2](nm(b.i)), { second: b.i, ...early })]]);
       }
@@ -863,7 +894,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     }
     // Otherwise the third horse, where it is.
     if (c && !forSecond && (!gone || g < PAIR)) {
-      const w = pick('third', THIRD);
+      const w = pick('third', THIRD.filter(v => !v[3] || inRun()));
       places.push(['third', [form(w[1](nm(c.i), gapWords(g2)), { third: c.i, ...others }), form(w[2](nm(c.i)), { third: c.i, ...others })]]);
     }
     const saidAt = kind => S.driveAt.get(kind) ?? -99;
@@ -971,6 +1002,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
         || (part !== S.passWhere && part !== 'chute' && (headlines || !rest.length || S.pass.size >= Math.min(n, 5)));
       if (fr) { slot = 'frac'; forms = fracForms(fr); }
       else if (!headlines && (forms = troubleForms(o, t, 5))) slot = 'trouble';
+      else if (!headlines && !stale && (forms = tiredForms(o, t))) slot = 'tired';
       else if (again && (stale || !headlines || !S.first || part !== S.passWhere)) { slot = 'run'; forms = S.first || t > 8 ? headForms(o, seg) : firstForms(o); }
       else if (headlines) { if (w - lastEnd() >= 3) { slot = 'fill'; forms = fillForms(o, t, true); } } // only the leader again, after a long quiet
       else if ((forms = moverForms(o, t))) slot = 'mover';

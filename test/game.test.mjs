@@ -187,7 +187,7 @@ function callAgainstRace(race, run, call, names, speed = 1) {
     else if (o[0].i !== cur && (o[0].p - o[1].p) / LENGTH >= 0.25) { cur = o[0].i; if (t >= 8) changes.push({ t, to: cur }); }
   }
   const troubles = run.events.filter(e => e.type === 'checked');
-  const texts = new Set(), led = new Set(), movers = new Set(), drives = [];
+  const texts = new Set(), led = new Set(), movers = new Set(), tired = new Set(), drives = [];
   const shapes = [];
   let lastNamed = null, pace = null, firstRun = null, threeQuarters = false, slowAway = null;
   call.lines.forEach((l, k) => {
@@ -310,6 +310,20 @@ function callAgainstRace(race, run, call, names, speed = 1) {
       count('up to second');
       const was = order(l.t - 3).findIndex(z => z.i === l.second);
       if (o[1].i !== l.second || was < 2 || !x.includes(names[l.second])) bad('for second', l, `${NTH[was + 1]} three seconds before`);
+    }
+    // "Then ..." and "Behind them ..." carry on from the horse before: only after a line of the run through the field.
+    if (running && /^(Then|Behind them)\b/.test(x) && before && !['run', 'more'].includes(before.slot)) bad('then', l, `after "${before.text}"`);
+    // The second horse isn't given again straight after a line that named it.
+    if (l.drive === 'chase' && before && before.text.includes(names[l.second])) bad('repeated', l, `after "${before.text}"`);
+    // A horse that's tiring was called the leader in the last twenty seconds, is third or worse or two lengths
+    // behind by now, and is going slower than the horse in front. Once for each horse.
+    if (/ is tiring[,.]| drops back[ .]| gives way[,.]| has had enough[,.]/.test(x) !== (l.tired !== undefined)) bad('tiring', l, 'not marked');
+    if (l.tired !== undefined) {
+      count('tiring');
+      const k2 = o.findIndex(z => z.i === l.tired), back = gap(o[0].i, l.tired);
+      const ledAt = call.lines.slice(0, k).filter(z => z.lead === l.tired).map(z => z.t).pop();
+      if (!(l.t - ledAt <= 20) || !(k2 >= 2 || back >= 2) || !(st[l.tired].v < o[0].v) || tired.has(l.tired) || !x.startsWith(names[l.tired]) || (/back in|back to|now\./.test(x) && !x.includes(NTH[k2 + 1]))) bad('tiring', l, `${NTH[k2 + 1]}, ${back.toFixed(1)} lengths back, called the leader ${(l.t - ledAt).toFixed(1)} s before`);
+      tired.add(l.tired);
     }
     if (l.slot === 'trouble') { count('trouble'); if (!troubles.some(e => e.h === l.who && e.t <= run.t0 + l.t && run.t0 + l.t - e.t < 1.2) || !x.includes(names[l.who])) bad('trouble', l, 'nobody was stopped'); }
     // Closing: gaining on the leader, from within three lengths; closing fast, a quarter of a length a second.
@@ -1031,6 +1045,17 @@ test('the stretch is called about the horses that are deciding it', () => {
   note(`the last line before the wire names one of the first two home in ${named.length} of ${tight.length} races won by under a length (${races.filter(r => r.end.lastTwo).length} of ${races.length} in all); the runner-up is named in the last furlong in ${second.length} of ${races.length}; a horse comes for second ${total(races, 'for second')} times, one moves up to second ${total(races, 'up to second')} times, and two are at it for second ${total(races, 'two for second')} times`);
 });
 
+test('a leader that stops is said to be tiring, "Then" follows the run through the field, and the second horse isn\'t given twice running', () => {
+  // The horse in front turning for home finished out of the first three in 37 races of 200 and in 22 of
+  // them was never named again: no wording said a horse was tiring. "The half mile in 48 and 1." was
+  // followed by "Then a gap of three lengths to Spare Anthem", and "... by three lengths over Stormy
+  // Dancer!" by "Then Stormy Dancer."
+  const races = playLongMeet();
+  for (const kind of ['tiring', 'then', 'repeated']) assert.deepEqual(told(races, kind), [], kind);
+  assert.ok(total(races, 'tiring') > races.length / 4, `a horse is said to be tiring ${total(races, 'tiring')} times`);
+  note(`a horse is said to be tiring ${total(races, 'tiring')} times in ${races.length} races`);
+});
+
 test('the caller puts a horse on the outside, on the inside or four wide only where it is running', () => {
   // "Is flying on the outside!" was one of three endings picked at random, and was said of horses on the
   // rail; "four wide" was the chart's third path.
@@ -1115,7 +1140,7 @@ test('watched at 2x the call is its shorter lines, and at 4x only the headlines,
   // at 2x each line is in its shortest wording, and at 4x there's the off, the leader on each part of the
   // track, lead changes, the turn for home, a furlong out and the winner.
   const fast = playLongMeet().flatMap(r => r.fast || []);
-  for (const kind of ['leader', 'pair', 'crowded', 'long', 'twice', 'change', 'passed', 'recovered', 'sure', 'closing', 'place', 'mover', 'flying', 'running on', 'for second', 'near', 'places', 'where', 'trouble', 'break', 'poles', 'fraction', 'stretch', 'finish', 'words']) assert.deepEqual(told(fast, kind), [], kind);
+  for (const kind of ['leader', 'pair', 'crowded', 'long', 'twice', 'change', 'passed', 'recovered', 'sure', 'closing', 'place', 'mover', 'flying', 'running on', 'for second', 'tiring', 'then', 'repeated', 'near', 'places', 'where', 'trouble', 'break', 'poles', 'fraction', 'stretch', 'finish', 'words']) assert.deepEqual(told(fast, kind), [], kind);
   const [twice, four] = [2, 4].map(speed => fast.filter(r => r.speed === speed));
   assert.equal(twice.length, 120);
   for (const r of fast) {
