@@ -320,6 +320,9 @@ a { color: var(--green-2); }
   display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center;
   background-image: radial-gradient(circle at 0 50%, transparent 5px, #fbf6e3 5.5px);
 }
+/* A ticket brought into view (the one just bought is) comes to rest clear of the bar at the bottom. The race's
+   page says how tall the bar is just now, as --bar. */
+.ticket { scroll-margin-bottom: calc(var(--bar, 62px) + 12px); }
 .ticket::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: repeating-linear-gradient(#c0392b 0 6px, #fbf6e3 6px 10px); border-radius: 4px 0 0 4px; }
 .ticket .what { font-weight: 700; }
 .ticket .small { font-size: 12px; color: #6b604b; }

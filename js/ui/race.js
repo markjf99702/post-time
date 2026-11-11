@@ -95,9 +95,12 @@ export function renderRace(root, nav, params) {
     clearSlip(race);
     // To the gate takes this button's place: a second tap meant for Buy mustn't start the race.
     notBefore = performance.now() + DOUBLE_TAP;
-    if (current === 'bet') { show('bet'); showPrinted(); } else { drawTabs(); refreshBar(); }
+    if (current === 'bet') { justBought(race); show('bet'); showPrinted(); } else { drawTabs(); refreshBar(); }
   }
 
+  // How tall the bar is just now (it has a second row on a phone while a pick isn't bought), so that
+  // whatever is brought into view comes to rest above it and not behind it.
+  const measureBar = () => document.documentElement.style.setProperty('--bar', `${bar.offsetHeight}px`);
   function refreshBar() {
     asked = false;
     while (info.nextSibling) info.nextSibling.remove();
@@ -111,12 +114,14 @@ export function renderRace(root, nav, params) {
         h('button', { class: 'btn ghost', type: 'button', onclick: toGate }, 'To the gate ▸'),
         h('button', { class: 'btn brass', type: 'button', onclick: buySlip }, `Buy ticket · ${money(betCost(bet))}`),
       );
+      measureBar();
       return;
     }
     say(bets.length ? [h('b', {}, `${bets.length} ticket${bets.length > 1 ? 's' : ''}`), ` · ${money(spent)} on this race`] : [h('span', { class: 'muted' }, isNext ? 'No tickets yet. You can watch without betting.' : race.status === 'official' ? 'This race is over.' : `Race ${nxt ? nxt.no : ''} is up first.`)]);
     if (race.status === 'official') bar.append(h('button', { class: 'btn', type: 'button', onclick: () => nav.go('result', { no: race.no }) }, 'Results ▸'));
     else if (isNext) bar.append(h('button', { class: 'btn brass', type: 'button', onclick: toGate }, 'To the gate ▸'));
     else bar.append(h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('race', { no: nxt.no }) }, `Race ${nxt.no} first`));
+    measureBar();
   }
 
   // Minutes to post tick down, and the odds move with them.
@@ -133,7 +138,7 @@ export function renderRace(root, nav, params) {
   tick();
   timer = setInterval(tick, 1000);
   show(current);
-  return () => { clearInterval(timer); if (stopPanel) stopPanel(); };
+  return () => { clearInterval(timer); if (stopPanel) stopPanel(); document.documentElement.style.removeProperty('--bar'); };
 }
 
 // Who the race is for, under its name. A stakes isn't by invitation (only an invitational is): it's open to
@@ -376,8 +381,20 @@ function pickShort(race, bet) {
   const name = BET_NAMES[bet.type].toLowerCase();
   return `${/^[aeiou]/.test(name) ? 'an' : 'a'} ${name} (${numbers(race, bet)})`;
 }
+// The ticket just bought prints out under the others, and the page moves to show it. (It used to print
+// behind the bar at the bottom: the page was moved a moment into the half second the ticket takes to slide
+// out, so it aimed short, and only as far as the bottom of the screen, which the bar covers. A ticket keeps
+// the bar's height clear below it now, in the stylesheet.) The move is aimed at where the ticket will lie
+// once it's out, and the ticket prints as the page gets there.
+let printing = null; // the ticket just bought, until the list it's in is drawn
+function justBought(race) { printing = { race: memoKey(race), i: myBets(race).length - 1 }; }
 function showPrinted() {
-  setTimeout(() => document.querySelector('.ticket.printed')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50);
+  const t = document.querySelector('.ticket.printed');
+  if (!t) return;
+  const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  t.style.animation = 'none';
+  t.scrollIntoView({ block: 'nearest', behavior: still ? 'auto' : 'smooth' });
+  t.style.animation = '';
 }
 
 // Said under the board and in How to play: a ticket isn't paid at the price it was bought at.
@@ -448,6 +465,7 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
         if (!res.ok) { msg.textContent = res.why; return; }
         audio.ticket();
         clearSlip(race);
+        justBought(race);
         changed();
         showPrinted();
       },
@@ -525,11 +543,15 @@ function ticketList(race, open, changed) {
   const wrap = h('div', { class: 'tickets' });
   const bets = myBets(race);
   const settled = game.player.settled[raceKey(race)];
+  // Only the ticket just bought prints out. (The last one in the list used to, every time the list was
+  // drawn: when the Bet tab was opened, and when another ticket was cancelled.)
+  const fresh = printing && printing.race === memoKey(race) ? printing.i : -1;
+  printing = null;
   bets.forEach((b, i) => {
     const sel = b.sel.map(x => race.entries[x].pp);
     const label = b.type === 'exacta' || b.type === 'trifecta' ? sel.join('-') : b.type.endsWith('box') ? sel.join(', ') : sel[0];
     const back = settled ? settled.returns[i] : null;
-    wrap.append(h('div', { class: `ticket${i === bets.length - 1 && !settled ? ' printed' : ''}${back > 0 ? ' cashed' : back === 0 ? ' lost' : ''}` },
+    wrap.append(h('div', { class: `ticket${i === fresh ? ' printed' : ''}${back > 0 ? ' cashed' : back === 0 ? ' lost' : ''}` },
       h('div', {},
         h('div', { class: 'what' }, `$${b.amt} ${BET_NAMES[b.type].toUpperCase()} ${label}`),
         h('div', { class: 'small' }, `LRK R${race.no} · ${sel.map(n => horseOf(race.entries.find(e => e.pp === n)).name).join(' / ')} · COST ${money(b.cost)}`),

@@ -1239,6 +1239,45 @@ await page.waitForSelector('.races');
   await ctx4.close();
 }
 
+// The ticket just bought prints where it can be seen: once the page has come to rest it is whole between the
+// tabs and the bar at the bottom, on a phone and on a small one, whichever Buy button bought it (the slip's
+// or the bar's). It used to come out behind the bar, 40 of its 53 px hidden. And only that ticket prints:
+// opening the Bet tab again, or cancelling another ticket, used to slide the last one out again.
+{
+  const ctx5 = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
+  const shop = await ctx5.newPage();
+  shop.on('pageerror', e => problems.push(e.message));
+  shop.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
+  await shop.goto(base, { waitUntil: 'domcontentloaded' });
+  await shop.waitForSelector('.races', { timeout: 60000 });
+  await shop.evaluate(() => { const { game, save } = window.postTime; game.player.settings.sound = false; save(); return document.fonts.ready.then(() => 0); });
+  const printing = () => shop.evaluate(() => [...document.querySelectorAll('.ticket')].filter(t => t.classList.contains('printed') || getComputedStyle(t).animationName !== 'none').length);
+  for (const [width, height] of [[390, 844], [320, 568]]) {
+    await shop.setViewportSize({ width, height });
+    await shop.evaluate(() => window.postTime.nav.go('race', { no: 1, tab: 'bet' }));
+    await shop.waitForSelector('.builder');
+    const behind = [];
+    for (const [k, buy] of [[0, '.builder .btn'], [1, '.post-bar .btn.brass'], [2, '.builder .btn']]) {
+      await shop.locator('.pick-row').nth(0).locator('button').nth(k).click();
+      await shop.click(buy);
+      assert.equal(await shop.evaluate(() => [...document.querySelectorAll('.ticket')].map(t => +t.classList.contains('printed')).join('')), '0'.repeat(await shop.locator('.ticket').count() - 1) + '1', 'the ticket that prints is not the one just bought');
+      await shop.waitForTimeout(1200); // the page moves to it, and it slides out
+      const at = await shop.evaluate(() => {
+        const box = s => [...document.querySelectorAll(s)].pop().getBoundingClientRect();
+        return { top: box('.ticket').top, bottom: box('.ticket').bottom, tabs: box('.tabs').bottom, bar: box('.post-bar').top };
+      });
+      if (at.bottom > at.bar || at.top < at.tabs) behind.push(`ticket ${k + 1}, bought with ${buy}: ${Math.round(at.top)} to ${Math.round(at.bottom)}, with the tabs down to ${Math.round(at.tabs)} and the bar from ${Math.round(at.bar)}`);
+    }
+    assert.deepEqual(behind, [], `${width} wide: the ticket just bought is behind the bar or the tabs`);
+    await shop.click('.tabs button:nth-child(1)');
+    await shop.click('.tabs button:nth-child(4)');
+    assert.equal(await printing(), 0, 'opening the Bet tab prints a ticket again');
+    await shop.locator('.ticket button').first().click();
+    assert.deepEqual([await shop.locator('.ticket').count(), await printing()], [width === 390 ? 2 : 4, 0], 'cancelling a ticket prints another one again');
+  }
+  await ctx5.close();
+}
+
 assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems while using it');
 // Offline, checked the junkdrawer house kit's way, from a server that answers like GitHub Pages: a browser may keep
 // each file for ten minutes, and asks again by its ETag. `net` is the connection: 'up', 'down' (the server drops every
