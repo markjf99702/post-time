@@ -35,7 +35,7 @@ export function renderWatch(el, nav, params) {
   const canvas = h('canvas', { class: 'scene', 'aria-label': `Race ${race.no}, running now. The race call below describes it.` });
   const mapC = h('canvas', { width: 220, height: 108, 'aria-hidden': 'true' });
   const stage = h('div', { class: 'w-stage' }, canvas, h('div', { class: 'w-map' }, mapC));
-  const order = h('div', { class: 'order', 'aria-label': 'Running order' });
+  const order = h('div', { class: 'order', role: 'group', 'aria-label': 'Running order' });
   const prev = h('div', { class: 'prev' });
   const now = h('div', { class: 'now', 'aria-live': 'polite' });
   const callBox = h('div', { class: 'call' }, prev, now);
@@ -229,11 +229,77 @@ export function renderWatch(el, nav, params) {
     hint.textContent = r ? `Following #${r.number} ${r.name}. Tap again for the leaders.` : HINT;
   }
 
-  let orderShown = '';
+  // The strip's buttons are made once, here, and kept for the race. It used to be emptied and built again
+  // whenever a margin's text changed, three times a second: a mouse press that was still down when that
+  // happened lost its button and never became a click, and a screen reader was told the focus had moved
+  // each time. Now a margin is written into a span that stays, a number moves only when the order
+  // changes, and the one the keyboard is on is the one that stays put while the others move round it.
+  const slots = runners.map((r, i) => {
+    const b = h('button', { type: 'button', class: r.mine ? 'me' : '', 'aria-pressed': 'false', data: { i } }, cloth(r.number, 'sm'));
+    const text = document.createTextNode('');
+    return { b, text, gap: h('span', { class: 'gap' }, text), slot: h('span', { class: 'slot' }, b), label: '' };
+  });
+  const pair = h('span', { class: 'pair' }); // the two in a photo
+  function follow(i) {
+    following = following === i ? null : i;
+    scene.setFocus(following);
+    slots.forEach((s, k) => { s.b.classList.toggle('follow', k === following); s.b.setAttribute('aria-pressed', String(k === following)); });
+    showHint();
+  }
+  // A press is for the number that was under it when it went down. If the order changes before it comes
+  // up, the number has moved from under the pointer and the click lands on its neighbour or between two.
+  let pressed = null;
+  order.addEventListener('pointerdown', e => {
+    const b = e.target.closest('button');
+    pressed = b ? { i: +b.dataset.i, at: performance.now() } : null;
+  });
+  order.addEventListener('pointercancel', () => { pressed = null; });
+  order.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    const down = pressed && performance.now() - pressed.at < 1500 ? pressed.i : null;
+    pressed = null;
+    if (down !== null) follow(down);
+    else if (b) follow(+b.dataset.i); // the keyboard
+  });
+  // Puts `kids` into `box` in that order, and takes out anything else. `keep`, the one with the keyboard's
+  // focus in it, is never moved (a button taken out of the page, even for a moment, loses the focus):
+  // the ones after it are set in place from the right and the ones before it from the left.
+  function arrange(box, kids, keep) {
+    for (const x of [...box.children]) if (!kids.includes(x)) x.remove();
+    const at = keep && keep.parentNode === box ? kids.indexOf(keep) : -1;
+    for (let k = kids.length - 1, next = null; k > at; next = kids[k--]) {
+      if (kids[k].parentNode !== box || kids[k].nextSibling !== next) box.insertBefore(kids[k], next);
+    }
+    for (let k = 0, before = null; k < at; before = kids[k++]) {
+      if (kids[k].parentNode !== box || kids[k].previousSibling !== before) box.insertBefore(kids[k], before ? before.nextSibling : box.firstChild);
+    }
+  }
+
+  // Two horses running level are in front of each other by turns, many times a second, and their numbers
+  // changed places on the strip as often. A number goes past the one in front of it when its horse is a
+  // head in front, and until then it's a nose behind. Horses past the wire are in the official order.
+  const CLEAR = 0.18; // lengths: a head
+  let kept = null, keptAt = 0; // the order of the ones still running, as last shown
+  function steady(o, t) {
+    const done = run.results.filter(r => t0 + r.time <= t).length;
+    const back = new Map(); // lengths behind the first of them
+    let sum = 0;
+    o.slice(done).forEach((x, k) => back.set(x.i, sum += k ? x.gap : 0));
+    // After a jump (Skip, or the picture taken back), it's the order as it stands.
+    const was = kept && t >= keptAt && t - keptAt < 1 ? kept.filter(i => back.has(i)) : [];
+    const now = [...was, ...o.slice(done).map(x => x.i).filter(i => !was.includes(i))];
+    for (let k = 1; k < now.length; k++) {
+      for (let j = k; j > 0 && back.get(now[j - 1]) - back.get(now[j]) > CLEAR; j--) [now[j - 1], now[j]] = [now[j], now[j - 1]];
+    }
+    kept = now; keptAt = t;
+    const lead = done < o.length ? o[done].gap : 0; // from the wire, once a horse has crossed it
+    return [...o.slice(0, done), ...now.map((i, k) => ({ i, gap: k ? Math.max(0, back.get(i) - back.get(now[k - 1])) : lead + back.get(i) }))];
+  }
+
   let signUp = false; // after a photo, the official sign is up
   function drawOrder(t) {
     // In the gate, list them by post position.
-    let o = t > 1 ? runningOrder(run, t) : runners.map((r, i) => ({ i, gap: 0 }));
+    let o = t > 1 ? steady(runningOrder(run, t), t) : runners.map((r, i) => ({ i, gap: 0 }));
     // A photo: the running order has the official order and margins from the moment a horse crosses, which
     // gave the result away while the PHOTO sign was still up. From the wire until the official sign, the
     // two in the photo are shown as a pair, lower number first, with no margin between them.
@@ -241,28 +307,27 @@ export function renderWatch(el, nav, params) {
       const two = [run.results[0].h, run.results[1].h].sort((a, b) => runners[a].number - runners[b].number);
       o = [...two.map(i => ({ i, gap: 0, photo: true })), ...o.filter(x => !two.includes(x.i))];
     }
-    // No margins for the first four seconds, while the field sorts itself out ("no" eleven times over).
-    const gaps = o.map((x, k) => (k > 0 && t > 4 && !x.photo ? marginShort(x.gap) : ''));
-    // Rebuilt only when something on it changes, since a rebuilt button loses the keyboard's place;
-    // the horse that had it gets it back.
-    const shows = `${following}|${o.map((x, k) => `${x.i} ${x.photo ? 'photo' : gaps[k]}`).join(',')}`;
-    if (shows === orderShown) return;
-    orderShown = shows;
-    const had = order.contains(document.activeElement) ? document.activeElement.dataset.i : null;
-    clear(order);
-    let pair = null;
+    const focused = order.contains(document.activeElement) ? document.activeElement : null;
+    const row = [], photo = [];
     o.forEach((x, k) => {
-      const r = runners[x.i];
-      const b = h('button', {
-        type: 'button', class: `${r.mine ? 'me' : ''}${following === x.i ? ' follow' : ''}`, 'aria-label': `${x.photo ? 'In the photo' : k + 1}: number ${r.number}, ${r.name}`, data: { i: x.i },
-        onclick: () => { following = following === x.i ? null : x.i; scene.setFocus(following); orderAt = -1; showHint(); },
-      }, cloth(r.number, 'sm'));
-      if (x.photo) {
-        if (!pair) order.append(pair = h('span', { class: 'pair' }));
-        pair.append(b);
-      } else order.append(h('span', { class: 'slot' }, gaps[k] ? h('span', { class: 'gap' }, gaps[k]) : null, b)); // a number goes to the next row with its margin
-      if (had === String(x.i)) b.focus({ preventScroll: true });
+      const r = runners[x.i], s = slots[x.i];
+      const label = `${x.photo ? 'In the photo' : k + 1}: number ${r.number}, ${r.name}`;
+      if (label !== s.label) s.b.setAttribute('aria-label', s.label = label);
+      // No margins for the first four seconds, while the field sorts itself out ("no" eleven times over).
+      const margin = k > 0 && t > 4 && !x.photo ? marginShort(x.gap) : '';
+      if (margin !== s.text.data) s.text.data = margin;
+      if (x.photo) { photo.push(s.b); return; }
+      // A number goes to the next row with its margin, so the two share a slot. The leader's has no margin.
+      if (!margin) s.gap.remove();
+      else if (s.gap.parentNode !== s.slot) s.slot.prepend(s.gap);
+      if (s.b.parentNode !== s.slot) s.slot.append(s.b);
+      row.push(s.slot);
     });
+    if (photo.length) { arrange(pair, photo, focused); row.unshift(pair); }
+    arrange(order, row, focused && row.find(x => x.contains(focused)));
+    // The button the keyboard was on has it still, unless it has just gone into the photo's pair or come
+    // out of it: then it's given back.
+    if (focused && document.activeElement !== focused) focused.focus({ preventScroll: true });
   }
 
   function finish() {

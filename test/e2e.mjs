@@ -1185,6 +1185,60 @@ await page.waitForSelector('.races');
   await ctx3.close();
 }
 
+// The running order with a mouse and with the keyboard. Its buttons are made once and kept for the race: the
+// strip used to be emptied and built again whenever a margin changed, three times a second, so a mouse press
+// held 150 ms lost its button before it came up (9 of 20 presses followed nothing), and a button with the
+// keyboard's focus was replaced by a new one each time. Now a number moves only when its horse has gone a
+// head past another: for five seconds of the biggest field the strip's children change less than once a
+// second, the button with the focus is the same one at the end, and twenty presses all follow the horse
+// that was under the pointer when it went down.
+{
+  const ctx4 = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const desk = await ctx4.newPage();
+  desk.on('pageerror', e => problems.push(e.message));
+  desk.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
+  await desk.goto(base, { waitUntil: 'domcontentloaded' });
+  await desk.waitForSelector('.races', { timeout: 60000 });
+  await desk.evaluate(() => document.fonts.ready);
+  const biggest = await desk.evaluate(() => { const { game, card, save } = window.postTime; game.player.settings.sound = false; save(); return card().races.reduce((a, r) => (r.entries.length > a.entries.length ? r : a)).no; });
+  await desk.evaluate(no => window.postTime.nav.go('watch', { no }), biggest);
+  await desk.waitForSelector('.watch:not([hidden]) .order button');
+  await desk.evaluate(() => window.__watch.setT(8));
+  await desk.waitForTimeout(400);
+  const parked = await desk.evaluate(() => new Promise(resolve => {
+    const strip = document.querySelector('.order'), b = strip.querySelectorAll('button')[3];
+    let changes = 0, given = 0;
+    const seen = new MutationObserver(() => { changes++; });
+    seen.observe(strip, { childList: true, subtree: true });
+    b.focus();
+    strip.addEventListener('focusin', () => given++);
+    setTimeout(() => { seen.disconnect(); resolve({ changes, given, same: document.activeElement === b, role: strip.getAttribute('role'), pressed: [...strip.querySelectorAll('button')].map(x => x.getAttribute('aria-pressed')).join() }); }, 5000);
+  }));
+  assert.ok(parked.changes < 5, `the running order's buttons were moved or made again ${parked.changes} times in 5 seconds`);
+  assert.deepEqual([parked.same, parked.given], [true, 0], 'the button with the keyboard focus was replaced, or given the focus again, while the race ran');
+  assert.ok(parked.role === 'group' && /^false(,false)+$/.test(parked.pressed), 'the running order is not a group of buttons that say whether they are pressed');
+  await desk.evaluate(() => document.querySelector('.order').addEventListener('pointerdown', e => { window.__down = e.target.closest('button')?.dataset.i ?? null; }, true));
+  const missed = [];
+  for (let k = 0; k < 20; k++) {
+    // Nothing followed, and a number from the middle of the strip.
+    const at = await desk.evaluate(() => {
+      const w = window.__watch, on = document.querySelector('.order button[aria-pressed="true"]');
+      if (on) on.click();
+      if (w.T > w.winT - 15) w.setT(8);
+      const r = document.querySelectorAll('.order button')[2].getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    await desk.mouse.move(at.x, at.y);
+    await desk.mouse.down();
+    await desk.waitForTimeout(150);
+    await desk.mouse.up();
+    const took = await desk.evaluate(() => { const on = document.querySelectorAll('.order button[aria-pressed="true"]'); return { down: window.__down, on: [...on].map(b => b.dataset.i), ring: [...on].every(b => b.classList.contains('follow')) }; });
+    if (took.down === null || took.on.length !== 1 || took.on[0] !== took.down || !took.ring) missed.push(`press ${k + 1}: down on ${took.down}, following ${took.on.join() || 'nothing'}`);
+  }
+  assert.deepEqual(missed, [], 'a mouse press held 150 ms on a running-order number did not follow that horse');
+  await ctx4.close();
+}
+
 assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems while using it');
 // Offline, checked the junkdrawer house kit's way, from a server that answers like GitHub Pages: a browser may keep
 // each file for ten minutes, and asks again by its ETag. `net` is the connection: 'up', 'down' (the server drops every
