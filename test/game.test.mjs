@@ -10,7 +10,7 @@ globalThis.localStorage = {
   removeItem: k => { store.delete(k); },
 };
 globalThis.window = new EventTarget();
-const { game, newMeet, load, save, notSaved, card, toteFor, placeBet, goToGate, mtpState, currentBoard, advanceDay, callFor, callInfo, horseOf, runnersFor, photoRecord, forumFor, bestDay } = await import('../js/game.js');
+const { game, newMeet, load, save, notSaved, card, toteFor, placeBet, goToGate, mtpState, currentBoard, advanceDay, callFor, callInfo, horseOf, runnersFor, photoRecord, forumFor, bestDay, multiState, willPaysFor, cancelMulti, dayTotals } = await import('../js/game.js');
 const { stateAt, RAIL } = await import('../js/sim.js');
 const { LENGTH, FURLONG, segmentAt } = await import('../js/track.js');
 const { raceCall, raceClock } = await import('../js/call.js');
@@ -1372,6 +1372,98 @@ function buildResult(race) {
   // The race comes out of its seed and its entries, so running it ahead of time says who wins.
   return simulateRace(race, game.world, { record: true }).results[0].h;
 }
+
+// A daily double on races 7 and 8 and a Pick 3 on 6, 7 and 8, $1 each: bought at the window of the first
+// race while it's up, alive (or torn up) after each race, the will-pays shown before the last, and paid with
+// it, on the last race's line of your record.
+test('a daily double and a Pick 3 are bought in their first race, alive after it, and paid with the last', () => {
+  build('double-day');
+  const races = card().races;
+  assert.equal(races.length, 8);
+  const won = races.map(r => buildResult(r));
+  let [r6, r7, r8] = races.slice(5);
+  const not = (race, k) => (k + 1) % race.entries.length;
+  for (const r of races.slice(0, 5)) goToGate(r);
+  // Only in its first race, and only once that race is up.
+  assert.equal(placeBet(r7, { type: 'dd', sel: [[won[6]], [won[7]]], amt: 1 }).ok, false, 'a double was sold before race 7 was up');
+  assert.equal(placeBet(r6, { type: 'dd', sel: [[won[5]], [won[6]]], amt: 1 }).ok, false, 'a double was sold in race 6');
+  assert.equal(placeBet(r6, { type: 'p3', sel: [[won[5]], [], [won[7]]], amt: 1 }).ok, false, 'a Pick 3 with no horse in race 7 was sold');
+  assert.equal(placeBet(r6, { type: 'p3', sel: [[won[5]], [99], [won[7]]], amt: 1 }).ok, false, "a Pick 3 on a horse that isn't in race 7 was sold");
+  const bank = game.player.bank;
+  // Two horses in race 6 with the winners of 7 and 8: two $1 bets. And $2 on one beaten in race 6.
+  assert.deepEqual(placeBet(r6, { type: 'p3', sel: [[won[5], not(r6, won[5])], [won[6]], [won[7]]], amt: 1 }), { ok: true, cost: 2 });
+  assert.deepEqual(placeBet(r6, { type: 'p3', sel: [[not(r6, won[5])], [won[6]], [won[7]]], amt: 2 }), { ok: true, cost: 2 });
+  // One more, cancelled while race 6 is open: its money comes back.
+  assert.ok(placeBet(r6, { type: 'p3', sel: [[0], [0], [0]], amt: 5 }).ok);
+  cancelMulti(game.player.multi[2]);
+  assert.equal(game.player.multi.length, 2);
+  assert.equal(game.player.bank, bank - 4);
+  assert.equal(dayTotals().pending, 4, "the Pick 3s' money isn't pending");
+  const [alive, beaten] = game.player.multi;
+  assert.equal(multiState(alive), 'open');
+  goToGate(r6);
+  assert.equal(multiState(alive), 'alive');
+  assert.equal(multiState(beaten), 'dead');
+  assert.ok(!game.player.ledger.some(l => l.no === 6), 'a Pick 3 was counted on its first race');
+  // The double, with the winner of 7 and two in 8.
+  assert.deepEqual(placeBet(r7, { type: 'dd', sel: [[won[6]], [won[7], not(r8, won[7])]], amt: 2 }), { ok: true, cost: 4 });
+  goToGate(r7);
+  // The will-pays for race 8, with what's on it: the double's from race 7's winner, the Pick 3's from 6's and 7's.
+  const wp = Object.fromEntries(willPaysFor(r8).map(x => [x.type, x]));
+  assert.deepEqual(Object.keys(wp).sort(), ['dd', 'p3']);
+  assert.deepEqual(wp.dd.won, [won[6]]);
+  assert.deepEqual(wp.p3.won, [won[5], won[6]]);
+  assert.equal(wp.dd.pays.length, r8.entries.length);
+  // The caller and the running order know your horses in race 8: the winner there has $3 on it, the other $2.
+  assert.equal(callInfo(r8).mine, won[7]);
+  assert.ok(runnersFor(r8)[won[7]].mine && runnersFor(r8)[not(r8, won[7])].mine);
+  // They're kept with the meet, through a save and a load.
+  save();
+  assert.equal(load(), true);
+  assert.equal(game.player.multi.length, 3);
+  r8 = card().races[7]; // (the meet as it was loaded)
+  const before = game.player.bank;
+  goToGate(r8);
+  const pay = r8.result.multi;
+  assert.equal(pay.dd.pay, wp.dd.pays[won[7]], "the double didn't pay its will-pay");
+  assert.equal(pay.p3.pay, wp.p3.pays[won[7]], "the Pick 3 didn't pay its will-pay");
+  assert.deepEqual(pay.p3.sel, [won[5], won[6], won[7]]);
+  const back = Math.round((2 * pay.dd.pay + pay.p3.pay) * 100) / 100;
+  assert.equal(game.player.bank, Math.round((before + back) * 100) / 100);
+  assert.deepEqual(game.player.multi.map(t => multiState(t)), ['paid', 'dead', 'paid']);
+  // As of race 8 they stand as they did going into it: the watch screen doesn't give its result away.
+  assert.deepEqual(game.player.multi.map(t => multiState(t, r8)), ['alive', 'dead', 'alive']);
+  const line = game.player.ledger.find(l => l.no === 8);
+  assert.equal(line.spent, 8);
+  assert.equal(line.back, back);
+  assert.ok(game.player.book.some(b => b.no === 8), "a paying double didn't put you in race 8's photo");
+  advanceDay();
+  assert.deepEqual(game.player.multi, []);
+});
+
+// A save from before the daily double and the Pick 3 (the one on the live site) has no list of them, and loads
+// with none. One that names a horse that isn't in its race, or isn't one of today's, can't be settled: it goes,
+// and its money comes back.
+test('a save from before the daily double loads with none, and a ticket that can\'t be settled is refunded', () => {
+  build('before-doubles');
+  const old = JSON.parse(store.get('post-time/player'));
+  delete old.multi;
+  store.set('post-time/player', JSON.stringify(old));
+  assert.equal(load(), true);
+  assert.deepEqual(game.player.multi, []);
+  const day = game.world.day;
+  old.bank = 100;
+  old.multi = [
+    { type: 'dd', day, legs: [7, 8], sel: [[99], [0]], amt: 1, cost: 1 },
+    { type: 'p3', day: day - 1, legs: [6, 7, 8], sel: [[0], [0], [0]], amt: 1, cost: 1 },
+    'not a ticket',
+    { type: 'dd', day, legs: [7, 8], sel: [[0], [1]], amt: 2, cost: 2 },
+  ];
+  store.set('post-time/player', JSON.stringify(old));
+  assert.equal(load(), true);
+  assert.equal(game.player.multi.length, 1);
+  assert.equal(game.player.bank, 102);
+});
 
 test('a ticket there isn\'t the money for is refused in dollars', () => {
   build('short-of-money');
