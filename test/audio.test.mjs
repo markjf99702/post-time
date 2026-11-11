@@ -160,6 +160,15 @@ test("on a Chromebook the fourth of its own voices is used, with the fifth next,
   assert.equal(pickVoice(own, { saved: 'Chrome OS US English 7' }).name, 'Chrome OS US English 7');
 });
 
+test("on a Chromebook that hasn't added its natural voices the menu says how to, and nowhere else", () => {
+  const CROS = 'Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+  const own = lists['Chrome OS'].filter(v => /^Chrome OS US English \d$/.test(v.name));
+  assert.equal(audio.naturalToAdd(own, CROS), true);
+  assert.equal(audio.naturalToAdd(lists['Chrome OS'], CROS), false, 'it has them already');
+  assert.equal(audio.naturalToAdd([], CROS), false, 'no list yet');
+  assert.equal(audio.naturalToAdd(own, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0.0.0'), false, 'not a Chromebook');
+});
+
 test('a voice chosen in the menu is used while it is there, and kept while it is not', () => {
   assert.equal(pickVoice(MAC_DOWNLOADS, { saved: 'Zoe (Enhanced)' }).name, 'Zoe (Enhanced)');
   // The chosen voice has gone (deleted in the system's settings, or this is another device): the best here.

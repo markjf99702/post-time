@@ -325,6 +325,14 @@ export function offeredVoices(voices) {
     .filter(x => x.g >= 0).sort((a, b) => b.g - a.g || first(a.v, b.v)).map(x => x.v);
 }
 
+// A Chromebook has natural voices that it doesn't have until they're added in its own settings, and then
+// they're in a browser's list as "Google US English ... (Natural)". True on a Chromebook whose list has
+// voices and none of those, for the menu's line on how to add them.
+export function naturalToAdd(voices, userAgent = '') {
+  const list = Array.from(voices || []);
+  return /\bCrOS\b/.test(userAgent) && list.length > 0 && !list.some(v => /\bNatural\b/i.test(String(v.name || '')));
+}
+
 // The voice to use: the one saved in the menu if it's in the list and can be used now, otherwise the
 // best there is. A voice that needs the internet is passed over while there isn't any (and, in the page,
 // for the rest of the visit once one has failed). Null when the
@@ -406,10 +414,11 @@ export function voiceEnabled() { return voiceOn && canSpeak(); }
 // meanwhile, and the chosen one comes back when it does.
 export function setVoiceName(name) { voiceName = name || null; pick(); }
 // For the menu: the voice "Best here" means now, and the ones to choose from, best first.
-// And `using`, the voice that reads now (the one chosen, if it's here), and `none`, true in a browser with
-// no voice to read with.
+// And `using`, the voice that reads now (the one chosen, if it's here), `none`, true in a browser with
+// no voice to read with, and `natural`, true on a Chromebook that could add natural voices.
 export function voiceChoices() {
-  return { best: pickVoice(voices, { online: online() }), offered: offeredVoices(voices), using: picked, none: noVoice() };
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent || '';
+  return { best: pickVoice(voices, { online: online() }), offered: offeredVoices(voices), using: picked, none: noVoice(), natural: naturalToAdd(voices, ua) };
 }
 export function onVoicesChanged(fn) { voicesChanged = fn; }
 

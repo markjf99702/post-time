@@ -182,7 +182,7 @@ let voicesShown = '';
 function showVoices() {
   voiceRow.hidden = !optVoice.checked;
   if (!optVoice.checked) return;
-  const { offered, using, none } = audio.voiceChoices();
+  const { offered, using, none, natural } = audio.voiceChoices();
   voiceRow.classList.toggle('none', none);
   document.getElementById('voiceNone').hidden = !none;
   if (none) return;
@@ -199,6 +199,10 @@ function showVoices() {
     : voice.preparing ? `Getting ${joe.JOE.name} ready`
       : voice.reading ? `Reading in ${joe.JOE.name}`
         : voice.problem ? `Reading in ${browsers}` : `Reading in ${browsers} until ${joe.JOE.name} is here`;
+  // On a Chromebook that hasn't added its natural voices, the way to, as its own help page gives it
+  // ("Change the language or voice of spoken text", Chromebook Help: support.google.com/chromebook/answer/11221616).
+  // They come into this list once added, ranked where they always were.
+  document.getElementById('voiceMore').textContent = natural ? NATURAL : '';
   // Built again only when the list has changed, so a list that arrives late doesn't shut one that's open.
   const shows = JSON.stringify(options);
   if (shows !== voicesShown) {
@@ -209,6 +213,7 @@ function showVoices() {
   optVoiceName.value = chosen ? JOE : saved || '';
   showJoe(chosen, his, voice, browsers);
 }
+const NATURAL = 'This Chromebook can add more natural voices. In its Settings, choose Accessibility, then Text-to-speech, then Text-to-speech voice settings. Next to "Chrome OS built-in text-to-speech extension" choose Settings, and next to English choose "Add natural voices". Then come back here, pick one in this list and tap Hear it.';
 const savedVoice = () => { const n = game.player?.settings?.voiceName; return typeof n === 'string' && n ? n : null; };
 optVoiceName.addEventListener('change', () => {
   if (optVoiceName.value === JOE) game.player.settings.caller = 'joe';
