@@ -201,6 +201,7 @@ restart.addEventListener('click', e => {
 // One meet at a time: a second build started beside the first put up one meet's card and then replaced it
 // with the other's, and any ticket bought in between went with it.
 let building = false;
+const OPENING = 1200; // ms: the least the Opening day screen is up for
 function setup() {
   if (building) return;
   building = true;
@@ -213,13 +214,17 @@ function setup() {
     h('div', { class: 'bar' }, bar),
   );
   nav.go('card');
+  const shown = performance.now();
   const meet = newMeet();
+  const open = () => { waiting = null; building = false; restart.disabled = false; lastBank = null; applySettings(); nav.go('card'); };
   const step = () => {
     let done = false;
     const until = performance.now() + 40;
     while (!done && performance.now() < until) done = meet.step();
     bar.style.width = `${Math.round((done ? 1 : meet.progress()) * 100)}%`;
-    if (done) { waiting = null; building = false; restart.disabled = false; lastBank = null; applySettings(); nav.go('card'); }
+    // The screen says what the wait is for, so it stays up long enough to be read: a quick machine builds
+    // the meet in a third of a second, and the line was gone before it could be.
+    if (done) setTimeout(open, Math.max(0, OPENING - (performance.now() - shown)));
     else setTimeout(step, 0);
   };
   setTimeout(step, 30);

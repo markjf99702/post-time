@@ -42,7 +42,9 @@ const early = await page.evaluate(() => {
   document.getElementById('menuBtn').click();
   return { building, stored: localStorage.getItem('post-time/world') };
 });
-if (early.building) assert.equal(early.stored, null, 'changing a setting during Opening day saved an empty meet');
+// (Nothing is saved until the meet is built. The Opening day screen stays up a moment after that, and what's
+// saved by then is the meet, with its horses.)
+if (early.building) assert.ok(early.stored === null || JSON.parse(early.stored).horses?.length > 20, 'changing a setting during Opening day saved an empty meet');
 await page.waitForSelector('.races', { timeout: 30000 });
 // While a meet is being built the bankroll is blank, and so is its box.
 const emptyBank = await page.evaluate(() => {
@@ -589,8 +591,16 @@ assert.deepEqual(await meetNow(), meetWas, 'a double tap on Start a new meet sta
 assert.equal(await page.locator('#restart').textContent(), 'Tap again: new horses, $200, empty scrapbook');
 assert.equal(await page.evaluate(() => document.getElementById('menu').getBoundingClientRect().width), menuWas, 'the menu gets wider when Start a new meet is tapped');
 await page.waitForTimeout(500);
+// The Opening day screen says what the wait is for ("Running the last ten weeks of races..."), and is up for
+// at least 1.2 seconds, long enough to read: this machine builds a meet in a third of a second.
+await page.evaluate(() => {
+  const seen = window.__opening = []; // when the screen went up, and when it came down
+  new MutationObserver(() => { if (!!document.querySelector('#app .setup .bar') !== (seen.length === 1)) seen.push(performance.now()); }).observe(document.getElementById('app'), { childList: true });
+});
 await page.click('#restart');
 await page.waitForSelector('.races', { timeout: 30000 });
+const opening = await page.evaluate(() => window.__opening);
+assert.ok(opening.length === 2 && opening[1] - opening[0] >= 1150, `the Opening day screen was up for ${Math.round(opening[1] - opening[0])} ms`);
 assert.notEqual((await meetNow())[0], meetWas[0], 'a second tap on Start a new meet, a second after the first, started nothing');
 assert.equal(await page.locator('#bank').textContent(), '$200.00', 'a new meet starts with $200');
 // (The slip is on the race that's up, so the new meet's first two races are run, with nothing on them.)
