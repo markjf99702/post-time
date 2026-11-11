@@ -588,7 +588,8 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
         showPrinted();
       },
     }, 'Buy ticket');
-    builder.append(h('div', { class: 'bet-foot' }, broke || msg, buy), payLine(race, broke ? null : bet));
+    // (What it would pay goes under the pick and its cost, beside Buy ticket where there's room.)
+    builder.append(h('div', { class: 'bet-foot' }, broke || h('div', {}, msg, payLine(race, bet)), buy));
     picked(); // the bar at the bottom follows the slip
   };
   draw();
