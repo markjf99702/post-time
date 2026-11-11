@@ -5,13 +5,13 @@
 **A day at the races at Larkspur Downs, a made-up track with eight races every Saturday.** Read the form, look the horses over in the paddock, see who the regulars on the forum like, and buy tickets at the window while the odds move. Then watch the race from the gate to the wire, with a caller, a running order and, when it's close, a photo finish. Your bankroll and the horses carry over from one race day to the next.
 
 <p align="center">
-  <img src="docs/phone-card.png" alt="The race card for Saturday, September 26: eight races from a maiden claimer to the Brass Pull Stakes, each with its distance, field size and post time, with race 1 marked up next" width="250">
+  <img src="docs/phone-card.png" alt="The race card for Saturday, November 14, 2026, race day 1 of the meet: partly cloudy, dirt fast, turf firm. Eight races from a $20,000 maiden claimer to the Brass Pull Stakes, each with its distance, field size, purse and post time, the turf races tagged, and race 1 marked Up next" width="250">
   &nbsp;
-  <img src="docs/phone-form.png" alt="The Racing Form for race 1: one horse opened up to show its pedigree, lifetime record, and past performances with figures, positions at each call, odds, trip comments and fractions" width="250">
+  <img src="docs/phone-form.png" alt="The form for race 1 with one horse opened: Bless Your Heart, number 3, the 3-5 favourite, with her last five speed figures, the chips Close to the pace and Drops into a claimer, her pedigree and lifetime record, and five past performances, each with its date, distance, class, figure, position at each call, odds, trip note, fractions and the first three home" width="250">
   &nbsp;
-  <img src="docs/phone-race.png" alt="Race 2 on the far turn, seen from beside the track: nine horses spread over a few lengths, the running order with margins underneath, and the caller saying Spring Fever is stuck behind horses" width="250">
+  <img src="docs/phone-race.png" alt="Race 3, a mile on the turf, a furlong from the wire, seen from beside the track: six horses strung out across the picture in front of the infield tote board, number 1 in front. Underneath, the fractions, the running order with the margins between the horses, the caller saying Inside the final furlong! Pocket Sonnet by a half length over Say Less!, and a $2 win ticket on number 1" width="250">
   &nbsp;
-  <img src="docs/phone-circle.png" alt="The winner's circle photograph: the winner with its jockey's whip raised, a groom at its head, the owners alongside, and a caption with the race, time, jockey, trainer and owner" width="250">
+  <img src="docs/phone-circle.png" alt="The winner's circle photograph for race 3: Pocket Sonnet with the jockey's whip raised, a groom at the horse's head, the owners alongside, and you on the right holding up a ticket. The caption has the race, date, distance, time, jockey, trainer and owner, and the line That's you on the right, holding a ticket that paid $5.80" width="250">
 </p>
 
 ## How it plays
@@ -44,6 +44,7 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 
 ### Files
 
+- `index.html`, `css/app.css`: the page and how it looks. `carry.js` runs first on the page: on the first visit to post-time.junkdrawer.works it brings saves over from the game's old address, junkdrawer.works/post-time/, and anywhere else it does nothing.
 - `js/sim.js`: the race: pace, stamina, traffic and ground lost on the turns. Recorded frame by frame for playback.
 - `js/track.js`: the one-mile dirt oval, the seven-furlong turf course inside it, chutes and distance poles.
 - `js/world.js`: the barn of horses, the race cards, and turning a finished race into past performances.
@@ -57,3 +58,6 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `sw.js`: keeps a copy for playing offline. On a connection that isn't answering, a page opens from that copy after four seconds. `FILES` in it is a fingerprint of the files it keeps: change one and `npm test` says what to set it to, so a release never leaves the copy half old.
 - `test/sim.test.mjs`, `test/game.test.mjs`, `test/audio.test.mjs`, `test/e2e.mjs`: the tests. `test/voices.fixture.json` is the lists of voices that seventeen browsers have, for checking which one gets picked.
 - `dev/`: pages that draw the horses, a race, the photo finish and the winner's circle on their own, for tuning by eye.
+- `tools/sim.mjs`: `npm run sim`. It plays whole meets with nobody watching, every race bet and run the way the game does it, and prints how the betting came out, for tuning the tote, the handicapping and the barn.
+- `tools/screenshots.mjs`, `tools/make-icons.mjs`: redraw the pictures above, the link preview and the icons. The screenshots come out the same every time: the meet's seed and the date are pinned.
+- `scripts/build.mjs`: `npm run build`. It bundles the game into `dist/post-time.html`, one file with the fonts inside it, and `dist/artifact.html`, the same page without its wrapper, for an Artifact viewer. Neither is committed.
