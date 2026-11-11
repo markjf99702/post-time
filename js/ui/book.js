@@ -184,7 +184,11 @@ export function renderHelp(root, nav) {
       h('h3', {}, 'Saving'),
       h('p', { class: 'saving' }, savingText()),
       copyOffered() ? h('p', {}, 'Save a copy, in the menu, downloads the whole meet as one file. Open a copy carries the meet on from a file like that, on this device or another, in place of the one here.') : null,
-      singleFile ? null : h('p', {}, "On an iPhone or iPad, add Post Time to the Home Screen (the Share button, then Add to Home Screen). Safari clears a site's saved data once it has been used for seven days without a visit to the site, and a game on the Home Screen isn't cleared that way."),
+      // (A game on the Home Screen keeps its storage apart from Safari's, so it opens with a meet of its own: a
+      // WebKit engineer called that intended, 1 February 2022, WebKit bug 181849. Without the second sentence a
+      // player who follows the first finds a new meet and $200, and thinks theirs is gone.)
+      singleFile ? null : h('p', {}, "On an iPhone or iPad, add Post Time to the Home Screen (the Share button, then Add to Home Screen). Safari clears a site's saved data once it has been used for seven days without a visit to the site, and a game on the Home Screen isn't cleared that way.",
+        copyOffered() ? " The game on the Home Screen keeps its own storage, apart from Safari's, so it opens with a new meet: Save a copy in Safari first, then Open a copy in the game on the Home Screen to carry yours on." : ''),
       jdFoot(),
     ),
   );
