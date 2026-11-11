@@ -5,12 +5,13 @@ import { h, money, cloth, clear } from './dom.js';
 import { game, card, raceKey, horseOf, nextRace, raceLabel, myBets, photoRecord } from '../game.js';
 import { ownerSilks, longDate, isHandicap, raceDayOf, meetDays } from '../world.js';
 import { JOCKEYS, TIPSTERS, TRAINERS, OWNERS, BIG_STAKES } from '../data.js';
-import { marginShort, fmtTime, ordinal } from '../chart.js';
+import { marginShort, fmtTime, fmtClock, ordinal } from '../chart.js';
 import { drawCircle } from '../draw/circle.js';
 import { distanceName } from '../track.js';
 import { ENGINE } from '../sim.js';
 import { atmLine, redraw } from './card.js';
 import { ticketLine } from './race.js';
+import { callAsCalled } from './watch.js';
 
 export function renderResult(root, nav, params) {
   const race = card().races.find(r => r.no === params.no);
@@ -68,6 +69,20 @@ export function renderResult(root, nav, params) {
     })),
   );
   wrap.append(h('div', { class: 'board' }, h('h3', {}, h('span', {}, 'Order of finish'), h('span', {}, fmtTime(res.time))), table));
+  // The call, folded under the chart: every line as it was called at normal speed, with the time on the
+  // clock, for a race watched at 4x or skipped, or a line half heard. It's worked out again when it's opened
+  // (nothing of it is saved), so only for a race that can be watched again.
+  if (res.eng === ENGINE) {
+    const list = h('ol', { class: 'call-lines' });
+    const box = h('details', { class: 'board the-call' }, h('summary', {}, h('h3', {}, h('span', {}, 'The call'), h('span', { class: 'fold', 'aria-hidden': 'true' }, '▸'))), list);
+    box.addEventListener('toggle', () => {
+      if (!box.open || list.firstChild) return;
+      for (const l of callAsCalled(race)) {
+        list.append(h('li', {}, h('span', { class: 'at' }, l.label || (l.t < 0 ? 'Gate' : fmtClock(l.t))), h('span', {}, l.text)));
+      }
+    });
+    wrap.append(box);
+  }
   // A weekly stakes is a prep for the Handicap on closing day: its first two are pointed to it.
   const w = game.world;
   if (race.cls === 'STK' && !isHandicap(race) && w.meet && race.day >= w.meet.first && race.day < w.meet.last && res.order.length > 1) {

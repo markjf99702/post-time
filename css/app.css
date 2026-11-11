@@ -651,6 +651,14 @@ a { color: var(--link); }
 .official { padding: 12px 10px; }
 .board { background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; margin-bottom: 12px; }
 .board h3 { margin: 0; padding: 10px 12px; font: 600 15px/1 var(--display); letter-spacing: .1em; text-transform: uppercase; background: var(--green); color: #f3ecd8; display: flex; justify-content: space-between; }
+.the-call summary { list-style: none; cursor: pointer; }
+.the-call summary::-webkit-details-marker { display: none; }
+.the-call .fold { transition: transform .15s; }
+.the-call[open] .fold { transform: rotate(90deg); }
+.call-lines { list-style: none; margin: 0; padding: 6px 12px 10px; font-size: 14.5px; line-height: 1.35; }
+.call-lines li { display: grid; grid-template-columns: 4.2em 1fr; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.call-lines li:last-child { border-bottom: 0; }
+.call-lines .at { color: var(--muted); font-variant-numeric: tabular-nums; }
 .board table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
 .board td, .board th { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 .board th { font: 500 11px/1 var(--display); letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }

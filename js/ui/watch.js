@@ -32,6 +32,20 @@ export function rehearse(race) {
   audio.rehearse(memoKey(race), joeJobs(joePlan(race, run), run));
 }
 
+// A race's call as it was called at normal speed, for reading back after the race (the results' "The
+// call"): worked out again from the race, as Watch again works the race out, for the voice chosen now, with
+// the winner's line from the official sign after a photo, and what the winner paid. Each line is { t, text },
+// and a `label` for the two after the call: `t` is the race's clock, below 0 before the off.
+export function callAsCalled(race) {
+  const run = recordingOf(race);
+  const call = audio.joeCanCall() ? joePlan(race, run)
+    : callFor(race, run, { lineSeconds: (line, toWire) => audio.voiceSeconds(line.say, pace(line, toWire).rate) });
+  const lines = call.lines.map(l => ({ t: l.t, text: l.text }));
+  if (call.official) lines.push({ t: lines[lines.length - 1].t + 3, text: call.official, label: 'Photo' });
+  if (call.result) lines.push({ t: lines[lines.length - 1].t + 3, text: call.result.text, label: 'Official' });
+  return lines;
+}
+
 export function renderWatch(el, nav, params) {
   const race = game.world.cards[game.world.day].races.find(r => r.no === params.no);
   // The race as it will be run. Which voice calls it is decided here, before it's settled, so that the

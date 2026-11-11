@@ -927,6 +927,20 @@ const toResults = await page.evaluate(() => {
 });
 await page.waitForSelector('.official');
 assert.ok(toResults.saying, 'the caller had finished before Results was tapped, and this checked nothing');
+// Under the chart, "The call", shut: opened, it has every line as called at normal speed with its time on
+// the clock, from the gate to the placings and the time (and the winner's line, after a photo).
+const readBack = await page.evaluate(async () => {
+  const d = document.querySelector('.official details.the-call');
+  if (!d) return null;
+  const shut = !d.open && !d.querySelector('li');
+  d.querySelector('summary').click();
+  await new Promise(r => setTimeout(r, 100));
+  const lines = [...d.querySelectorAll('li')].map(li => [li.children[0].textContent, li.children[1].textContent]);
+  return { shut, lines };
+});
+assert.ok(readBack && readBack.shut, 'the results have no folded "The call", or it was open');
+assert.ok(readBack.lines.length >= 12 && readBack.lines[0][0] === 'Gate' && /^\d:\d\d\.\d$/.test(readBack.lines[3][0]), `the call read back: ${JSON.stringify(readBack.lines.slice(0, 4))}`);
+assert.ok(readBack.lines.some(([, x]) => /The time, (\d:)?\d\d\.\d\d\.$/.test(x)), 'the call read back has no placings and time');
 assert.equal(await page.evaluate(at => window.__heard.some(x => x.ev === 'cancel' && x.at > at), toResults.at), false, 'the caller was cut off on the way to the results');
 await page.waitForFunction(({ saying, at }) => window.__heard.some(x => x.ev === 'end' && x.text === saying && x.at > at), toResults, { timeout: 15000 });
 await page.waitForFunction(() => window.__quiet());
