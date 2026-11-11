@@ -22,7 +22,8 @@ export const game = { world: null, player: null };
 // chosen by name; without it the call is read by the best voice the browser has. `caller` is there, as
 // 'joe', only when the downloaded voice is the one chosen (js/joe.js); the browser's reads where he isn't.
 // `callerBehind` is there, as true, while the last race he was to call went to the browser's voice because
-// this device couldn't make his lines in time: the menu says so.
+// this device couldn't make his lines in time: the menu says so. `betType` is the kind of bet last chosen at
+// the window, which a race's betting slip starts on.
 function freshPlayer() {
   return {
     v: 1, bank: START_BANK, bets: {}, settled: {}, ledger: [], book: [], atm: 0, opened: {},

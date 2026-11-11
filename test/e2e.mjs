@@ -696,6 +696,10 @@ await page.setViewportSize({ width: 390, height: 844 });
 await page.locator('.post-bar .btn', { hasText: /^Race 3/ }).click();
 await page.waitForSelector('.entry');
 await page.click('.tabs button:nth-child(4)');
+// (Race 3's slip starts on the kind of bet race 2's was last on, an exacta box at $2, but at the least an
+// exacta box can be bought for.)
+const pressed = () => page.evaluate(() => [...document.querySelectorAll('.builder .seg button[aria-pressed="true"]')].map(b => b.textContent));
+assert.deepEqual(await pressed(), ['Exacta box', '$1'], "the slip doesn't remember the kind of bet, or remembers the amount");
 await page.locator('.pick-row').nth(0).locator('button').last().click();
 // Starting over takes two taps, and a double tap is one: two taps 120 ms apart leave the meet, the bankroll
 // and the scrapbook as they were, with the button saying what a second tap will do, in a menu no wider for
@@ -731,7 +735,7 @@ await page.evaluate(async () => {
 });
 await page.locator('.race-row').nth(2).click();
 await page.click('.tabs button:nth-child(4)');
-assert.equal(await page.locator('.bet-foot .cost').textContent(), 'Pick a horse.', 'the last meet\'s pick is still on the slip');
+assert.deepEqual([await page.locator('.bet-foot .cost').textContent(), await page.locator('.pick-row button[aria-pressed="true"]').count(), await pressed()], ['Pick at least two.', 0, ['Exacta box', '$1']], 'the last meet\'s pick is still on the slip');
 assert.equal(await page.locator('.tote-cell').count(), await page.evaluate(() => window.postTime.card().races[2].entries.length));
 assert.ok(!/NaN/.test(await page.locator('.tote').textContent()), 'the tote has no odds for some horses');
 

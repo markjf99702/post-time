@@ -424,9 +424,17 @@ function openedIn(race) {
   if (!openHorses.has(k)) openHorses.set(k, new Set());
   return openHorses.get(k);
 }
+// A race's slip starts on the kind of bet last chosen (kept with this device's settings as `betType`), so a
+// player with a habit doesn't set it eight times a day, and at the least that kind of ticket can be bought for:
+// a $50 kept from the race before would be an expensive slip.
+const BET_TYPES = ['win', 'place', 'show', 'wps', 'exacta', 'exbox', 'trifecta', 'tribox'];
 const slipFor = race => {
   const k = memoKey(race);
-  if (!state.has(k)) state.set(k, { type: 'win', picks: [[], [], []], amt: 2 });
+  if (!state.has(k)) {
+    const kept = game.player.settings?.betType;
+    const type = BET_TYPES.includes(kept) ? kept : 'win';
+    state.set(k, { type, picks: [[], [], []], amt: MIN[legType(type)] });
+  }
   return state.get(k);
 };
 function clearSlip(race) { slipFor(race).picks = [[], [], []]; }
@@ -492,7 +500,6 @@ function showPrinted() {
 export const MOVING = 'Odds keep moving until the gate opens. Every ticket is paid at the final odds, whatever the board said when you bought it.';
 
 function betPanel(panel, race, { changed, picked, open: isNext }) {
-  const st = slipFor(race);
   const open = isNext && race.status !== 'official';
 
   panel.append(toteBoard(race));
@@ -510,14 +517,25 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
     return;
   }
 
+  // (The slip is made when the race is up, so it starts on the kind of bet chosen last, by then.)
+  const st = slipFor(race);
   const builder = h('div', { class: 'builder' });
   panel.append(builder);
   panel.append(ticketList(race, open, changed));
   const draw = () => {
     clear(builder);
     const types = h('div', { class: 'seg', role: 'group', 'aria-label': 'Bet type' });
-    for (const t of ['win', 'place', 'show', 'wps', 'exacta', 'exbox', 'trifecta', 'tribox']) {
-      types.append(h('button', { type: 'button', 'aria-pressed': String(st.type === t), onclick: () => { st.type = t; st.picks = [[], [], []]; if (st.amt < MIN[legType(t)]) st.amt = MIN[legType(t)]; draw(); } }, BET_NAMES[t]));
+    for (const t of BET_TYPES) {
+      types.append(h('button', {
+        type: 'button', 'aria-pressed': String(st.type === t),
+        onclick: () => {
+          st.type = t; st.picks = [[], [], []];
+          if (st.amt < MIN[legType(t)]) st.amt = MIN[legType(t)];
+          // (It's saved with the next ticket or race: a tap here doesn't write the whole meet.)
+          if (game.player.settings) game.player.settings.betType = t;
+          draw();
+        },
+      }, BET_NAMES[t]));
     }
     builder.append(types, h('p', { class: 'bet-help' }, HELP[st.type]));
     const rows = st.type === 'exacta' ? ['1st', '2nd'] : st.type === 'trifecta' ? ['1st', '2nd', '3rd'] : [st.type.endsWith('box') ? 'Pick' : 'Horse'];
