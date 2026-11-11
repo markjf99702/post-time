@@ -748,9 +748,9 @@ test("PedigreePam's line on the distance comes from the sire's own, and she clai
   assert.deepEqual(says(/more ground than this/).filter(p => !(p.top.sire > p.race.f) || fits(p)).map(p => p.where), []);
   assert.deepEqual(says(/less ground than this/).filter(p => !(p.top.sire < p.race.f) || fits(p)).map(p => p.where), []);
   // Each is said in the meet. (How often depends on the horses the meet draws: "less ground than this", a
-  // horse bred to sprint in a route, came up twice in one.)
+  // horse bred to sprint in a route, came up once in one.)
   for (const re of [/The distance fits/, /bred for speed/, /route of ground/, /more ground than this/]) assert.ok(says(re).length > 3, `she said ${re} ${says(re).length} times`);
-  assert.ok(says(/less ground than this/).length > 1, `she said /less ground than this/ ${says(/less ground than this/).length} times`);
+  assert.ok(says(/less ground than this/).length > 0, 'she never said /less ground than this/');
   // "Trying grass for the first time" only of a horse whose every start is on its card, none on turf.
   const firstTurf = says(/grass for the first time/);
   assert.deepEqual(firstTurf.filter(p => p.top.starts > p.top.lines.length || p.top.lines.some(l => l.surf === 't')).map(p => p.where), []);
@@ -1098,9 +1098,9 @@ test("a horse that stumbles or breaks slowly isn't then called as breaking with 
   // across early." Now the first call says it has recovered, or leaves it out of the group.
   const races = playLongMeet();
   assert.deepEqual(told(races, 'recovered'), []);
-  // (It comes up seldom since a stumble costs what it looks like: most of these were stumblers, which used
-  // to lose nothing and were often up with the leaders at the first call.)
-  assert.ok(total(races, 'recovered') > 0, 'no horse recovers from a bad start in a first call');
+  // How often it comes up isn't held to a number. Since a stumble and a slow break cost about a length, a
+  // horse that had one is seldom in the first three four seconds out of the gate (none in 480 races of one
+  // long meet, against 12 in 320 races before): most of these were stumblers, which used to lose nothing.
   note(`first calls that name the horse that stumbled or broke slowly, as recovered: ${total(races, 'recovered')}`);
 });
 
@@ -1282,9 +1282,9 @@ test("a save that isn't a meet is left alone until a new meet is started", () =>
 // set the new lines in the same commit and say in its message that meets in progress will run
 // differently from there.
 const PINNED = [
-  { bank: 188, races: ['R1 2-3-1 71.17 $8.40', 'R2 3-2-6 64.61 $2.80', 'R3 3-6-7 83.49 $3.60', 'R4 6-5-4 70.72 $14.80', 'R5 1-2-3 64.40 $4.00', 'R6 4-6-7 64.17 $6.60', 'R7 4-3-10 63.38 $28.40', 'R8 2-6-3 101.56 $35.40'] },
-  { bank: 196.6, races: ['R1 9-2-8 110.61 $10.40', 'R2 4-5-8 64.66 $20.20', 'R3 8-5-6 102.30 $4.00', 'R4 1-8-3 103.29 $15.60', 'R5 2-7-5 76.56 $4.00', 'R6 1-7-5 63.93 $9.00', 'R7 6-5-1 108.57 $4.20', 'R8 8-5-6 95.30 $21.80'] },
-  { bank: 204.6, races: ['R1 1-3-7 84.76 $6.00', 'R2 2-7-6 97.67 $16.40', 'R3 5-9-6 64.18 $13.40', 'R4 8-3-2 64.45 $38.00', 'R5 7-3-5 83.24 $7.20', 'R6 4-2-3 110.15 $8.60', 'R7 1-2-4 103.21 $18.00', 'R8 2-8-1 108.82 $12.80'] },
+  { bank: 211.8, races: ['R1 4-1-7 71.62 $8.80', 'R2 5-3-1 65.26 $5.20', 'R3 9-10-2 83.14 $39.60', 'R4 7-3-1 70.98 $8.60', 'R5 1-3-10 64.48 $9.60', 'R6 3-1-4 64.23 $6.40', 'R7 3-7-5 63.51 $8.80', 'R8 1-5-6 101.89 $18.20'] },
+  { bank: 220.4, races: ['R1 3-4-2 109.87 $12.80', 'R2 6-5-2 65.01 $15.60', 'R3 2-3-6 103.05 $6.00', 'R4 2-3-1 103.25 $11.60', 'R5 1-6-3 77.22 $24.60', 'R6 4-6-2 63.96 $15.60', 'R7 9-8-7 107.95 $7.20', 'R8 8-4-6 95.46 $36.20'] },
+  { bank: 274.8, races: ['R1 9-8-3 84.71 $11.80', 'R2 2-3-4 97.76 $20.20', 'R3 1-6-3 64.21 $8.40', 'R4 1-6-8 64.56 $62.00', 'R5 7-4-3 82.98 $4.40', 'R6 4-3-1 109.26 $9.20', 'R7 4-3-1 102.90 $3.80', 'R8 2-5-4 109.03 $9.80'] },
 ];
 
 test('a meet in progress runs the way it did: three race days of a fixed meet come out the same', () => {

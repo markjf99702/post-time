@@ -37,9 +37,19 @@ export function figureFor(time, distance, surface, cond) {
 
 const START_LOSS = 0.33; // seconds lost breaking from a standstill (calibrated in test/sim.test.mjs)
 
+// American dirt races are run fast early and slow late: six furlongs goes in about :22.4, :45.6 and 1:10.6,
+// the last quarter the slowest of the race. Here every horse used to spread its effort evenly to the wire
+// and have some left for the stretch, so six furlongs went :23.1, :47.3 and 1:10.6, the last quarter faster
+// than the second in every race. On dirt now a rider plans to have used all of a horse's reserve and a
+// little more by the time it sets down for home (DIRT_KICK of it, below nothing), so the field goes out
+// quicker and tires in the stretch. Run that way a horse covers the distance a little slower than it would
+// at an even pace, so it is given DIRT_PACE points back, which keeps a winner's figure what it was. Turf
+// races are run as they were.
+const DIRT_KICK = -0.15;
+const DIRT_PACE = 4;
 // Turn a horse's figure for the day into its cruising speed and reserve.
 function engine(e, distance, surface, cond) {
-  const T = parTime(distance, surface, cond) - (e.rating - 80) * secondsPerPoint(distance) - START_LOSS;
+  const T = parTime(distance, surface, cond) - (e.rating - 80 + (surface === 'dirt' ? DIRT_PACE : 0)) * secondsPerPoint(distance) - START_LOSS;
   const W = e.reserve;                       // metres of reserve: sprinters carry more, stayers less
   const v = distance / T;
   const X = W / T;
@@ -98,6 +108,7 @@ export function runRace(race, entrants, { record = true } = {}) {
   const R = rng(`race:${race.seed}`);
   const path = race.path || coursePath(race.surface, race.distance);
   const D = race.distance;
+  const dirt = race.surface === 'dirt';
   const n = entrants.length;
   // The gate sits a little behind the start; the clock starts when the first horse reaches it.
   const runup = D < 1300 ? 14 : 18;
@@ -105,7 +116,8 @@ export function runRace(race, entrants, { record = true } = {}) {
   const hs = entrants.map((e, i) => {
     const eng = engine(e, D, race.surface, race.cond);
     const kickBase = D < 1300 ? 360 : D < 1650 ? 470 : 560;
-    const reserveAtKick = 0.5 - 0.3 * e.style + R.range(-0.05, 0.05);
+    const reserveAtKick = (dirt ? DIRT_KICK : 0.5 - 0.3 * e.style) + R.range(-0.05, 0.05);
+    const floor = dirt ? DIRT_KICK : 0.12;
     // A slow break costs a step and a stumble a moment's momentum a couple of strides out: each about a
     // length, what a bump costs. (A slow break was a third to two thirds of a second, and slow breakers won
     // 1.8% of their starts; a stumble came while the horse was barely moving and cost nothing.)
@@ -118,7 +130,7 @@ export function runRace(race, entrants, { record = true } = {}) {
       react: 0.04 + Math.abs(R.gauss()) * 0.05 * (1.4 - e.gate) + (slow ? R.range(0.12, 0.26) : 0),
       slow, stumble, stumbleT: stumble ? R.range(0.06, 0.2) : 0,
       kick: kickBase * (1 + 0.1 * (0.5 - e.style)) * R.range(0.9, 1.12),
-      reserveAtKick: Math.max(0.12, reserveAtKick), reserveCap: Math.max(0.12, reserveAtKick) + 0.14,
+      reserveAtKick: Math.max(floor, reserveAtKick), reserveCap: Math.max(floor, reserveAtKick) + 0.14,
       empty: 0, finished: false, time: 0, blocked: 0, blockedT: 0, wideSum: 0, turnT: 0,
       targetO: null, noise: 0, stuckT: 0, checkT: 0, wantOut: false, bumped: false, lastBlockedAt: -99, ledT: 0, duelT: 0,
       trace: [], fin: 0, isBlocked: false, restrained: false, boxed: false, finishSpeed: 0, checked: false,
@@ -263,12 +275,15 @@ export function runRace(race, entrants, { record = true } = {}) {
       if (want > h.v) h.v = Math.min(want, h.v + acc * DT);
       else h.v = Math.max(want, h.v - dec * DT);
 
-      // Drafting behind a horse costs a little less.
+      // Drafting behind a horse costs a little less. On dirt it's half that: the horse behind takes the dirt
+      // the leaders kick back. (With the whole field going faster early, a full draft let the horses
+      // sitting behind save enough to beat the early leaders: the horse in front at the first call of a dirt
+      // sprint won 19.8% of races, where it won 22.9% before the dirt pace was changed.)
       let draft = 1;
       if (!h.finished) {
         for (const o of hs) {
           const dp = o.p - h.p;
-          if (o !== h && dp > 0 && dp < 2.4 * LENGTH && Math.abs(o.o - h.o) < 0.9) { draft = 0.94; break; }
+          if (o !== h && dp > 0 && dp < 2.4 * LENGTH && Math.abs(o.o - h.o) < 0.9) { draft = dirt ? 0.97 : 0.94; break; }
         }
       }
       if (!h.finished && t > h.react) {

@@ -72,6 +72,8 @@ const chip = { with: { n: 0, won: 0, fair: 0, back: 0 }, without: { n: 0, won: 0
 const pbands = [[0, 0.6], [0.6, 1], [1, 2], [2, 5], [5, 10], [10, Infinity]].map(b => ({ b, n: 0, place: 0, show: 0 }));
 // The fractions of six furlongs on a fast dirt track.
 const six = { n: 0, q: 0, h: 0, fin: 0, lastFaster: 0 };
+// How often the horse in front at the first call wins, by surface and trip.
+const early = {};
 const tipsters = {};
 const t0 = Date.now();
 
@@ -103,6 +105,8 @@ for (let m = 0; m < MEETS; m++) {
         const B = pbands.find(x => late[i] >= x.b[0] && late[i] < x.b[1]);
         B.n++; B.place += pay.place[i] || 0; B.show += pay.show[i] || 0;
       });
+      const E = early[`${race.surface} ${kind}`] || (early[`${race.surface} ${kind}`] = { n: 0, won: 0 });
+      E.n++; if (run.calls[0][0].h === a) E.won++;
       if (race.surface === 'dirt' && race.cond === 'fast' && race.f === 6 && run.fractions.length >= 3) {
         const [q, h] = run.fractions;
         six.n++; six.q += q.t; six.h += h.t; six.fin += run.finalTime;
@@ -211,6 +215,8 @@ for (const [name, C] of [['with the chip', chip.with], ['without it', chip.witho
 out.push('', `${'Place and show on every horse, by odds at 2 minutes'.padEnd(54)}horses   place    show`);
 for (const B of pbands) if (B.n) out.push(row(B.b[1] === Infinity ? `${B.b[0]}-1 or longer` : B.b[1] === 0.6 ? '3-5 or shorter' : B.b[1] === 1 ? '3-5 to even money' : `${B.b[0]}-1 to ${B.b[1]}-1`, B.n, `${pct(B.place / (2 * B.n) - 1).padStart(7)} ${pct(B.show / (2 * B.n) - 1).padStart(7)}`));
 const secs = t => `${t >= 60 ? `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}` : `:${t.toFixed(1)}`}`;
+out.push('', 'The horse in front at the first call wins');
+for (const k of ['dirt sprint', 'dirt route', 'turf sprint', 'turf route']) if (early[k]) out.push(`  ${k.padEnd(24)} ${share(early[k].won / early[k].n)} of ${early[k].n}`);
 if (six.n) out.push('', `Six furlongs on a fast dirt track, ${plural(six.n, 'race')}: ${secs(six.q / six.n)}, ${secs(six.h / six.n)}, ${secs(six.fin / six.n)} on average; the last quarter faster than the second in ${share(six.lastFaster / six.n)}`);
 out.push('', `${'The forum regulars, $2 to win on each top pick'.padEnd(54)} picks     won   won or lost per $1`);
 for (const t of TIPSTERS) {

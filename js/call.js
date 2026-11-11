@@ -924,9 +924,10 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
   // The fractions the caller gives: the quarter and the half, and the three quarters in a race of a mile
   // or more, when they come up before the stretch. (In a five-furlong race the half comes up at the eighth
   // pole, where the stretch call belongs: the clock shows it, and the caller calls the race.) The opening
-  // quarter is fast or slow against a usual one for the distance: sprints go off quicker than routes.
+  // quarter is fast or slow against a usual one for the distance: sprints go off quicker than routes, and
+  // dirt races quicker than turf.
   const furlongs = D / FURLONG;
-  const par = furlongs < 6.25 ? 22.9 : furlongs < 7.25 ? 23.2 : 23.7;
+  const par = race.surface === 'dirt' ? (furlongs < 6.25 ? 22.3 : furlongs < 7.25 ? 22.6 : 23.35) : (furlongs < 6.25 ? 22.9 : furlongs < 7.25 ? 23.2 : 23.7);
   const fracs = run.fractions.filter(f => f.at < D - 1).slice(0, furlongs >= 7.9 ? 3 : 2)
     .map((f, k) => ({ k, t: f.t, at: f.at, pace: k ? '' : f.t < par - 0.6 ? 'fast' : f.t > par + 0.8 ? 'easy' : '' }))
     .filter(f => f.t < ev.tS - 1 && f.t <= fin - 6 && D - f.at >= FURLONG * 1.25);

@@ -64,6 +64,22 @@ function realField(seed, n, f) {
   });
 }
 
+// Six furlongs went :23.1, :47.3 and 1:10.6, the last quarter faster than the second in every race: every
+// horse spread its effort evenly to the wire. Dirt races are run fast early and tire late now.
+test('six furlongs on dirt goes fast early and tires late: about :22.4, :45.6 and 1:10.6', () => {
+  let q = 0, h = 0, fin = 0, slower = 0;
+  const N = 120;
+  for (let s = 0; s < N; s++) {
+    const run = runRace(race(6, 'dirt', `six${s}`), realField(`six${s}`, 8, 6), { record: false });
+    q += run.fractions[0].t; h += run.fractions[1].t; fin += run.finalTime;
+    if (run.finalTime - run.fractions[1].t > run.fractions[1].t - run.fractions[0].t) slower++;
+  }
+  assert.ok(q / N < 22.6, `the quarter in ${(q / N).toFixed(2)}`);
+  assert.ok(h / N < 46.1, `the half in ${(h / N).toFixed(2)}`);
+  assert.ok(fin / N > 69.6 && fin / N < 71, `six furlongs in ${(fin / N).toFixed(2)}`);
+  assert.ok(slower > N * 0.9, `the last quarter slower than the second in ${slower} of ${N}`);
+});
+
 // A stumble cost nothing (stumblers won as often as the rest: the horse was held back while it was barely
 // moving) and a slow break about five lengths' worth (slow breakers won 1.8% of their starts). Both cost a
 // horse about what a bump does now, a length or so: they win about 60% as often as a horse away cleanly.
@@ -465,8 +481,10 @@ test('the tote pays like a tote', () => {
     const pay = settle(tote, order);
     const win = pay.win[order[0]];
     assert.ok(win >= 2.1);
-    assert.ok(pay.place[order[0]] <= win + 1e-9);
-    assert.ok(pay.show[order[0]] <= pay.place[order[0]] + 1e-9);
+    // (Unless the win pays the $2.10 least: a 1-20 shot's win pool can't pay it less, and its place pool can
+    // pay it a dime or two more, as a track's does.)
+    assert.ok(win === 2.1 || pay.place[order[0]] <= win + 1e-9, `the winner paid ${win} to win and ${pay.place[order[0]]} to place`);
+    assert.ok(pay.place[order[0]] === 2.1 || pay.show[order[0]] <= pay.place[order[0]] + 1e-9);
     assert.ok(pay.exacta.pay >= 2.1 && pay.trifecta.pay >= 1.05);
     // "A $2 ticket pays in steps of 20 cents, and never less than $2.10", as How to play has it: a payout is
     // worked out per dollar and rounded down to the dime, so a $2 one is $2.10 or so many 20 cents, and the $1
