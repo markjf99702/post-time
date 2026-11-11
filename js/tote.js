@@ -8,6 +8,7 @@ import { publicRating, postEdge, probsFrom, oddsText } from './handicap.js';
 export const TAKEOUT = { win: 0.16, place: 0.16, show: 0.16, exacta: 0.2, trifecta: 0.25 };
 export const BASE = { win: 2, place: 2, show: 2, exacta: 2, trifecta: 1 };
 
+const PADDOCK_LATE = 0.08;
 const POOL = { MCL: 70000, MSW: 95000, C10: 65000, C16: 80000, C25: 95000, C40: 110000, ALW: 140000, STK: 260000 };
 
 export function makeTote(race, world) {
@@ -21,7 +22,11 @@ export function makeTote(race, world) {
   // what it knows is in the final price as well as in the way the odds moved.
   const L = rng(`late:${race.seed}`);
   // (It knows the draw as the public does: the post is in what it sees, and in its idea of the day rating.)
-  const late = probsFrom(seen.map((r, i) => 0.062 * r + 0.101 * (race.entries[i].rating + postEdge(race, race.entries[i].pp) + L.gauss() * 7)), 1);
+  // Part of it watches the paddock too: a horse that looks good there is backed a little more, one that
+  // looks poor a little less. (Nobody at the track bet on the paddock, which is read from how a horse
+  // really is that day, and $2 to win on every good-looker made a profit with no handicapping at all.)
+  const looks = e => ({ good: PADDOCK_LATE, poor: -PADDOCK_LATE }[e.pdk?.kind] || 0);
+  const late = probsFrom(seen.map((r, i) => 0.062 * r + 0.101 * (race.entries[i].rating + postEdge(race, race.entries[i].pp) + L.gauss() * 7) + looks(race.entries[i])), 1);
   const size = (POOL[race.cls] || 80000) * (race.purse >= 300000 ? 2.2 : 1) * R.range(0.8, 1.25) * (race.no === 8 ? 1.3 : 1);
   const wig = [...Array(n)].map(() => R.range(0, 1000));
   return { n, early: norm(early), late: norm(late), size, wig, seed: race.seed };
@@ -42,6 +47,7 @@ export function publicWin(tote, frac) {
 // The public bets the other pools in step with the win pool: for every $100 to win, $46 to place, $34
 // to show, $92 on the exacta and $70 on the trifecta. Your own tickets go only in their own pools.
 const SHARE = { win: 1, place: 0.46, show: 0.34, exacta: 0.92, trifecta: 0.7 };
+const PLACE_LEAN = 1, SHOW_LEAN = 1.5;
 
 // Everything the board shows at `frac`, including your own bets.
 export function board(tote, frac, bets = []) {
@@ -106,8 +112,11 @@ export function settle(tote, order, bets = []) {
   const n = p.length;
   const top2 = p.map((_, i) => p[i] + p.reduce((s, pj, j) => j === i ? s : s + pj * p[i] / (1 - pj), 0));
   const top3 = p.map((_, i) => Math.min(0.97, top2[i] * 1.35));
-  const placeMoney = norm(top2).map(x => x * pub * SHARE.place);
-  const showMoney = norm(top3).map(x => x * pub * SHARE.show);
+  // ...and it leans on the short prices: place and show bettors pile onto a standout. (Spread by the
+  // chances alone, the money on a favourite at 3-5 or shorter was thin enough that $2 to place on it made a
+  // profit: 6.9% over 24 meets.)
+  const placeMoney = norm(top2.map((x, i) => x * Math.exp(PLACE_LEAN * p[i]))).map(x => x * pub * SHARE.place);
+  const showMoney = norm(top3.map((x, i) => x * Math.exp(SHOW_LEAN * p[i]))).map(x => x * pub * SHARE.show);
   for (const l of my) {
     if (l.pool === 'place') placeMoney[l.sel[0]] += l.amt;
     if (l.pool === 'show') showMoney[l.sel[0]] += l.amt;

@@ -671,6 +671,24 @@ test("following the late money doesn't pay, and neither do long-shot trifectas",
   assert.ok(tri / races < 0.9, `a random trifecta got back $${(tri / races).toFixed(2)} for every $1`);
 });
 
+// Two bets made money with no handicapping. $2 to win on every horse that looked good in the paddock made
+// 4.9%: nobody at the track bet on the paddock, which is read from how the horse really is that day. And $2
+// to place on a favourite at 3-5 or shorter made 6.9%: the public's place money was spread by the chances
+// alone, too thinly over a standout.
+test('the late money watches the paddock, and place and show money leans on a standout', () => {
+  const w = createWorld('test-paddock', '2026-09-26');
+  const r = w.cards[0].races[3];
+  const share = kind => { r.entries[0].pdk = { kind, text: '' }; return makeTote(r, w).late[0]; };
+  assert.ok(share('good') > share('fair') && share('fair') > share('poor'), `the late money's share for a good-looker, a plain one and a poor one: ${['good', 'fair', 'poor'].map(share).join(', ')}`);
+  const p = [0.6, 0.12, 0.09, 0.07, 0.05, 0.04, 0.03];
+  const tote = { n: p.length, early: p, late: p, size: 100000, wig: p.map(() => 0), seed: 'heavy' };
+  for (const order of [[0, 3, 2], [1, 0, 2]]) {
+    const pay = settle(tote, order);
+    assert.ok(pay.place[0] <= 2.2, `a 3-5 favourite pays ${pay.place[0]} to place`);
+    assert.equal(pay.show[0], 2.1);
+  }
+});
+
 test('your win money stays in the win pool', () => {
   // A small pool, so $100 of yours would show.
   const p = [0.4, 0.25, 0.15, 0.1, 0.06, 0.04];

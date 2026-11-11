@@ -40,6 +40,10 @@ const WAYS = [
     const good = c.race.entries.map((e, i) => i).filter(i => c.race.entries[i].pdk.kind === 'good');
     return good.length === 1 ? win(good[0]) : [];
   }],
+  ['Best on the form and good in the paddock, to win', c => {
+    const best = argmax(c.race.entries.map(e => publicRating(c.world.horses[e.hid], c.race, e)));
+    return c.race.entries[best].pdk.kind === 'good' ? win(best) : [];
+  }],
   ['Favourite at 3-5 or shorter, to place', c => (c.late[byOdds(c)[0]] <= 0.6 ? [{ type: 'place', sel: [byOdds(c)[0]], amt: 2 }] : [])],
   ['Favourite at 3-5 or shorter, to show', c => (c.late[byOdds(c)[0]] <= 0.6 ? [{ type: 'show', sel: [byOdds(c)[0]], amt: 2 }] : [])],
   ['Post 1, to win', c => win(0)],
