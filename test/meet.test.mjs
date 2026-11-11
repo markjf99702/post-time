@@ -116,13 +116,16 @@ function oldSave(seed, days, { midday = 0 } = {}) {
   save();
   const world = JSON.parse(store.get('post-time/world')), player = JSON.parse(store.get('post-time/player'));
   delete world.meet; delete world.meets; delete player.meetStart;
+  // The live version ran the Handicap every fifth race day, so a card saved on race day 5, 15, 25... has it.
+  if (world.day % 5 === 4) Object.assign(world.cards[world.day].races[7], { name: BIG_STAKES.name, purse: BIG_STAKES.purse });
   store.set('post-time/world', JSON.stringify(world));
   store.set('post-time/player', JSON.stringify(player));
   return { world, player };
 }
 
 test('a meet saved before meets ended is meet 1, and closes on its next tenth race day', () => {
-  for (const [days, last] of [[4, 9], [9, 9], [12, 19]]) {
+  // Race day 5's card already has the Handicap (it came every fifth race day): that save closes today.
+  for (const [days, last] of [[4, 4], [9, 9], [12, 19]]) {
     const was = oldSave(`old-${days}`, days, { midday: 3 });
     assert.equal(load(), true);
     const w = game.world;

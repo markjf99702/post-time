@@ -211,7 +211,9 @@ function stakesFor(world, day) {
 
 // A meet saved before meets ended is meet 1, from its first race day, and it closes on its next tenth race
 // day: race day 10, 20, 30 and so on. (The card on any of those already has the Handicap: it came every
-// fifth race day.) Its count is made once from the lines its horses hold for the meet, which is as much as
+// fifth race day.) A save whose card today has the Handicap (race day 5, 15, 25...) closes today instead:
+// that card is kept as it was drawn, and a Handicap that isn't on closing day would be counted down to
+// for five more weeks while it ran. Its count is made once from the lines its horses hold for the meet, which is as much as
 // can be had back: a horse keeps its last ten lines, and a retired one its last. A purse isn't on a line, so
 // a stakes counts as $150,000, the middle of what they're run for.
 export function ensureMeet(world) {
@@ -219,7 +221,8 @@ export function ensureMeet(world) {
   const ok = m && typeof m === 'object' && [m.no, m.first, m.last].every(Number.isInteger) && m.first <= world.day && world.day <= m.last
     && m.tally && typeof m.tally === 'object' && m.tally.j && m.tally.t && m.tally.h && Array.isArray(m.tally.stk);
   if (ok) { if (!Array.isArray(world.meets)) world.meets = []; return false; }
-  const last = world.day + (MEET_DAYS - 1 - (((world.day % MEET_DAYS) + MEET_DAYS) % MEET_DAYS));
+  const today = world.cards?.[world.day]?.races || [];
+  const last = today.some(isHandicap) ? world.day : world.day + (MEET_DAYS - 1 - (((world.day % MEET_DAYS) + MEET_DAYS) % MEET_DAYS));
   world.meet = { no: 1, first: 0, last, tips: null, tally: tallyFromLines(world, 0) };
   if (!Array.isArray(world.meets)) world.meets = [];
   return true;

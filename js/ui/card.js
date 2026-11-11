@@ -91,7 +91,7 @@ function nextDayButton(nav, closing) {
 
 // Over the date: which race day of the meet this is, counting down to the Handicap on closing day.
 // "Race day 5 of 10 · the Larkspur Handicap in five weeks"; on closing day "Larkspur Handicap day · race
-// day 10 of 10". (A meet carried over from before meets ended can be longer than ten: its first.)
+// day 10 of 10". (A meet carried over from before meets ended can be shorter or longer than ten: its first.)
 export function dayKicker(w) {
   const n = raceDayOf(w), of = meetDays(w), left = of - n;
   if (!left) return `${BIG_STAKES.name} day · race day ${n} of ${of}`;
