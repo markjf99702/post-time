@@ -2047,6 +2047,18 @@ await page.waitForSelector('.races');
   await between.click('.rhead .back');
   await between.waitForSelector('.races');
   assert.deepEqual([(await upNext()).y, (await upNext()).whole], [0, true], 'with race 2 up, the card should open at the top');
+  // Reading ahead, with no race run in between, the card comes back where it was left: down at race 8 after a
+  // look at race 8's form, by the page's back link and by the phone's Back button. (With the browser no
+  // longer putting the page back, both went to the top, and the next race to read was a scroll away again.)
+  for (const back of [() => between.click('.rhead .back'), () => between.goBack()]) {
+    const leftAt = await between.evaluate(() => { const row = [...document.querySelectorAll('.race-row')].pop(); row.scrollIntoView({ block: 'center' }); const y = Math.round(scrollY); row.click(); return y; });
+    await between.waitForSelector('.entry');
+    await back();
+    await between.waitForSelector('.races');
+    await between.waitForTimeout(150);
+    assert.ok(leftAt > 100 && Math.abs(await scrollY() - leftAt) <= 2, `after a look at race 8 with race 2 still up, the card came back ${await scrollY()} px down, and was left ${leftAt} px down`);
+  }
+  await between.evaluate(() => window.scrollTo(0, 0));
   await go('result', { no: 1 });
   for (const width of [390, 320]) {
     await between.setViewportSize({ width, height: 664 });

@@ -23,17 +23,29 @@ let lastBank = null;
 // for the card (so How to play can still be read, and the card brings the progress back), and the
 // scrapbook stays shut.
 let waiting = null;
+// Where the card was when it was last left for another screen, and which race was up then. Reading ahead
+// (race 8's form with race 4 up, then back for race 7's) comes back to the same place on the card, as it
+// did when the browser was left to put the page back. Once a race has been run the card opens on the race
+// that's up now.
+let cardLeft = null;
+const upNow = () => { const r = nextRace(); return `${game.world.seed}:${game.world.day}:${r ? r.no : 'over'}`; };
 
 const nav = {
   go(screen, params = {}) {
     if (waiting && screen === 'book') { closeMenu(); return; }
     if (cleanup) { cleanup(); cleanup = null; }
+    const from = view.screen;
+    if (from === 'card' && screen !== 'card' && !waiting) cardLeft = { y: window.scrollY, up: upNow() };
     view = { screen, params };
     remember(screen, params);
     closeMenu();
     render();
     if (screen !== 'watch') window.scrollTo(0, 0);
-    if (screen === 'card' && !waiting) upNextInView();
+    if (screen === 'card' && !waiting) {
+      // (Out of money, the ATM under the date is the thing to see: the top.)
+      if (from !== 'card' && cardLeft && cardLeft.up === upNow() && !document.querySelector('.day .atm')) window.scrollTo(0, cardLeft.y);
+      else upNextInView();
+    }
   },
   refresh() { nav.go(view.screen, view.params); },
   // A race's tabs change its entry in the history rather than adding one, so Back doesn't step through them.
