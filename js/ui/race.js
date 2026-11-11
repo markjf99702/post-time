@@ -1,13 +1,13 @@
 // A race before it runs: the past performances, the paddock, the forum and the betting window.
 
 import { h, money, stake, cloth, silksCanvas, clear, ago, plural, dotted } from './dom.js';
-import { game, card, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor } from '../game.js';
+import { game, card, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor, toteFor } from '../game.js';
 import { ownerSilks, ageOf, shortDate, clockText, CLASSES, meetStats, isHandicap, prepsOf } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
 import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES, CLOTH } from '../data.js';
 import { callText, marginShort, fmtTime, fmtWork } from '../chart.js';
 import { runStyle } from '../forum.js';
-import { BET_NAMES, cost as betCost, MIN } from '../tote.js';
+import { BET_NAMES, cost as betCost, MIN, wouldPay } from '../tote.js';
 import { drawHorse } from '../draw/horse.js';
 import { oddsText, angles, newcomer } from '../handicap.js';
 import * as audio from '../audio.js';
@@ -551,7 +551,7 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
         showPrinted();
       },
     }, 'Buy ticket');
-    builder.append(h('div', { class: 'bet-foot' }, broke || msg, buy));
+    builder.append(h('div', { class: 'bet-foot' }, broke || msg, buy), payLine(race, broke ? null : bet));
     picked(); // the bar at the bottom follows the slip
   };
   draw();
@@ -616,7 +616,21 @@ function twoPays(odds) {
   return pay < 9.995 ? pay.toFixed(2) : String(Math.round(pay));
 }
 
+// What the ticket on the slip would pay if the race went off now, with the board as it is (wouldPay in
+// js/tote.js): one figure for a win, a straight exacta or a straight trifecta, and a low and a high for a
+// ticket whose payout depends on what else finishes in the money. It moves with the odds. Early in the
+// betting it's only as good as the board, which has a long way to move.
+function payLine(race, bet) {
+  const est = bet ? wouldPay(toteFor(race), mtpState(race).frac, myBets(race), bet) : null;
+  // (To the dime under $10, and to the dollar above, as the board's $2 prices are.)
+  const fig = x => (x < 9.995 ? money(x) : money(Math.round(x), { cents: false }));
+  const text = !est ? '' : fig(est.low) === fig(est.high) ? `At these odds: about ${fig(est.low)}` : `At these odds: between ${fig(est.low)} and ${fig(est.high)}`;
+  return h('p', { class: 'would-pay', hidden: !text }, text);
+}
+
 function updateTote(panel, race) {
+  const pays = panel.querySelector('.would-pay');
+  if (pays) pays.replaceWith(payLine(race, currentBet(slipFor(race), race.entries.length)));
   const old = panel.querySelector('#tote');
   if (!old) return;
   const before = [...old.querySelectorAll('.odds')].map(x => x.textContent);

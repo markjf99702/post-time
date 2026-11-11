@@ -271,6 +271,12 @@ assert.deepEqual([await barText(), await barButtons()], ['No tickets yet. You ca
 await page.locator('.pick-row').nth(0).locator('button').nth(2).click();
 await page.locator('.seg.amounts button', { hasText: /^\$10$/ }).click();
 assert.equal(await page.locator('.bet-foot .cost').textContent(), `$10 to win on ${third} · you have $200.00`);
+// Under it, what the ticket would pay if the race went off now: one figure for a win ticket, about five times
+// what the board says a $2 ticket on the horse pays.
+const at = await page.evaluate(() => [document.querySelector('.would-pay').textContent, document.querySelectorAll('.tote-cell .pay span')[2].textContent]);
+assert.match(at[0], /^At these odds: about \$(\d\.\d0|\d{2,}|\d{1,3}(,\d{3})+)$/);
+const fiveTimes = 5 * parseFloat(at[1].replace(/[~$,]/g, '')), said = parseFloat(at[0].replace(/^.*\$/, '').replace(/,/g, ''));
+assert.ok(Math.abs(said - fiveTimes) <= Math.max(3, fiveTimes * 0.03), `a $10 win ticket would pay ${at[0]}, and the board says a $2 one pays ${at[1]}`);
 assert.deepEqual([await barText(), await barButtons()], [`${third} to win, $10: not bought yet`, ['To the gate ▸', 'Buy ticket · $10.00']], "the bar doesn't offer the pick that hasn't been bought");
 assert.deepEqual(await page.locator('.post-bar .btn').evaluateAll(bs => bs.map(b => b.className)), ['btn ghost', 'btn brass'], 'with a pick not bought, Buy should be the brass button');
 const unbought = await page.evaluate(() => {
@@ -320,6 +326,8 @@ assert.deepEqual([await leastFor('Exacta'), await leastFor('Exacta box'), await 
 for (const k of [0, 1, 2]) await page.locator('.pick-row').nth(0).locator('button').nth(k).click();
 await page.locator('.seg.amounts button', { hasText: /^50¢$/ }).click();
 assert.match(await page.locator('.bet-foot .cost').textContent(), /^50¢ trifecta box \d+, \d+, \d+ · \$3\.00 \(6 bets of 50¢\) · you have \$196\.00$/);
+// A box pays what its combination that comes in pays: a low and a high.
+assert.match(await page.locator('.would-pay').textContent(), /^At these odds: between \$[\d,.]+ and \$[\d,.]+$/);
 assert.equal(await leastFor('Win'), '$2', 'a win ticket can be bought for less than $2');
 // In the dark, the pressed bet type and amount stand out from the others, and Buy ticket from its card.
 await page.emulateMedia({ colorScheme: 'dark' });

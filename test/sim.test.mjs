@@ -9,7 +9,7 @@ import { runRace, figureFor, stateAt, runningOrder, ENGINE } from '../js/sim.js'
 import { coursePath, FURLONG, COURSES } from '../js/track.js';
 import { rng } from '../js/rng.js';
 import { createWorld, simulateRace, buildCard, applyResult, nextDay, ageOf } from '../js/world.js';
-import { makeTote, board, settle, ticketReturn, cost, TAKEOUT } from '../js/tote.js';
+import { makeTote, board, settle, ticketReturn, cost, TAKEOUT, wouldPay } from '../js/tote.js';
 import { fmtTime, fmtClock, fmtWork, marginShort, marginText, lengthsText, tripComment } from '../js/chart.js';
 import { timeWords, timeSay, aloud, raceCall } from '../js/call.js';
 import { forumPosts } from '../js/forum.js';
@@ -647,6 +647,37 @@ test('the morning line keeps its own steps and prints nothing longer than 50-1',
     }
   }
   assert.ok(capped > 5, `only ${capped} of ${entries} morning lines were longer than 50-1, too few to show anything`);
+});
+
+// What a ticket would pay at these odds, said at the window before it's bought, is what settling the race
+// would pay it if it went off with the board as it is. Worked out at the off, it's the payout itself: a
+// straight ticket's one figure, and a place, show or box ticket's low and high around what it got.
+test('what a ticket would pay at these odds is what it gets when the race goes off at them', () => {
+  const w = createWorld('would-pay', '2026-09-26');
+  for (const r of w.cards[0].races) {
+    const tote = makeTote(r, w);
+    const order = simulateRace(r, w, { record: false }).results.map(x => x.h);
+    const [a, b, c] = order;
+    const tickets = [
+      { type: 'win', sel: [a], amt: 2 }, { type: 'place', sel: [b], amt: 5 }, { type: 'show', sel: [c], amt: 2 }, { type: 'wps', sel: [a], amt: 2 },
+      { type: 'exacta', sel: [a, b], amt: 1 }, { type: 'trifecta', sel: [a, b, c], amt: 0.5 },
+      { type: 'exbox', sel: [b, a, order[4]], amt: 1 }, { type: 'tribox', sel: [c, order[5], a, b], amt: 0.5 },
+    ];
+    const earlier = [{ type: 'win', sel: [order[3]], amt: 20 }];
+    for (const t of tickets) {
+      const est = wouldPay(tote, 1, earlier, t);
+      const got = ticketReturn(t, settle(tote, order, [...earlier, t]));
+      assert.ok(got > 0 && est && est.low <= got + 1e-9 && got <= est.high + 1e-9, `${t.type}: got ${got}, estimated ${JSON.stringify(est)}`);
+      if (t.type === 'win' || t.type === 'exacta' || t.type === 'trifecta') assert.equal(est.low, est.high, `a straight ${t.type} has one figure`);
+    }
+    // A ticket on a horse that's not in the race's first three can still pay, at some finish; one that can't
+    // pay at all has no figure.
+    assert.ok(wouldPay(tote, 0.5, [], { type: 'show', sel: [order.at(-1)], amt: 2 }).low >= 2.1);
+    // And early in the betting the figure is the board's: a $2 win ticket pays about what the board says.
+    const early = board(tote, 0.3, [{ type: 'win', sel: [a], amt: 2 }]);
+    const fig = wouldPay(tote, 0.3, [], { type: 'win', sel: [a], amt: 2 });
+    assert.ok(Math.abs(fig.low - Math.max(2.1, Math.floor((early.odds[a] + 1) * 10 + 1e-9) / 10 * 2)) < 1e-9, `win at 0.3: ${fig.low} against odds of ${early.odds[a]}`);
+  }
 });
 
 test('no exotic ticket pays more than the whole pool', () => {

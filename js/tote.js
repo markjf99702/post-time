@@ -94,18 +94,20 @@ export function cost(bet) { return legs(bet).reduce((s, l) => s + l.amt, 0); }
 // underneath and leaves the long shots there paying too much. So they're flattened for second and
 // third (powers 0.81 and 0.65, the usual correction to Harville's formula).
 const FLATTEN = [1, 0.81, 0.65];
-function inOrder(p, sel) {
+function inOrder(p, sel, flat = FLATTEN.map(f => norm(p.map(v => v ** f)))) {
   let pr = 1;
   sel.forEach((x, k) => {
-    const q = norm(p.map(v => v ** FLATTEN[k]));
+    const q = flat[k];
     pr *= q[x] / (1 - sel.slice(0, k).reduce((s, i) => s + q[i], 0));
   });
   return pr;
 }
 
-// Payouts per base ticket ($2, or $1 for the trifecta), with breakage to the dime and a $2.10 minimum.
-export function settle(tote, order, bets = []) {
-  const final = publicWin(tote, 1);
+// The pools as they would be if the race went off at `frac` (1 is the off), your tickets in them: the
+// money each payout is worked out from. Settling a race and saying what a ticket would pay at these odds
+// (wouldPay) both start here, so the two can't disagree.
+function poolsAt(tote, frac, bets) {
+  const final = publicWin(tote, frac);
   const pub = final.reduce((a, b) => a + b, 0);
   const my = bets.flatMap(legs);
   const winPool = final.slice();
@@ -113,7 +115,6 @@ export function settle(tote, order, bets = []) {
   const W = winPool.reduce((a, b) => a + b, 0);
   const p = norm(final);
   // Place and show money follows the chance of running in the first two or three.
-  const n = p.length;
   const top2 = p.map((_, i) => p[i] + p.reduce((s, pj, j) => j === i ? s : s + pj * p[i] / (1 - pj), 0));
   const top3 = p.map((_, i) => Math.min(0.97, top2[i] * 1.35));
   // ...and it leans on the short prices: place and show bettors pile onto a standout. (Spread by the
@@ -125,19 +126,29 @@ export function settle(tote, order, bets = []) {
     if (l.pool === 'place') placeMoney[l.sel[0]] += l.amt;
     if (l.pool === 'show') showMoney[l.sel[0]] += l.amt;
   }
-  const brk = (perDollar, base) => Math.max(base * 1.05, Math.floor(perDollar * 10 + 1e-9) / 10 * base);
+  const exacta = my.filter(l => l.pool === 'exacta'), trifecta = my.filter(l => l.pool === 'trifecta');
+  // (The flattened chances for second and third, worked out once: an estimate tries every finish.)
+  const q = FLATTEN.map(f => norm(p.map(v => v ** f)));
+  return { pub, winPool, W, p, placeMoney, showMoney, exacta, trifecta, q };
+}
+
+const brk = (perDollar, base) => Math.max(base * 1.05, Math.floor(perDollar * 10 + 1e-9) / 10 * base);
+const splitPool = (money, winners, take) => {
+  const pool = money.reduce((x, y) => x + y, 0);
+  const net = pool * (1 - take);
+  const back = winners.reduce((s, i) => s + money[i], 0);
+  const profit = Math.max(0, net - back);
+  const res = {};
+  for (const i of winners) res[i] = brk(1 + profit / winners.length / money[i], 2);
+  return res;
+};
+
+// The payouts for a finish in `order`, from the pools.
+function payOut(tote, P, order) {
+  const { pub, winPool, W, p, placeMoney, showMoney } = P;
   const [a, b, c] = order;
   const out = { win: {}, place: {}, show: {}, exacta: null, trifecta: null };
   out.win[a] = brk((W * (1 - TAKEOUT.win)) / winPool[a], 2);
-  const splitPool = (money, winners, take) => {
-    const pool = money.reduce((x, y) => x + y, 0);
-    const net = pool * (1 - take);
-    const back = winners.reduce((s, i) => s + money[i], 0);
-    const profit = Math.max(0, net - back);
-    const res = {};
-    for (const i of winners) res[i] = brk(1 + profit / winners.length / money[i], 2);
-    return res;
-  };
   out.place = splitPool(placeMoney, [a, b].filter(x => x !== undefined), TAKEOUT.place);
   out.show = splitPool(showMoney, [a, b, c].filter(x => x !== undefined), TAKEOUT.show);
   // Exotics: the public's money on the winning combination, from their win odds, with some scatter.
@@ -146,21 +157,48 @@ export function settle(tote, order, bets = []) {
   const scatter = sel => Math.exp(((hash(`${tote.seed}:${sel.join('-')}`) % 1000) / 1000 - 0.5) * 0.5);
   if (b !== undefined) {
     const E = pub * SHARE.exacta;
-    let onCombo = E * inOrder(p, [a, b]) * scatter([a, b]);
-    const mine = my.filter(l => l.pool === 'exacta');
+    let onCombo = E * inOrder(p, [a, b], P.q) * scatter([a, b]);
+    const mine = P.exacta;
     const totalE = E + mine.reduce((s, l) => s + l.amt, 0);
     onCombo += mine.filter(l => l.sel[0] === a && l.sel[1] === b).reduce((s, l) => s + l.amt, 0);
     out.exacta = { sel: [a, b], pay: brk(totalE * (1 - TAKEOUT.exacta) / Math.max(onCombo, BASE.exacta), 2) };
   }
   if (c !== undefined) {
     const T = pub * SHARE.trifecta;
-    let onCombo = T * inOrder(p, [a, b, c]) * scatter([a, b, c]);
-    const mine = my.filter(l => l.pool === 'trifecta');
+    let onCombo = T * inOrder(p, [a, b, c], P.q) * scatter([a, b, c]);
+    const mine = P.trifecta;
     const totalT = T + mine.reduce((s, l) => s + l.amt, 0);
     onCombo += mine.filter(l => l.sel[0] === a && l.sel[1] === b && l.sel[2] === c).reduce((s, l) => s + l.amt, 0);
     out.trifecta = { sel: [a, b, c], pay: brk(totalT * (1 - TAKEOUT.trifecta) / Math.max(onCombo, BASE.trifecta), 1) };
   }
   return out;
+}
+
+// Payouts per base ticket ($2, or $1 for the trifecta), with breakage to the dime and a $2.10 minimum.
+export function settle(tote, order, bets = []) {
+  return payOut(tote, poolsAt(tote, 1, bets), order);
+}
+
+// What `bet` would bring back if the race went off now, at `frac`, with the board as it is and your tickets
+// (`bets`, and this one) in the pools: { low, high } over every finish it cashes on, the same for a ticket
+// that can cash only one way, or null for one that can't cash. A place or show ticket pays more beside a long
+// shot than beside the favourite, and a box pays what its combination that comes in pays.
+export function wouldPay(tote, frac, bets, bet) {
+  const P = poolsAt(tote, frac, [...bets, bet]);
+  const n = P.p.length, top = Math.min(3, n), mine = new Set(bet.sel);
+  let low = Infinity, high = 0;
+  // Every order of the first three that has one of the ticket's horses in it.
+  const pick = (order, used) => {
+    if (order.length === top) {
+      if (!order.some(i => mine.has(i))) return;
+      const back = ticketReturn(bet, payOut(tote, P, order));
+      if (back > 0) { low = Math.min(low, back); high = Math.max(high, back); }
+      return;
+    }
+    for (let i = 0; i < n; i++) if (!used[i]) { used[i] = true; pick([...order, i], used); used[i] = false; }
+  };
+  pick([], []);
+  return high > 0 ? { low, high } : null;
 }
 
 // What a ticket brings back, given the payouts.
