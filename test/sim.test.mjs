@@ -12,6 +12,7 @@ import { makeTote, board, settle, ticketReturn, cost, TAKEOUT } from '../js/tote
 import { fmtTime, fmtClock } from '../js/chart.js';
 import { timeWords, timeSay, aloud, raceCall } from '../js/call.js';
 import { forumPosts } from '../js/forum.js';
+import { angles, newcomer, freshBullet } from '../js/handicap.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const race = (f, surface = 'dirt', seed = 'x') => {
@@ -274,6 +275,110 @@ test('a first-time starter in a maiden claimer is seldom the morning-line favour
   }
   assert.ok(first >= 10, `only ${first} first-time starters in ${races} maiden claimers`);
   assert.ok(favs <= 2, `a first-time starter is the morning-line favourite in ${favs} of ${races} maiden claimers`);
+});
+
+// A hand-made horse, a line on its card, and a race for it today (race day 4, 17 October 2026).
+const line = (o = {}) => ({ d: 2, dt: '2026-10-10', f: 6, surf: 'd', cond: 'fast', cls: 'C16', clm: 16000, fin: 4, cm: 'Evenly', fig: 70, ...o });
+const runner = (pps = [], o = {}) => ({ pps, works: [], life: { starts: pps.length, w: 0, p: 0, s: 0 }, ...o });
+const today = (o = {}) => ({ day: 3, date: '2026-10-17', distance: 6 * FURLONG, surface: 'dirt', cond: 'fast', cls: 'C16', claim: 16000, ...o });
+const chips = (r, h, day) => angles(r, h, day).map(c => c[0]);
+const work = (dt, rank = 1) => ({ dt, f: 4, t: 48.2, g: 'B', rank, of: 30, surf: 'd' });
+
+test('a horse with no race on its card is a first-time starter only if it has never raced', () => {
+  // Horses arrive with a lifetime record. "First-time starter" and "Has not raced yet" were shown over
+  // "Life: 10 starts, 1 win": on 16 of the 34 entries that wore the label in one meet, 11 of them winners.
+  assert.deepEqual(newcomer(runner()), { chip: 'First-time starter', note: 'Has not raced yet. The workouts are all there is to go on.' });
+  const shipped = n => newcomer(runner([], { life: { starts: n, w: 1, p: 0, s: 0 } }));
+  assert.deepEqual(shipped(10), { chip: 'First start at Larkspur', note: 'Has raced 10 times elsewhere. None of it is on the card.' });
+  assert.equal(shipped(1).note, 'Has raced once elsewhere. None of it is on the card.');
+  assert.equal(shipped(2).note, 'Has raced twice elsewhere. None of it is on the card.');
+  assert.equal(newcomer(runner([line()])), null);
+  // In a meet: every horse without a line gets one label or the other, and the label agrees with its record.
+  const w = createWorld('test-newcomers', '2026-09-26');
+  let first = 0, elsewhere = 0;
+  for (let d = 0; d < 6; d++) {
+    for (const r of w.cards[w.day].races) {
+      for (const e of r.entries) {
+        const h = w.horses[e.hid], n = newcomer(h);
+        assert.equal(!!n, !h.pps.length);
+        if (n) { assert.equal(n.chip === 'First-time starter', h.life.starts === 0, `${h.name}: ${n.chip}, with ${h.life.starts} starts`); if (h.life.starts) elsewhere++; else first++; }
+      }
+      applyResult(w, r, simulateRace(r, w, { record: false }), r.entries.map(e => e.ml));
+    }
+    nextDay(w);
+  }
+  assert.ok(first > 0 && elsewhere > 0, `${first} first-time starters and ${elsewhere} first starts at Larkspur in six race days`);
+});
+
+test("a maiden claimer's winner meeting winners isn't a horse dropping in price", () => {
+  // "Drops from $20k", in green, on a horse that had just won a $20,000 maiden claimer and was in for
+  // $10,000 against winners: by the pars (60 against 63) that's a step up.
+  const graduate = runner([line({ cls: 'MCL', clm: 20000, fin: 1 })]);
+  assert.deepEqual(chips(today({ cls: 'C10', claim: 10000 }), graduate), ['First time against winners']);
+  assert.deepEqual(chips(today({ cls: 'C25', claim: 25000 }), graduate), ['First time against winners']);
+  assert.deepEqual(angles(today({ cls: 'C10', claim: 10000 }), graduate)[0], ['First time against winners', ''], 'a plain chip');
+  // Still a maiden, in another maiden race: nothing to say.
+  assert.deepEqual(chips(today({ cls: 'MCL', claim: 20000 }), runner([line({ cls: 'MCL', clm: 20000, fin: 2 })])), []);
+  // A winner of a maiden special weight meets winners for the first time too.
+  assert.deepEqual(chips(today({ cls: 'ALW', claim: null }), runner([line({ cls: 'MSW', clm: null, fin: 1 })])), ['First time against winners']);
+  // It has met winners before: not the first time.
+  assert.deepEqual(chips(today({ cls: 'ALW', claim: null }), runner([line({ cls: 'ALW', clm: null, d: 1 }), line({ cls: 'MSW', clm: null, fin: 1 })])), []);
+  // Real moves in price, among winners.
+  assert.deepEqual(angles(today({ cls: 'C10', claim: 10000 }), runner([line()])), [['Drops from $16k', 'good']]);
+  assert.deepEqual(angles(today({ cls: 'C25', claim: 25000 }), runner([line()])), [['Up from $16k', '']]);
+  assert.deepEqual(angles(today(), runner([line({ cls: 'ALW', clm: null })])), [['Drops into a claimer', 'good']]);
+  assert.deepEqual(chips(today(), runner([line()])), [], 'the same price');
+});
+
+test('surface chips say only what the lines on the card show', () => {
+  const turfRace = today({ surface: 'turf', cond: 'firm' });
+  // Every start is on the card, none on turf: first time on turf. With starts the card doesn't show, it
+  // may have run on turf before: 191 of 259 "First time on turf" chips were on horses like that.
+  assert.deepEqual(chips(turfRace, runner([line(), line()])), ['First time on turf']);
+  assert.deepEqual(chips(turfRace, runner([line(), line()], { life: { starts: 9, w: 1, p: 0, s: 0 } })), ['No turf race on the card']);
+  assert.deepEqual(chips(turfRace, runner([line({ surf: 't' }), line()])), []);
+  assert.deepEqual(chips(turfRace, runner([], { life: { starts: 4, w: 0, p: 0, s: 0 } })), [], 'a horse with no lines has no turf chip');
+  // "Turf horse on dirt" after one race on turf said too much: it takes two, and none on dirt.
+  const t = o => line({ surf: 't', cond: 'firm', ...o });
+  assert.deepEqual(chips(today(), runner([t()])), []);
+  assert.deepEqual(chips(today(), runner([t(), t()])), ['Turf horse on dirt']);
+  assert.deepEqual(chips(today(), runner([t(), t(), line()])), []);
+  // A wet track: only a good run on the same surface counts. Half of these chips were earned on the other one.
+  const mud = today({ cond: 'sloppy' }), softTurf = today({ surface: 'turf', cond: 'yielding' });
+  assert.deepEqual(chips(mud, runner([line(), t({ cond: 'yielding', fin: 1 })])), []);
+  assert.deepEqual(angles(mud, runner([line({ cond: 'muddy', fin: 2 })])), [['Has run well on a wet track', 'good']]);
+  assert.deepEqual(chips(mud, runner([line({ cond: 'muddy', fin: 3 })])), []);
+  assert.deepEqual(chips(softTurf, runner([t(), line({ cond: 'sloppy', fin: 1 })])), []);
+  assert.deepEqual(chips(softTurf, runner([t({ cond: 'soft', fin: 1 }), line()])), ['Has run well on a wet track']);
+  assert.deepEqual(chips(today(), runner([line({ cond: 'muddy', fin: 1 })])), [], 'a fast track today');
+});
+
+test('"Bullet work" is for a bullet since the last race, or in the last three weeks for a horse with none', () => {
+  // The chip showed if any of a horse's last five works was a bullet: of 203 in one meet, 174 were for a
+  // bullet from before the horse's last race, and 135 for one more than six weeks old.
+  const raced = works => runner([line({ dt: '2026-10-03', d: 1 })], { works });
+  assert.deepEqual(chips(today(), raced([work('2026-09-22')])), [], 'a bullet from before its last race');
+  assert.deepEqual(angles(today(), raced([work('2026-09-22'), work('2026-10-08')])), [['Bullet work', 'good']]);
+  assert.deepEqual(chips(today(), raced([work('2026-10-08', 2)])), [], 'second best of the morning');
+  assert.equal(freshBullet(raced([work('2026-10-06'), work('2026-10-13'), work('2026-10-09')]), today()).dt, '2026-10-13', 'the newest one');
+  const unraced = works => runner([], { works });
+  assert.deepEqual(chips(today(), unraced([work('2026-09-25')])), [], 'a bullet 22 days old on a horse that has not raced');
+  assert.deepEqual(chips(today(), unraced([work('2026-09-26')])), ['Bullet work']);
+  assert.deepEqual(chips(today(), unraced([work('2026-10-12', 5)])), []);
+});
+
+test('the other chips: distance, a claim, a layoff, a troubled trip', () => {
+  const mile = today({ distance: 8 * FURLONG });
+  assert.deepEqual(chips(mile, runner([line(), line({ f: 7 })])), ['First time going long']);
+  assert.deepEqual(chips(mile, runner([line(), line({ f: 8.5 })])), []);
+  assert.deepEqual(chips(today(), runner([line({ f: 8 }), line({ f: 9 })])), ['Cutting back to a sprint']);
+  assert.deepEqual(angles(today(), runner([line({ claimed: { from: 2, price: 16000 } })])), [['New barn: claimed last out', 'good']]);
+  assert.deepEqual(angles(today(), runner([line({ cm: 'Checked in traffic' })])), [['Troubled trip last time', 'good']]);
+  // The race day is passed in: five weeks since its last race is a layoff, four isn't.
+  const rested = runner([line({ d: 2 })]);
+  assert.deepEqual(chips(today(), rested, 7), ['Back from 5 weeks off']);
+  assert.deepEqual(chips(today(), rested, 6), []);
+  assert.deepEqual(angles(today({ day: 9 }), rested), [['Back from 7 weeks off', '']]);
 });
 
 test('the tote pays like a tote', () => {

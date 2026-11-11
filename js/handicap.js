@@ -38,6 +38,67 @@ export function surfaceRecord(h, surface) {
   return { starts: pps.length, wins: pps.filter(p => p.fin === 1).length, best: pps.length ? Math.max(...pps.map(p => p.fig)) : null };
 }
 
+// ------------------------------------------------------------------ what the form says about a horse
+
+const WET = ['sloppy', 'muddy', 'yielding', 'soft'];
+// The two kinds of maiden race (their codes in CLASSES, in world.js).
+const maidenRace = cls => cls === 'MCL' || cls === 'MSW';
+const daysFrom = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5); // between two dates, 2026-10-03
+
+// A horse with no race on its card has either never raced or raced somewhere else: horses arrive with a
+// lifetime record, and none of those starts are lines. Returns the chip and the sentence for it, or null for
+// a horse with lines. (Both kinds used to be "First-time starter. Has not raced yet", under "Life: 10
+// starts, 1 win".)
+export function newcomer(h) {
+  if (h.pps.length) return null;
+  const n = h.life.starts;
+  if (!n) return { chip: 'First-time starter', note: 'Has not raced yet. The workouts are all there is to go on.' };
+  return { chip: 'First start at Larkspur', note: `Has raced ${n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`} elsewhere. None of it is on the card.` };
+}
+
+// The newest bullet work that says something about today: one since the horse last raced or, for a horse
+// with no race on its card, one in the last three weeks. (A horse keeps its last five works, so a bullet
+// could be months old, with several races run since.)
+export function freshBullet(h, race) {
+  const last = h.pps[h.pps.length - 1];
+  const fresh = w => w.rank === 1 && (last ? w.dt > last.dt : daysFrom(w.dt, race.date) <= 21);
+  return h.works.filter(fresh).sort((a, b) => (a.dt < b.dt ? 1 : a.dt > b.dt ? -1 : 0))[0] || null;
+}
+
+// A horse that broke its maiden last time and meets winners today. A maiden claimer's price isn't a class
+// to drop from: by the pars a $20,000 maiden claimer is an easier race than a $10,000 claimer for winners.
+export function firstAgainstWinners(h, race) {
+  const last = h.pps[h.pps.length - 1];
+  return !!last && maidenRace(last.cls) && !maidenRace(race.cls) && h.pps.every(p => maidenRace(p.cls));
+}
+
+// Angles a handicapper would notice, as chips: [text, 'good' or ''], for a horse in a race on race day `day`.
+// Each says only what the lines on the card show. A horse with starts the card doesn't show (it came with
+// a record, or has run more than the ten races a card keeps) may have done a thing before.
+export function angles(race, h, day = race.day) {
+  const out = [];
+  const last = h.pps[h.pps.length - 1];
+  const unseen = h.life.starts > h.pps.length;
+  const turf = h.pps.filter(p => p.surf === 't').length;
+  if (race.surface === 'turf' && h.pps.length && !turf) out.push([unseen ? 'No turf race on the card' : 'First time on turf', '']);
+  if (race.surface === 'dirt' && turf >= 2 && turf === h.pps.length) out.push(['Turf horse on dirt', '']);
+  const f = race.distance / FURLONG;
+  if (h.pps.length && f >= 8 && h.pps.every(p => p.f < 8)) out.push(['First time going long', '']);
+  if (h.pps.length && f < 8 && h.pps.every(p => p.f >= 8)) out.push(['Cutting back to a sprint', '']);
+  if (last && last.claimed) out.push(['New barn: claimed last out', 'good']);
+  if (firstAgainstWinners(h, race)) out.push(['First time against winners', '']);
+  const priced = last && last.clm && !maidenRace(last.cls);
+  if (priced && race.claim && race.claim < last.clm) out.push([`Drops from $${last.clm / 1000}k`, 'good']);
+  if (priced && race.claim && race.claim > last.clm) out.push([`Up from $${last.clm / 1000}k`, '']);
+  if (last && !last.clm && race.claim && last.cls !== 'MCL') out.push(['Drops into a claimer', 'good']);
+  if (freshBullet(h, race)) out.push(['Bullet work', 'good']);
+  if (last && day - last.d >= 5) out.push([`Back from ${day - last.d} weeks off`, '']);
+  if (last && /Blocked|Checked|Stumbled|Broke slowly|Bumped/.test(last.cm)) out.push(['Troubled trip last time', 'good']);
+  // On the same surface: mud on the dirt says nothing about soft turf.
+  if (WET.includes(race.cond) && h.pps.some(p => WET.includes(p.cond) && p.surf === race.surface[0] && p.fin <= 2)) out.push(['Has run well on a wet track', 'good']);
+  return out;
+}
+
 export function publicRating(h, race, entry) {
   let r = formRating(h, race);
   r += (JOCKEYS[entry.j]?.skill || 0) * 1.4;

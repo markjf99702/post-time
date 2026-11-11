@@ -9,7 +9,7 @@ import { callText, marginShort, fmtTime } from '../chart.js';
 import { runStyle } from '../forum.js';
 import { BET_NAMES, cost as betCost, BASE } from '../tote.js';
 import { drawHorse } from '../draw/horse.js';
-import { oddsText } from '../handicap.js';
+import { oddsText, angles, newcomer } from '../handicap.js';
 import * as audio from '../audio.js';
 
 const COND = { fast: 'ft', good: 'gd', sloppy: 'sly', muddy: 'my', firm: 'fm', yielding: 'yl', soft: 'sf' };
@@ -159,7 +159,8 @@ function entryCard(race, e, i, stats, board) {
   const js = stats.jockeys[e.j], ts = stats.trainers[trainer];
   const figs = hs.pps.slice().reverse().slice(0, 5).map(p => p.fig);
   const best = figs.length ? Math.max(...figs) : null;
-  const chips = angles(race, hs);
+  const chips = angles(race, hs, game.world.day);
+  const fresh = newcomer(hs); // no race on its card: a first-time starter, or one that has raced elsewhere
   const style = runStyle(hs);
   const more = h('div', { class: 'entry-more', hidden: true });
   const head = h('button', { class: 'entry-head', type: 'button', 'aria-expanded': 'false' },
@@ -178,7 +179,7 @@ function entryCard(race, e, i, stats, board) {
   return h('article', { class: 'entry' },
     head,
     h('div', { class: 'figs' },
-      figs.length ? figs.map(f => h('span', { class: `fig${f === best ? ' best' : ''}` }, String(f))) : h('span', { class: 'chip' }, 'First-time starter'),
+      fresh ? h('span', { class: 'chip' }, fresh.chip) : figs.map(f => h('span', { class: `fig${f === best ? ' best' : ''}` }, String(f))),
       style ? h('span', { class: 'chip', title: 'Running style' }, styleName(style)) : null,
       chips.map(c => h('span', { class: `chip ${c[1]}` }, c[0])),
     ),
@@ -188,29 +189,6 @@ function entryCard(race, e, i, stats, board) {
 
 function styleName(s) {
   return { E: 'Needs the lead', 'E/P': 'Close to the pace', P: 'Stalker', S: 'Closer' }[s];
-}
-
-// Angles a handicapper would notice.
-function angles(race, hs) {
-  const out = [];
-  const last = hs.pps[hs.pps.length - 1];
-  if (race.surface === 'turf' && hs.pps.length && !hs.pps.some(p => p.surf === 't')) out.push(['First time on turf', '']);
-  if (race.surface === 'dirt' && hs.pps.length && hs.pps.every(p => p.surf === 't')) out.push(['Turf horse on dirt', '']);
-  const f = race.distance / FURLONG;
-  if (hs.pps.length && f >= 8 && hs.pps.every(p => p.f < 8)) out.push(['First time going long', '']);
-  if (hs.pps.length && f < 8 && hs.pps.every(p => p.f >= 8)) out.push(['Cutting back to a sprint', '']);
-  if (last && last.claimed) out.push(['New barn: claimed last out', 'good']);
-  if (last && race.claim && last.clm && race.claim < last.clm) out.push([`Drops from $${last.clm / 1000}k`, 'good']);
-  if (last && race.claim && last.clm && race.claim > last.clm) out.push([`Up from $${last.clm / 1000}k`, '']);
-  if (last && !last.clm && race.claim && last.cls !== 'MCL') out.push(['Drops into a claimer', 'good']);
-  if (hs.works.some(w => w.rank === 1)) out.push(['Bullet work', 'good']);
-  if (last && game.world.day - last.d >= 5) out.push([`Back from ${game.world.day - last.d} weeks off`, '']);
-  if (last && /Blocked|Checked|Stumbled|Broke slowly|Bumped/.test(last.cm)) out.push(['Troubled trip last time', 'good']);
-  if (['sloppy', 'muddy', 'yielding', 'soft'].includes(race.cond)) {
-    const wet = hs.pps.filter(p => ['sloppy', 'muddy', 'yielding', 'soft'].includes(p.cond));
-    if (wet.length && wet.some(p => p.fin <= 2)) out.push(['Has run well on a wet track', 'good']);
-  }
-  return out;
 }
 
 function fillMore(more, race, e, hs) {
@@ -228,7 +206,7 @@ function fillMore(more, race, e, hs) {
       turf.length ? ` On turf: ${turf.length}-${turf.filter(p => p.fin === 1).length}-${turf.filter(p => p.fin === 2).length}-${turf.filter(p => p.fin === 3).length}.` : '',
     ),
   );
-  if (!hs.pps.length) more.append(h('p', { class: 'first-timer' }, 'Has not raced yet. The workouts are all there is to go on.'));
+  if (!hs.pps.length) more.append(h('p', { class: 'first-timer' }, newcomer(hs).note));
   else {
     const t = h('table', { class: 'pps' },
       h('thead', {}, h('tr', {}, ['Date', 'Race', 'Class', 'Fig', 'Calls · Fin', 'Odds'].map(x => h('th', {}, x)))),
