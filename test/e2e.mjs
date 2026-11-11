@@ -1329,6 +1329,13 @@ await page.waitForSelector('.races');
   const shop = await ctx5.newPage();
   shop.on('pageerror', e => problems.push(e.message));
   shop.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
+  // Every oscillator the page makes is noted (nobody hears it here): the cash window's three are the only
+  // triangle waves.
+  await shop.addInitScript(() => {
+    const Sound = window.AudioContext;
+    window.__made = [];
+    window.AudioContext = class extends Sound { createOscillator() { const o = super.createOscillator(); window.__made.push(o); return o; } };
+  });
   await shop.goto(base, { waitUntil: 'domcontentloaded' });
   await shop.waitForSelector('.races', { timeout: 60000 });
   await shop.evaluate(() => { const { game, save } = window.postTime; game.player.settings.sound = false; save(); return document.fonts.ready.then(() => 0); });
@@ -1430,6 +1437,42 @@ await page.waitForSelector('.races');
     assert.deepEqual(tables.labels, ['ThumbtackS', 'f-MdSpWt', 'f-Clm40k', 'OddsEndsH'], 'the short names of a stakes and of a claiming race'); // newest line first
     assert.deepEqual(tables.rider, [false, true], "the rider should be on a line's comment, and not under its odds");
   }
+
+  // Cashing a ticket. The header's bankroll stays as it was while the race is on the screen (the race is
+  // settled as it goes to the gate, and the bankroll used to change then, with its flash, behind the race),
+  // and changes, with the flash, when the result opens. The cash window rings for any ticket that paid: here
+  // a place ticket on the horse that runs second, which used to cash in silence.
+  const second = await shop.evaluate(async () => {
+    const { simulateRace } = await import('./js/world.js');
+    const { game, card } = window.postTime;
+    return simulateRace(card().races[1], game.world, { record: true }).results[1].h;
+  });
+  await shop.click('#menuBtn');
+  await shop.check('#optSound');
+  await shop.click('#menuBtn');
+  await shop.evaluate(() => window.postTime.nav.go('race', { no: 2, tab: 'bet' }));
+  await shop.locator('.seg button', { hasText: /^Place$/ }).click();
+  await shop.locator('.pick-row').nth(0).locator('button').nth(second).click();
+  await shop.click('.builder .btn');
+  const bankroll = () => shop.evaluate(async () => {
+    const { money } = await import('./js/ui/dom.js');
+    const b = document.getElementById('bank'), { game } = window.postTime;
+    return { shown: b.textContent, has: money(game.player.bank), flash: b.classList.contains('up'), rings: window.__made.filter(o => o.type === 'triangle').length, back: game.player.settled['0:2']?.back };
+  });
+  const atWindow = await bankroll();
+  await shop.click('.post-bar .btn.brass');
+  await shop.waitForSelector('.watch:not([hidden]) canvas.scene');
+  const racing = await bankroll();
+  assert.ok(racing.back > 0 && racing.has !== atWindow.has, 'the place ticket on the runner-up paid nothing, and this checked nothing');
+  assert.deepEqual([racing.shown, racing.flash], [atWindow.shown, false], 'the header shows the new bankroll while the race is still on the screen');
+  await shop.evaluate(() => window.__watch.setT(window.__watch.endT - 0.05));
+  await shop.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 20000 });
+  const atFinish = await bankroll();
+  assert.deepEqual([atFinish.shown, atFinish.rings - racing.rings], [atWindow.shown, 3], 'at the finish: the bankroll as it was, and the cash sound (three triangle waves) for a place ticket that paid');
+  await shop.click('.w-ctl .btn');
+  await shop.waitForSelector('.official');
+  const onResult = await bankroll();
+  assert.deepEqual([onResult.shown, onResult.flash], [racing.has, true], "the result doesn't show the new bankroll, or shows it without its flash");
   await ctx5.close();
 }
 

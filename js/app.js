@@ -254,7 +254,10 @@ app.before(unsaved);
 
 window.addEventListener('post-time:saved', () => {
   unsaved.hidden = !notSaved();
-  if (game.player && game.world) updateBank();
+  // Not while a race is on the screen. Its tickets are settled as it goes to the gate, and the bankroll
+  // used to change then, with its flash, behind the race where nobody saw it. It changes when the next
+  // screen is drawn (the result, as a rule), where it's seen.
+  if (game.player && game.world && view.screen !== 'watch') updateBank();
   // The race has a Sound button of its own: keep the menu in step with it.
   if (game.player?.settings) { optSound.checked = !!game.player.settings.sound; optVoice.checked = !!game.player.settings.voice; }
 });

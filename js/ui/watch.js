@@ -341,7 +341,9 @@ export function renderWatch(el, nav, params) {
     const done = () => {
       doneBtn.hidden = false;
       skipBtn.hidden = true;
-      if (result.cashedWinner) { audio.cash(); }
+      // The cash window rings for any ticket that paid: a place or show ticket on a horse that didn't
+      // win is cashed too. (It used to ring only when the winner was backed.)
+      if (result.back > 0) audio.cash();
     };
     if (call.photo) {
       setTimeout(() => {
