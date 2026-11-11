@@ -129,6 +129,13 @@ a { color: var(--link); }
 .bank.up { background: #2d7a3e; }
 .bank.down { background: rgba(179, 55, 44, .7); }
 .bank:empty { visibility: hidden; } /* while a meet is being built; it keeps its place */
+/* Google Drive's cloud, beside the bankroll while saving to Drive is on: a dot on it, green when synced, amber
+   while syncing, red when it wants a tap. 44 by 44 to a finger, in the room the header has. */
+.cloud { position: relative; background: none; border: 0; padding: 9px; margin: -3px -6px; cursor: pointer; color: #f3ecd8; }
+.cloud svg { width: 26px; height: 26px; display: block; }
+.cloud .dot { position: absolute; right: 6px; bottom: 9px; width: 10px; height: 10px; border-radius: 50%; background: #5fd17a; box-shadow: 0 0 0 2px var(--green); }
+.cloud[data-s="busy"] .dot { background: var(--amber); }
+.cloud[data-s="tap"] .dot, .cloud[data-s="error"] .dot, .cloud[data-s="choose"] .dot { background: #ff6b5e; }
 /* 44 by 44 to a finger (it was 38), in the room it always had: the header is no taller for it. */
 .menu-btn { background: none; border: 0; padding: 9px; margin: -3px -9px -3px 0; cursor: pointer; color: #f3ecd8; }
 .menu-btn svg { width: 26px; height: 26px; display: block; }
@@ -177,11 +184,37 @@ a { color: var(--link); }
 .menu .joe-btns button[hidden] { display: none; }
 .menu .joe-btns button { line-height: 1.25; }
 
+/* Saving to Google Drive, in the menu: a line or two on what it does or where it's saving, and its buttons.
+   Like the voice row it takes the menu's width and never adds to it. */
+.menu .drive { width: 0; min-width: 100%; display: grid; gap: 4px; border-top: 1px solid var(--line); margin-top: 4px; padding-top: 8px; }
+.menu .drive .voice-note, .menu .drive .drive-err { padding: 0 12px; }
+.menu .drive button { width: 100%; line-height: 1.25; }
+.menu .drive-err { margin: 0; color: var(--red); font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
+
 /* Save a copy and Open a copy, and the line under them. Like the voice row, they take the menu's width and
    never add to it: what Open a copy says it will open runs to two lines rather than widen the menu. */
 .menu .keep { width: 0; min-width: 100%; display: grid; border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
 .menu .keep button { width: 100%; line-height: 1.25; }
 .menu .keep .voice-note { padding: 0 12px 8px; }
+
+/* Under the header, while saving to Google Drive is on: the choice between two meets, a sign-in that has run
+   out, what went wrong, or the meet just brought from Drive. */
+.drive-line { padding: 10px max(14px, env(safe-area-inset-right)) 10px max(14px, env(safe-area-inset-left)); background: var(--paper-2); border-bottom: 2px solid var(--brass); font-size: 14.5px; line-height: 1.35; }
+.drive-line.bad { border-bottom-color: var(--red); }
+.drive-line > * { max-width: 732px; margin: 0 auto; }
+.drive-line p { margin: 0 auto; }
+.drive-line .link { background: none; border: 0; padding: 0; font: inherit; color: var(--link); text-decoration: underline; cursor: pointer; }
+.drive-line.choose { padding-top: 14px; padding-bottom: 14px; }
+.drive-line .drive-in { display: grid; gap: 8px; }
+.drive-line .drive-in > * { margin: 0; }
+.drive-line .h3 { font: 600 19px/1.15 var(--display); letter-spacing: .02em; }
+.drive-line .pick {
+  width: 100%; display: grid; gap: 3px; text-align: left; background: var(--card); color: var(--ink); border: 1px solid var(--edge); border-radius: 8px;
+  padding: 10px 12px; font: inherit; cursor: pointer; min-height: 44px;
+}
+.drive-line .pick b { font: 600 16px/1.2 var(--display); letter-spacing: .04em; text-transform: uppercase; }
+.drive-line .pick span { color: var(--muted); }
+.drive-line .later { justify-self: start; background: none; border: 0; padding: 10px 0; font: inherit; color: var(--link); text-decoration: underline; cursor: pointer; }
 
 /* Said under the header while the browser is refusing to save. */
 .unsaved { margin: 0; padding: 8px max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left)); background: var(--paper-2); border-bottom: 2px solid var(--red); font-size: 14.5px; line-height: 1.3; text-align: center; }

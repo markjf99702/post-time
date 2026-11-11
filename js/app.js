@@ -11,6 +11,7 @@ import { SAMPLE, pace } from './call.js';
 import * as audio from './audio.js';
 import * as joe from './joe.js';
 import * as copy from './copy.js';
+import { drive } from './drive.js';
 
 const app = document.getElementById('app');
 const watchEl = document.getElementById('watch');
@@ -43,6 +44,7 @@ const nav = {
     closeMenu();
     render();
     if (screen !== 'watch') window.scrollTo(0, 0);
+    drive.idle();
     if (screen === 'card' && !waiting) {
       // (Out of money, the ATM under the date is the thing to see: the top.)
       if (from !== 'card' && cardLeft && cardLeft.up === upNow() && !document.querySelector('.day .atm')) window.scrollTo(0, cardLeft.y);
@@ -148,7 +150,7 @@ menuBtn.addEventListener('click', e => {
   menu.hidden = !menu.hidden;
   menuBtn.setAttribute('aria-expanded', String(!menu.hidden));
   // A voice downloaded since the page opened is in the list by now.
-  if (!menu.hidden) { audio.refreshVoices(); showVoices(); }
+  if (!menu.hidden) { audio.refreshVoices(); showVoices(); drive.prepare(); }
 });
 document.addEventListener('click', e => { if (!menu.hidden && !menu.contains(e.target)) closeMenu(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
@@ -297,7 +299,7 @@ restart.addEventListener('click', e => {
   e.stopPropagation();
   if (building) return;
   if (!armed) {
-    restart.textContent = 'Tap again: new horses, $200, empty scrapbook';
+    restart.textContent = `Tap again: new horses, $200, empty scrapbook${drive.isOn() ? ', here and in Google Drive' : ''}`;
     armedAt = performance.now();
     armed = setTimeout(() => { armed = null; restart.textContent = 'Start over'; }, 4000);
     return;
@@ -422,6 +424,8 @@ window.addEventListener('post-time:saved', () => {
   if (game.player && game.world && view.screen !== 'watch') updateBank();
   // A meet with a ticket in it is worth keeping: ask the browser to keep it (once a visit).
   if (copy.hasTicket()) copy.keepData();
+  // The meet has moved on: Google Drive is sent it shortly, if it's on.
+  drive.changed();
   // The race has a Sound button of its own: keep the menu in step with it.
   if (game.player?.settings) { optSound.checked = !!game.player.settings.sound; optVoice.checked = !!game.player.settings.voice; }
 });
@@ -430,6 +434,12 @@ window.addEventListener('post-time:saved', () => {
 // date. Carrying on with it would let a result seen there be bet on here, and its next save would write
 // over what happened there. Load the newer one instead.
 window.addEventListener('storage', e => { if (e.key?.startsWith('post-time/')) location.reload(); });
+
+// Saving to Google Drive (js/drive.js), where it can work: the cloud in the header, its rows in the menu, and a
+// line under the header for the choice between two meets and the like. A meet taken from Drive is put on the
+// page as one opened from a copy is, but never while a race is being watched: then it waits for the race.
+const driveLine = h('div', { class: 'drive-line', hidden: true, role: 'status' });
+unsaved.after(driveLine);
 
 // Tests and screenshots drive the app through this.
 window.postTime = { game, nav, save, card, nextRace };
@@ -447,6 +457,12 @@ if (loaded === true) {
   applySettings(); // so the menu shows them while the first meet is built
   setup();
 }
+
+drive.mount({
+  cloud: document.getElementById('cloud'), row: document.getElementById('driveRow'), line: driveLine,
+  canTake: () => view.screen !== 'watch' && !building,
+  onTaken: () => { waiting = null; lastBank = null; closeMenu(); applySettings(); nav.go('card'); },
+});
 
 document.addEventListener('pointerdown', () => { if (game.player?.settings?.sound) audio.wake(); }, { once: true });
 

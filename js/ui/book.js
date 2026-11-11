@@ -9,6 +9,7 @@ import { photoCard } from './results.js';
 import { MOVING } from './race.js';
 import { JOE, offered as joeOffered } from '../joe.js';
 import { offered as copyOffered } from '../copy.js';
+import { drive } from '../drive.js';
 
 // The page is this meet's: your record in it, the meets before it (each opens its closing page), and your
 // photos, a meet at a time.
@@ -139,7 +140,9 @@ function stat(label, value, note) {
 const singleFile = typeof __SINGLE_FILE__ !== 'undefined';
 function savingText() {
   if (notSaved()) return "This browser isn't keeping anything, so this meet lasts until you close the page. Nothing is sent anywhere.";
-  return `Everything is saved in this browser: your bankroll, tickets, scrapbook and the whole racing world. Nothing is sent anywhere.${singleFile ? '' : ' It works offline once it has loaded.'}`;
+  const offline = singleFile ? '' : ' It works offline once it has loaded.';
+  if (drive.isOn()) return `Everything is saved in this browser: your bankroll, tickets, scrapbook and the whole racing world. A copy goes to your own Google Drive, in a Post Time folder, and comes back from there to every phone or computer where you turn on Save to Google Drive in the menu. Nothing else is sent anywhere.${offline}`;
+  return `Everything is saved in this browser: your bankroll, tickets, scrapbook and the whole racing world. Nothing is sent anywhere.${offline}${drive.available ? ' Save to Google Drive, in the menu, keeps a copy in your own Google Drive too, to carry the meet on from another phone or computer.' : ''}`;
 }
 
 export function renderHelp(root, nav) {

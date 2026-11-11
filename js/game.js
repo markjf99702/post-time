@@ -198,11 +198,15 @@ export function adopt(copy) {
 // How far on a meet is, in what a player does: the race day, the races run on it, the tickets bought, the
 // money. Two devices are at the same place in a meet when these match. A forum thread opened or a race's
 // clock started isn't counted: just looking at a race doesn't move a meet on.
+// (Which tickets, too, not just how many: two devices that each bought a $2 ticket on a race are not at the
+// same place.)
 export function progressMark(world = game.world, player = game.player) {
   if (!world || !player) return '';
   const races = world.cards?.[world.day]?.races || [];
-  const bets = Object.values(player.bets || {}).reduce((n, list) => n + (Array.isArray(list) ? list.length : 0), 0);
-  return [world.seed, world.day, races.filter(r => r.status === 'official').length, bets, round2(player.bank || 0), player.atm || 0,
+  const tickets = JSON.stringify([player.bets || {}, player.ledger || []]);
+  let hash = 2166136261; // FNV-1a
+  for (let i = 0; i < tickets.length; i++) hash = Math.imul(hash ^ tickets.charCodeAt(i), 16777619);
+  return [world.seed, world.day, races.filter(r => r.status === 'official').length, (hash >>> 0).toString(36), round2(player.bank || 0), player.atm || 0,
     (player.ledger || []).length, (player.book || []).length].join('|');
 }
 

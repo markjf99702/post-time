@@ -11,6 +11,7 @@ globalThis.localStorage = {
 };
 globalThis.window = new EventTarget();
 const G = await import('../js/game.js');
+const { decide } = await import('../js/drive.js');
 const { game } = G;
 
 function build(seed) {
@@ -110,4 +111,50 @@ test("how far on a meet is: a ticket, a race or the next race day moves it on, a
   assert.notEqual(G.progressMark(), ran);
   assert.equal(G.untouched(), false);
   assert.equal(G.untouched(null, null), true, 'no meet at all is as good as an untouched one');
+});
+
+test('two devices that each bought a different $2 ticket on the same race are not at the same place', () => {
+  build('copy-eight');
+  const race = firstRace();
+  const copy = G.readCopy(G.meetCopy());
+  G.placeBet(race, { type: 'win', sel: [1], amt: 2 });
+  const one = G.progressMark();
+  G.cancelBet(race, 0);
+  G.placeBet(race, { type: 'win', sel: [2], amt: 2 });
+  assert.notEqual(G.progressMark(), one);
+  assert.notEqual(G.progressMark(copy.world, copy.player), one);
+});
+
+test('what a sync with Google Drive does, from where this device last matched it', () => {
+  const file = { id: 'f2', version: '7' };
+  const base = { fileId: 'f2', version: '7', rev: 'r1', mark: 'm1' };
+  const here = (mark, more) => ({ mark, seed: 's', untouched: false, ...more });
+  const remote = (rev, mark, seed = 's') => ({ rev, mark, world: { seed } });
+  // No file: the meet here makes it (if there's a meet here).
+  assert.equal(decide({ file: null, base: null, here: here('m1') }), 'make');
+  assert.equal(decide({ file: null, base, here: here('m1') }), 'make', "a file deleted from Drive isn't made again");
+  assert.equal(decide({ file: null, base: null, here: { mark: '', seed: '' } }), 'same');
+  // Drive as this device left it: send the meet if it has moved on.
+  assert.equal(decide({ file, base, here: here('m1') }), 'same');
+  assert.equal(decide({ file, base, here: here('m2') }), 'push');
+  // Drive has changed: read it first.
+  const moved = { id: 'f2', version: '9' };
+  assert.equal(decide({ file: moved, base, here: here('m1') }), 'read');
+  // ...and it's this device's own copy (only the file changed), or one it sent and didn't see land.
+  assert.equal(decide({ file: moved, base, here: here('m2'), remote: remote('r1', 'm1') }), 'ours');
+  assert.equal(decide({ file: moved, base, sent: { rev: 'r2' }, here: here('m2'), remote: remote('r2', 'm2') }), 'ours');
+  // Another device's: taken if this one hasn't moved on, a choice if it has.
+  assert.equal(decide({ file: moved, base, here: here('m1'), remote: remote('r3', 'm3') }), 'take');
+  assert.equal(decide({ file: moved, base, here: here('m2'), remote: remote('r3', 'm3') }), 'choose');
+  assert.equal(decide({ file: moved, base, here: here('m3'), remote: remote('r3', 'm3') }), 'match');
+  // A device's first sync: a meet nobody has played, or none that can be read, takes Drive's; a played one
+  // is a choice, unless it's the same meet at the same place.
+  assert.equal(decide({ file, base: null, here: here('m5', { untouched: true }), remote: remote('r3', 'm3') }), 'take');
+  assert.equal(decide({ file, base: null, here: { mark: '', seed: '' }, remote: remote('r3', 'm3') }), 'take');
+  assert.equal(decide({ file, base: null, here: here('m5'), remote: remote('r3', 'm3') }), 'choose');
+  assert.equal(decide({ file, base: null, here: here('m3'), remote: remote('r3', 'm3') }), 'match');
+  assert.equal(decide({ file, base: null, here: here('m3'), remote: remote('r3', 'm3', 'other') }), 'choose');
+  // A file made again by another device, after this one's was deleted.
+  assert.equal(decide({ file: { id: 'f9', version: '1' }, base, here: here('m1') }), 'read');
+  assert.equal(decide({ file: { id: 'f9', version: '1' }, base, here: here('m1'), remote: remote('r9', 'm9') }), 'take');
 });
