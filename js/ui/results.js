@@ -10,7 +10,7 @@ import { drawCircle } from '../draw/circle.js';
 import { distanceName } from '../track.js';
 import { ENGINE } from '../sim.js';
 import { atmLine, redraw } from './card.js';
-import { ticketLine } from './race.js';
+import { ticketLine, boughtAt } from './race.js';
 import { callAsCalled } from './watch.js';
 
 export function renderResult(root, nav, params) {
@@ -41,7 +41,7 @@ export function renderResult(root, nav, params) {
       h('div', { class: 'tickets', style: { marginTop: 0, flex: '1 1 220px' } }, bets.map((b, i) => {
         const back = settled.returns[i];
         return h('div', { class: `ticket ${back > 0 ? 'cashed' : 'lost'}` },
-          h('div', {}, ticketLine(b, b.sel.map(x => race.entries[x].pp)), h('div', { class: 'small' }, `COST ${money(b.cost)}`)),
+          h('div', {}, ticketLine(b, b.sel.map(x => race.entries[x].pp)), h('div', { class: 'small' }, `COST ${money(b.cost)}${boughtAt(race, b)}`)),
           back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : h('span', { class: 'small torn' }, 'torn up'),
         );
       })),

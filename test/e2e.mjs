@@ -245,6 +245,23 @@ await page.click('.tabs button:nth-child(4)');
 const pays = await page.locator('.tote-cell .pay').allTextContents();
 assert.ok(pays.length >= 5 && pays.every(t => /^\$2 pays ~\$(\d\.\d0|\d{2,})$/.test(t)), `the board's payouts: ${pays.join(' | ')}`);
 assert.match(await page.locator('.tote + .note').textContent(), /^Odds keep moving until the gate opens\. Every ticket is paid at the final odds/);
+// Each horse on the board against its morning line: ▼ shorter than the line, ▲ longer, nothing when it's the
+// same; and the favourite (the shortest price) says so beside its number, and only it.
+const vsLine = await page.evaluate(() => {
+  const v = t => { const [a, b] = t.split('-').map(Number); return a / b; };
+  const cells = [...document.querySelectorAll('.tote-cell')];
+  const odds = cells.map(c => v(c.querySelector('.odds').textContent));
+  return {
+    wrong: cells.filter((c, i) => {
+      const ml = c.querySelector('.vs').textContent.match(/(\d+-\d+)$/)[1], arrow = c.querySelector('.vs .arrow').textContent;
+      return arrow !== (odds[i] < v(ml) ? '▼' : odds[i] > v(ml) ? '▲' : '');
+    }).length,
+    fav: cells.map((c, i) => [!!c.querySelector('.fav-tag'), odds[i] === Math.min(...odds)]).filter(([tag, short]) => tag !== short).length,
+    tags: document.querySelectorAll('.fav-tag').length,
+    key: document.querySelector('.tote-key').textContent,
+  };
+});
+assert.deepEqual(vsLine, { wrong: 0, fav: 0, tags: 1, key: 'ML is the morning line: ▼ shorter than it now, ▲ longer.' }, 'the board against the morning line');
 // A pick that hasn't been bought. The bar at the bottom names it and offers to buy it, and To the gate
 // doesn't run the race on one tap (or on a double tap): the first tap says what's about to be left behind.
 const third = await page.evaluate(() => { const { game, nextRace } = window.postTime; const e = nextRace().entries[2]; return `#${e.pp} ${game.world.horses[e.hid].name}`; });
@@ -272,11 +289,12 @@ await page.locator('.pick-row').nth(0).locator('button').nth(2).click();
 await page.locator('.seg.amounts button', { hasText: /^\$10$/ }).click();
 assert.equal(await page.locator('.bet-foot .cost').textContent(), `$10 to win on ${third} · you have $200.00`);
 // Under it, what the ticket would pay if the race went off now: one figure for a win ticket, about five times
-// what the board says a $2 ticket on the horse pays.
+// what the board says a $2 ticket on the horse pays, or a little less (the $10 is in the pool, and on a long
+// shot early in the betting that's a good part of the money on it).
 const at = await page.evaluate(() => [document.querySelector('.would-pay').textContent, document.querySelectorAll('.tote-cell .pay span')[2].textContent]);
 assert.match(at[0], /^At these odds: about \$(\d\.\d0|\d{2,}|\d{1,3}(,\d{3})+)$/);
 const fiveTimes = 5 * parseFloat(at[1].replace(/[~$,]/g, '')), said = parseFloat(at[0].replace(/^.*\$/, '').replace(/,/g, ''));
-assert.ok(Math.abs(said - fiveTimes) <= Math.max(3, fiveTimes * 0.03), `a $10 win ticket would pay ${at[0]}, and the board says a $2 one pays ${at[1]}`);
+assert.ok(said <= fiveTimes + 3 && said >= fiveTimes * 0.8, `a $10 win ticket would pay ${at[0]}, and the board says a $2 one pays ${at[1]}`);
 assert.deepEqual([await barText(), await barButtons()], [`${third} to win, $10: not bought yet`, ['To the gate ▸', 'Buy ticket · $10.00']], "the bar doesn't offer the pick that hasn't been bought");
 assert.deepEqual(await page.locator('.post-bar .btn').evaluateAll(bs => bs.map(b => b.className)), ['btn ghost', 'btn brass'], 'with a pick not bought, Buy should be the brass button');
 const unbought = await page.evaluate(() => {
@@ -310,7 +328,10 @@ await page.locator('.seg.amounts button', { hasText: /^\$2$/ }).click();
 // A $2 win ticket on the first horse, and an exacta.
 await page.locator('.pick-row').nth(0).locator('button').nth(0).click();
 assert.match(await page.locator('.bet-foot .cost').textContent(), /^\$2 to win on #\d+ .+ · you have \$200\.00$/);
+const boughtAt = await page.locator('.tote-cell .odds').first().textContent();
 await page.click('.builder .btn');
+// The ticket keeps the price its horse showed when it was bought.
+assert.ok((await page.locator('.ticket .small').first().textContent()).endsWith(` · COST $2.00 · at ${boughtAt}`), "the win ticket doesn't say the price it was bought at");
 await page.locator('.seg button', { hasText: /^Exacta$/ }).click();
 await page.locator('.pick-row').nth(0).locator('button').nth(1).click();
 await page.locator('.pick-row').nth(1).locator('button').nth(0).click();
@@ -432,6 +453,9 @@ else assert.match(lastCall.now, /The time, /, "the call's last line never came u
 await page.click('.w-ctl .btn');
 await page.waitForSelector('.official');
 assert.equal(await page.locator('.board tbody tr.mine').count() >= 1, true, 'your horses are marked in the order of finish');
+// The win ticket's result says the price it was bought at and the one it went off at; the exacta has neither.
+const offAt = await page.evaluate(() => { const r = window.postTime.card().races[0]; return r.result.oddsText[window.postTime.game.player.bets['0:1'][0].sel[0]]; });
+assert.deepEqual(await page.locator('.summary .ticket > div > .small').allTextContents(), [`COST $2.00 · bought at ${boughtAt}, went off ${offAt}`, 'COST $2.00'], 'the result of a ticket bought at one price and paid at another');
 
 // The money adds up.
 const { bank, back } = await page.evaluate(() => {

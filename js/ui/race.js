@@ -9,7 +9,7 @@ import { callText, marginShort, fmtTime, fmtWork } from '../chart.js';
 import { runStyle } from '../forum.js';
 import { BET_NAMES, cost as betCost, MIN, wouldPay } from '../tote.js';
 import { drawHorse } from '../draw/horse.js';
-import { oddsText, angles, newcomer } from '../handicap.js';
+import { oddsText, oddsValue, angles, newcomer } from '../handicap.js';
 import * as audio from '../audio.js';
 import { rehearse } from './watch.js';
 import { minutesLine } from '../call.js';
@@ -585,9 +585,18 @@ function toteBoard(race) {
   const fav = vals.indexOf(Math.min(...vals));
   const grid = evenRows(h('div', { class: 'tote-grid' }), race.entries.length);
   race.entries.forEach((e, i) => {
+    // Each horse against its morning line: ▼ for a price shorter than the line (it's been backed), ▲ for one
+    // longer. The favourite says so beside its number. (It was marked by a brighter colour alone.)
+    const now = oddsValue(odds[i]), line = oddsValue(e.mlText);
+    const move = now < line - 1e-9 ? 'in' : now > line + 1e-9 ? 'out' : '';
+    const said = move === 'in' ? 'shorter than' : move === 'out' ? 'longer than' : 'the same as';
     grid.append(h('div', { class: `tote-cell${i === fav ? ' fav' : ''}`, data: { i } },
-      cloth(e.pp, 'sm'),
+      h('div', { class: 'top' }, cloth(e.pp, 'sm'), i === fav ? h('span', { class: 'fav-tag', 'aria-hidden': 'true' }, 'FAV') : null),
       h('div', { class: 'odds' }, odds[i]),
+      h('div', { class: `vs ${move}`.trim(), title: `${said[0].toUpperCase()}${said.slice(1)} its morning line` },
+        h('span', { class: 'arrow', 'aria-hidden': 'true' }, move === 'in' ? '▼' : move === 'out' ? '▲' : ''),
+        h('span', { class: 'sr' }, `${i === fav ? 'The favourite. ' : ''}${said[0].toUpperCase()}${said.slice(1)} the morning line of `),
+        h('span', { 'aria-hidden': 'true' }, 'ML '), e.mlText),
       h('div', { class: 'pay' }, '$2 pays ', h('span', {}, `~$${twoPays(vals[i])}`)),
     ));
   });
@@ -595,6 +604,7 @@ function toteBoard(race) {
   return h('div', { class: 'tote', id: 'tote' },
     h('div', { class: 'tote-top' }, h('span', {}, final ? 'Final odds' : live ? `Odds · ${mtp} min to post` : 'Opening odds'), h('span', {}, `Win pool ${money(b.pools.win, { cents: false })}`)),
     grid,
+    h('div', { class: 'tote-key', 'aria-hidden': 'true' }, 'ML is the morning line: ▼ shorter than it now, ▲ longer.'),
   );
 }
 
@@ -639,6 +649,14 @@ function updateTote(panel, race) {
   old.replaceWith(fresh);
 }
 
+// The price a win, place or show ticket's horse showed when it was bought, and once the race is run the price it
+// went off at: " · at 15-1", then " · bought at 15-1, went off 3-1". Every ticket is paid at the final odds.
+export function boughtAt(race, b) {
+  if (!b.at) return '';
+  const off = race.status === 'official' && race.result?.oddsText ? race.result.oddsText[b.sel[0]] : null;
+  return off ? ` · bought at ${b.at}, went off ${off}` : ` · at ${b.at}`;
+}
+
 // What a ticket is, as it's printed on it: "$2 TRIFECTA BOX 1, 2, 3, 4, 5". The numbers are a piece of their
 // own, so a line too long for the ticket breaks before them and not among them ("1, 2, 3, 4," over "5",
 // "3-4-" over "6"), unless they're more than a line by themselves.
@@ -661,7 +679,7 @@ function ticketList(race, open, changed) {
     wrap.append(h('div', { class: `ticket${i === fresh ? ' printed' : ''}${back > 0 ? ' cashed' : back === 0 ? ' lost' : ''}` },
       h('div', {},
         ticketLine(b, sel),
-        h('div', { class: 'small' }, `LRK R${race.no} · ${sel.map(n => horseOf(race.entries.find(e => e.pp === n)).name).join(' / ')} · COST ${money(b.cost)}`),
+        h('div', { class: 'small' }, `LRK R${race.no} · ${sel.map(n => horseOf(race.entries.find(e => e.pp === n)).name).join(' / ')} · COST ${money(b.cost)}${boughtAt(race, b)}`),
       ),
       back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : back === 0 ? h('span', { class: 'small torn' }, 'torn up') : open ? h('button', { type: 'button', onclick: () => { cancelBet(race, i); callAgain(race); changed(); } }, 'Cancel') : null,
     ));

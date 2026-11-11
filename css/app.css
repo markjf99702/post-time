@@ -408,6 +408,14 @@ a { color: var(--link); }
 .tote-cell .pay { font-size: 10.5px; line-height: 1.25; color: #9f9884; margin-top: 3px; }
 .tote-cell .pay span { display: block; font-size: 12px; color: #cfc8b2; font-variant-numeric: tabular-nums; }
 .tote-cell.fav .odds { color: #ffd87a; }
+.tote-cell .top { display: flex; justify-content: center; align-items: center; gap: 3px; margin-bottom: 4px; }
+.tote-cell .top .cloth { margin-bottom: 0; }
+.tote-cell .fav-tag { font: 600 9px/1 var(--display); letter-spacing: .04em; color: #ffd87a; }
+.tote-cell .vs { font-size: 10.5px; line-height: 1.25; color: #9f9884; margin-top: 3px; white-space: nowrap; }
+.tote-cell .vs .arrow { margin-right: 2px; }
+.tote-cell .vs.in .arrow { color: #9fd38f; }
+.tote-cell .vs.out .arrow { color: #e3a08f; }
+.tote-key { font-size: 11px; color: #9f9884; padding: 8px 2px 0; }
 @keyframes flash { 0% { color: #fff; } 100% { color: var(--amber); } }
 .builder { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; box-shadow: var(--shadow); }
 .seg { display: flex; flex-wrap: wrap; gap: 6px; }

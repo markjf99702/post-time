@@ -295,11 +295,17 @@ export function placeBet(race, bet) {
   if (c <= 0 || !inRace(race, bet.sel)) return { ok: false, why: 'Pick your horses first.' };
   if (c > game.player.bank + 1e-9) return { ok: false, why: `That ticket costs $${c.toFixed(2)} and you have $${game.player.bank.toFixed(2)}.` };
   const k = raceKey(race);
-  (game.player.bets[k] || (game.player.bets[k] = [])).push({ ...bet, cost: c });
+  // A win, place or show ticket keeps the price its horse showed on the board when it was bought, so its
+  // result can say how far the odds moved before the off ("bought at 15-1, went off 3-1"): every ticket is
+  // paid at the final odds. (A ticket bought before this has none, and says nothing about it.)
+  const at = ONE_HORSE.includes(bet.type) ? currentBoard(race).text[bet.sel[0]] : null;
+  (game.player.bets[k] || (game.player.bets[k] = [])).push({ ...bet, cost: c, ...(at ? { at } : {}) });
   game.player.bank = round2(game.player.bank - c);
   save();
   return { ok: true, cost: c };
 }
+
+const ONE_HORSE = ['win', 'place', 'show', 'wps'];
 
 export function cancelBet(race, i) {
   const list = myBets(race);
