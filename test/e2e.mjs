@@ -1365,10 +1365,24 @@ await page.waitForSelector('.races');
   await shop.waitForSelector('.races', { timeout: 60000 });
   await shop.evaluate(() => { const { game, save } = window.postTime; game.player.settings.sound = false; save(); return document.fonts.ready.then(() => 0); });
   const printing = () => shop.evaluate(() => [...document.querySelectorAll('.ticket')].filter(t => t.classList.contains('printed') || getComputedStyle(t).animationName !== 'none').length);
+  // How many of these are in each row on the screen.
+  const rowsOf = sel => shop.evaluate(sel => { const tops = [...document.querySelectorAll(sel)].map(x => Math.round(x.getBoundingClientRect().top)); return [...new Set(tops)].map(t => tops.filter(x => x === t).length); }, sel);
+  const even = rows => Math.max(...rows) - Math.min(...rows) <= 1;
   for (const [width, height] of [[390, 844], [320, 568]]) {
     await shop.setViewportSize({ width, height });
-    await shop.evaluate(() => window.postTime.nav.go('race', { no: 1, tab: 'bet' }));
+    // A field that takes two rows on the tote board has them as near the same length as can be: seven as
+    // four and three, ten as five and five (they were six and one, six and four). Every race's board is
+    // looked at, and the picks of the race that's up, which are set out the same way.
+    const uneven = [];
+    for (let no = 8; no >= 1; no--) {
+      await shop.evaluate(no => window.postTime.nav.go('race', { no, tab: 'bet' }), no);
+      const board = await rowsOf('.tote-cell');
+      if (!even(board)) uneven.push(`race ${no}'s board: ${board.join(' and ')}`);
+    }
     await shop.waitForSelector('.builder');
+    const picks = await rowsOf('.picks-grid button');
+    if (!even(picks)) uneven.push(`race 1's picks: ${picks.join(' and ')}`);
+    assert.deepEqual(uneven, [], `${width} wide: rows of uneven length`);
     const behind = [];
     for (const [k, buy] of [[0, '.builder .btn'], [1, '.post-bar .btn.brass'], [2, '.builder .btn']]) {
       await shop.locator('.pick-row').nth(0).locator('button').nth(k).click();

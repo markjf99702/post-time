@@ -445,7 +445,7 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
     const rows = st.type === 'exacta' ? ['1st', '2nd'] : st.type === 'trifecta' ? ['1st', '2nd', '3rd'] : [st.type.endsWith('box') ? 'Pick' : 'Horse'];
     const multi = st.type.endsWith('box');
     rows.forEach((label, r) => {
-      const grid = h('div', { class: 'picks-grid' });
+      const grid = evenRows(h('div', { class: 'picks-grid' }), race.entries.length);
       race.entries.forEach((e, i) => {
         const [bg, fg] = CLOTH[e.pp] || CLOTH[1];
         const on = st.picks[r].includes(i);
@@ -523,7 +523,7 @@ function toteBoard(race) {
   const odds = final ? race.result.oddsText : b.text;
   const vals = final ? race.result.odds : b.odds;
   const fav = vals.indexOf(Math.min(...vals));
-  const grid = h('div', { class: 'tote-grid' });
+  const grid = evenRows(h('div', { class: 'tote-grid' }), race.entries.length);
   race.entries.forEach((e, i) => {
     grid.append(h('div', { class: `tote-cell${i === fav ? ' fav' : ''}`, data: { i } },
       cloth(e.pp, 'sm'),
@@ -536,6 +536,16 @@ function toteBoard(race) {
     h('div', { class: 'tote-top' }, h('span', {}, final ? 'Final odds' : live ? `Odds · ${mtp} min to post` : 'Opening odds'), h('span', {}, `Win pool ${money(b.pools.win, { cents: false })}`)),
     grid,
   );
+}
+
+// A field that takes more than one row on the board, or among the picks, is set out in rows as near the same
+// length as can be: seven as four and three, ten as five and five. (As many as fitted went in the first
+// row: six and one, six and four.) How many go in a row depends on how many the screen has room for, which
+// the stylesheet knows: it's told the answer for five and for six to a row, and the size of the field.
+function evenRows(el, n) {
+  for (const most of [5, 6]) el.style.setProperty(`--by${most}`, Math.ceil(n / Math.ceil(n / most)));
+  el.style.setProperty('--field', n);
+  return el;
 }
 
 // About what a $2 win ticket pays at these odds, worked out the way the payouts are: per dollar, rounded

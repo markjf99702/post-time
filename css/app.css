@@ -324,7 +324,7 @@ a { color: var(--link); }
   box-shadow: inset 0 0 0 3px #26352d, 0 3px 12px rgba(0,0,0,.2);
 }
 .tote-top { display: flex; justify-content: space-between; align-items: baseline; font: 500 11px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; color: #bdb59e; padding: 0 2px 8px; }
-.tote-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 6px; }
+.tote-grid { display: grid; grid-template-columns: repeat(var(--by6, 6), minmax(0, 1fr)); gap: 6px; }
 .tote-cell { text-align: center; padding: 4px 0 5px; border-radius: 5px; background: #1a201b; }
 .tote-cell .cloth { margin-bottom: 4px; }
 .tote-cell .odds { font: 600 19px/1 var(--display); color: var(--amber); font-variant-numeric: tabular-nums; text-shadow: 0 0 8px rgba(245,179,61,.35); }
@@ -347,7 +347,8 @@ a { color: var(--link); }
 .bet-help { font-size: 14px; color: var(--muted); margin: 10px 0 8px; min-height: 2.6em; }
 .pick-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
 .pick-row .lbl { width: 34px; font: 500 12px/1 var(--display); letter-spacing: .08em; color: var(--muted); text-transform: uppercase; flex: none; }
-.picks-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+/* The picks wrap into rows of the same length as the board's (the race's page works the lengths out). */
+.picks-grid { display: flex; flex-wrap: wrap; gap: 6px; max-width: calc(var(--by6, 6) * 46px - 6px); }
 /* A horse to pick: its saddle cloth. Until it's picked the button's ground is washed part-way to the card's
    colour, and the number stays at full strength on a patch of the cloth's own colour. (The whole button used to
    be at 55%, number and focus ring too: the numbers were 2.2:1 to 4:1 on their grounds.) Picked, the whole
@@ -546,6 +547,15 @@ a { color: var(--link); }
 .setup .bar { width: 220px; height: 8px; border-radius: 4px; background: var(--paper-2); overflow: hidden; }
 .setup .bar i { display: block; height: 100%; width: 0; background: var(--brass); transition: width .2s; }
 
+/* The board and the picks: five to a row at most on a small phone, and the whole field in one row with room for it. */
+@media (max-width: 350px) {
+  .tote-grid { grid-template-columns: repeat(var(--by5, 5), minmax(0, 1fr)); }
+  .picks-grid { max-width: calc(var(--by5, 5) * 46px - 6px); }
+}
+@media (min-width: 700px) {
+  .tote-grid { grid-template-columns: repeat(var(--field, 12), minmax(0, 1fr)); }
+  .picks-grid { max-width: none; }
+}
 @media (max-width: 380px) {
   .brand-name { font-size: 19px; }
   .bank { font-size: 16px; padding: 6px 8px; }
