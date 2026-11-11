@@ -72,12 +72,13 @@ export const SILK_COLORS = {
 };
 export const PATTERNS = ['solid', 'hoops', 'sash', 'stripes', 'halves', 'quarters', 'diamonds', 'chevrons', 'spots', 'star', 'cross', 'braces', 'sleeves'];
 
-// US saddle-cloth colours by program number: [cloth, number].
+// US saddle-cloth colours by program number: [cloth, number]. The 11 is red on grey: a deep red on a light
+// grey here, so the number can be read at the size of a chip (4.9:1; #d62828 on #9a9a9a was 1.8:1).
 export const CLOTH = [
   null,
   ['#d62828', '#ffffff'], ['#f4f4f0', '#111111'], ['#1f4fd1', '#ffffff'], ['#f5d400', '#111111'],
   ['#1e8a3a', '#ffffff'], ['#111111', '#f5d400'], ['#f27b1a', '#111111'], ['#f59ac5', '#111111'],
-  ['#35c9c9', '#111111'], ['#6a2ea0', '#ffffff'], ['#9a9a9a', '#d62828'], ['#9bd13a', '#111111'],
+  ['#35c9c9', '#111111'], ['#6a2ea0', '#ffffff'], ['#cfcfcf', '#a81414'], ['#9bd13a', '#111111'],
 ];
 
 export const STAKES = [

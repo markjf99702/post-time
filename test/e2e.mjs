@@ -298,6 +298,34 @@ await page.emulateMedia({ colorScheme: 'light' });
 assert.ok(dark.type >= 3 && dark.amount >= 3, `in the dark the pressed bet type (${dark.type.toFixed(2)}:1) or amount (${dark.amount.toFixed(2)}:1) is hard to tell from the others`);
 assert.ok(dark.buy >= 3, `in the dark Buy ticket is ${dark.buy.toFixed(2)}:1 against its card`);
 assert.equal(dark.header, 'rgb(23, 58, 44)', 'the header changed colour in the dark');
+// And what's on a button can be read, in the light and in the dark (figures are WCAG contrast ratios). The
+// lettering on Buy ticket and on the pressed bet type is 4.5:1 or better on its ground (in the dark it was
+// cream on green at 3.65:1). A bet type that isn't pressed has an edge of 3:1 against the card (it had none,
+// and its ground is 1.03:1 against the card in the dark). A pick that isn't picked keeps its number at full
+// strength on its cloth's own colour (the whole button used to be at 55%: 2.2:1 for the white 5 on green).
+for (const scheme of ['light', 'dark']) {
+  await page.emulateMedia({ colorScheme: scheme });
+  const seen = await page.evaluate(() => {
+    const rgba = c => c.match(/[\d.]+/g).map(Number);
+    const over = (top, under) => { const [r, g, b, a = 1] = rgba(top), u = rgba(under); return [r, g, b].map((v, i) => v * a + u[i] * (1 - a)); };
+    const lum = c => c.slice(0, 3).map(v => v / 255).map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+    const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+    const css = (el, prop) => getComputedStyle(typeof el === 'string' ? document.querySelector(el) : el)[prop];
+    const words = el => ratio(rgba(css(el, 'color')), rgba(css(el, 'backgroundColor')));
+    const card = css('.builder', 'backgroundColor'), picks = [...document.querySelectorAll('.picks-grid button')];
+    return {
+      buy: words('.builder .btn'), pressed: words('.seg button[aria-pressed="true"]'),
+      edge: ratio(over(css('.seg button[aria-pressed="false"]', 'borderTopColor'), card), rgba(card)),
+      pick: Math.min(...picks.map(b => ratio(rgba(css(b, 'color')), rgba(css(b.firstElementChild || b, 'backgroundColor'))))),
+      faded: picks.filter(b => css(b, 'opacity') !== '1').length, picks: picks.length,
+    };
+  });
+  const said = Object.entries(seen).map(([k, v]) => `${k} ${+v.toFixed(2)}`).join(', ');
+  assert.ok(seen.buy >= 4.5 && seen.pressed >= 4.5, `${scheme}: the lettering on Buy ticket or on a pressed bet type is under 4.5:1 (${said})`);
+  assert.ok(seen.edge >= 3, `${scheme}: a bet type that isn't pressed has no edge to speak of against the card (${said})`);
+  assert.ok(seen.picks >= 6 && seen.faded === 0 && seen.pick >= 4.4, `${scheme}: a pick's number is faded, or hard to read on its ground (${said})`);
+}
+await page.emulateMedia({ colorScheme: 'light' });
 
 // Off they go; skip to the end.
 await page.click('.post-bar .btn.brass');
@@ -1224,6 +1252,36 @@ await page.waitForSelector('.races');
   await desk.waitForSelector('.races', { timeout: 60000 });
   await desk.evaluate(() => document.fonts.ready);
   const biggest = await desk.evaluate(() => { const { game, card, save } = window.postTime; game.player.settings.sound = false; save(); return card().races.reduce((a, r) => (r.entries.length > a.entries.length ? r : a)).no; });
+  // The keyboard's focus is never under the header, the tabs or the bar at the bottom, and it has the game's
+  // own ring. In a window 600 px tall, Tab through the Bet tab from the top (12 of its 52 stops used to be
+  // wholly under the bar), then back up through the Form with Shift+Tab (6 of 39 were under the header and
+  // the tabs). The page keeps room clear at its top and bottom for what's fixed there.
+  await desk.setViewportSize({ width: 1280, height: 600 });
+  for (const [tab, key] of [['bet', 'Tab'], ['form', 'Shift+Tab']]) {
+    await desk.evaluate(tab => { window.postTime.nav.go('race', { no: 1, tab }); if (tab === 'form') [...document.querySelectorAll('.entry-head')].pop().focus(); }, tab);
+    const under = [], rings = new Set();
+    let stops = 0;
+    for (let k = 0; k < 70; k++) {
+      await desk.keyboard.press(key);
+      const at = await desk.evaluate(() => {
+        const el = document.activeElement;
+        if (!el || el === document.body) return null;
+        const r = el.getBoundingClientRect(), box = s => document.querySelector(s).getBoundingClientRect(), cs = getComputedStyle(el);
+        const fixed = el.closest('.top, .tabs, .post-bar, .menu');
+        const belowTabs = !!(document.querySelector('.tabs').compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+        const hid = fixed ? '' : r.bottom > box('.post-bar').top + 1 ? 'the bar' : r.top < box('.top').bottom - 1 ? 'the header' : belowTabs && r.top < box('.tabs').bottom - 1 ? 'the tabs' : '';
+        return { hid, name: (el.getAttribute('aria-label') || el.textContent).trim().slice(0, 30), ring: `${cs.outlineStyle} ${cs.outlineWidth}` };
+      });
+      if (!at) continue;
+      stops++;
+      rings.add(at.ring);
+      if (at.hid) under.push(`${at.name}, under ${at.hid}`);
+    }
+    assert.ok(stops >= 10, `${key} on the ${tab} tab stopped at only ${stops} controls`);
+    assert.deepEqual(under, [], `${key} on the ${tab} tab put the focus where it can't be seen`);
+    assert.deepEqual([...rings], ['solid 3px'], 'a control with the keyboard focus should have the 3 px ring');
+  }
+  await desk.setViewportSize({ width: 1280, height: 800 });
   await desk.evaluate(no => window.postTime.nav.go('watch', { no }), biggest);
   await desk.waitForSelector('.watch:not([hidden]) .order button');
   await desk.evaluate(() => window.__watch.setT(8));

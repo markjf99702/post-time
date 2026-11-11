@@ -4,7 +4,7 @@ import { h, money, cloth, silksCanvas, clear, ago, plural } from './dom.js';
 import { game, card, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor } from '../game.js';
 import { ownerSilks, ageOf, shortDate, clockText, CLASSES, meetStats } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
-import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES } from '../data.js';
+import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES, CLOTH } from '../data.js';
 import { callText, marginShort, fmtTime, fmtWork } from '../chart.js';
 import { runStyle } from '../forum.js';
 import { BET_NAMES, cost as betCost, BASE } from '../tote.js';
@@ -441,10 +441,10 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
     rows.forEach((label, r) => {
       const grid = h('div', { class: 'picks-grid' });
       race.entries.forEach((e, i) => {
-        const [bg, fg] = clothColors(e.pp);
+        const [bg, fg] = CLOTH[e.pp] || CLOTH[1];
         const on = st.picks[r].includes(i);
         grid.append(h('button', {
-          type: 'button', 'aria-pressed': String(on), 'aria-label': `${e.pp} ${horseOf(e).name}`, style: { background: bg, color: fg },
+          type: 'button', 'aria-pressed': String(on), 'aria-label': `${e.pp} ${horseOf(e).name}`, style: { backgroundColor: bg, color: fg },
           onclick: () => {
             if (multi) st.picks[r] = on ? st.picks[r].filter(x => x !== i) : [...st.picks[r], i];
             else {
@@ -454,7 +454,7 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
             }
             draw();
           },
-        }, String(e.pp)));
+        }, h('span', {}, String(e.pp)))); // the number, on a patch of the cloth at full strength
       });
       builder.append(h('div', { class: 'pick-row' }, h('span', { class: 'lbl' }, label), grid));
     });
@@ -508,11 +508,6 @@ function needs(st) {
   if (st.type === 'exbox') return 'Pick at least two.';
   if (st.type === 'tribox') return 'Pick at least three.';
   return 'Pick a horse.';
-}
-
-function clothColors(n) {
-  const c = { 1: ['#d62828', '#fff'], 2: ['#f4f4f0', '#111'], 3: ['#1f4fd1', '#fff'], 4: ['#f5d400', '#111'], 5: ['#1e8a3a', '#fff'], 6: ['#111', '#f5d400'], 7: ['#f27b1a', '#111'], 8: ['#f59ac5', '#111'], 9: ['#35c9c9', '#111'], 10: ['#6a2ea0', '#fff'], 11: ['#9a9a9a', '#d62828'], 12: ['#9bd13a', '#111'] };
-  return c[n] || c[1];
 }
 
 function toteBoard(race) {

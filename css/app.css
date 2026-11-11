@@ -17,7 +17,12 @@
   --win: #2d7a3e;
   --tote: #111511;
   --amber: #f5b33d;
-  --focus: #e0a526;
+  --press: #1f4d3a;                 /* the green buttons, and a bet type, amount or figure that's marked */
+  --press-ink: #f6efdb;
+  --link: #2c6a50;
+  --edge: rgba(29, 42, 35, .5);     /* round a button that isn't pressed, so it reads as a button: 3.0:1 on the card */
+  --cloth-edge: rgba(0, 0, 0, .18); /* the hairline round a saddle cloth */
+  --veil: rgba(251, 247, 236, .5);  /* over the ground of a pick that isn't picked: the card's colour, part way */
   --shadow: 0 1px 0 rgba(0,0,0,.04), 0 2px 10px rgba(40, 30, 10, .07);
   --display: 'Oswald', 'Arial Narrow', sans-serif;
   --body: 'Plex', 'Arial Narrow', system-ui, sans-serif;
@@ -36,6 +41,14 @@
     --brass: #d6a94a;
     --red: #e0675b;
     --win: #62b574;
+    /* In the dark the buttons are a lighter green with dark lettering (5.8:1; cream on the old green was 3.65:1),
+       links are lighter (6.3:1 on a card), and a saddle cloth has a light hairline, for the black 6. */
+    --press: #45a07a;
+    --press-ink: #0e1512;
+    --link: #5cb38c;
+    --edge: rgba(236, 230, 214, .45);
+    --cloth-edge: rgba(255, 255, 255, .4);
+    --veil: rgba(27, 35, 31, .5);
     --shadow: 0 1px 0 rgba(0,0,0,.2), 0 2px 12px rgba(0,0,0,.25);
     color-scheme: dark;
   }
@@ -52,13 +65,24 @@
   --brass: #d6a94a;
   --red: #e0675b;
   --win: #62b574;
+  --press: #45a07a;
+  --press-ink: #0e1512;
+  --link: #5cb38c;
+  --edge: rgba(236, 230, 214, .45);
+  --cloth-edge: rgba(255, 255, 255, .4);
+  --veil: rgba(27, 35, 31, .5);
   --shadow: 0 1px 0 rgba(0,0,0,.2), 0 2px 12px rgba(0,0,0,.25);
   color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html { -webkit-text-size-adjust: 100%; }
+/* A control the keyboard moves to, and anything else brought into view, comes to rest clear of what's fixed over
+   the page: the header, a race's tabs under it, and the bar at the bottom (the race's page says how tall that is
+   just now, as --bar). */
+html { -webkit-text-size-adjust: 100%; scroll-padding: calc(70px + env(safe-area-inset-top)) 0 16px; }
+html:has(.tabs) { scroll-padding-top: calc(112px + env(safe-area-inset-top)); }
+html:has(.post-bar) { scroll-padding-bottom: calc(var(--bar, 62px) + 14px); }
 body {
   margin: 0;
   background: var(--paper);
@@ -68,7 +92,12 @@ body {
   overflow-x: hidden;
 }
 button { font: inherit; color: inherit; }
-a { color: var(--green-2); }
+a { color: var(--link); }
+/* One focus ring for the whole game: the ink's colour, and white on the dark surfaces (the header, the tote
+   board and the race). Where a ring outside its box would be cut off, it's drawn just inside. */
+:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.top :focus-visible, .tote :focus-visible, .watch :focus-visible { outline-color: #fff; }
+.entry-head:focus-visible, .tabs button:focus-visible { outline-offset: -3px; }
 .noscript { padding: 20px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
@@ -133,13 +162,13 @@ a { color: var(--green-2); }
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 26px; height: 26px; padding: 0 4px; border-radius: 4px;
   font: 600 16px/1 var(--display); flex: none;
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,.18);
+  box-shadow: inset 0 0 0 1px var(--cloth-edge);
 }
 .cloth.sm { min-width: 20px; height: 20px; font-size: 13px; border-radius: 3px; }
 .cloth.lg { min-width: 34px; height: 34px; font-size: 21px; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  background: var(--green); color: #f6efdb; border: 0; border-radius: 8px;
+  background: var(--press); color: var(--press-ink); border: 0; border-radius: 8px;
   padding: 12px 18px; font: 600 17px/1 var(--display); letter-spacing: .06em; text-transform: uppercase; cursor: pointer;
   box-shadow: 0 2px 0 rgba(0,0,0,.25);
 }
@@ -183,7 +212,6 @@ a { color: var(--green-2); }
 .race-row .what { font-weight: 600; font-size: 16px; line-height: 1.25; }
 .race-row .sub { font-size: 14px; color: var(--muted); grid-column: 2; }
 .race-row .state { grid-column: 3; grid-row: 1 / span 2; text-align: right; font-size: 14px; }
-.race-row.done { opacity: .82; }
 .race-row.done .no { background: var(--paper-2); color: var(--muted); }
 .race-row.done .no small { color: var(--muted); }
 .race-row.next { border: 2px solid var(--brass); }
@@ -205,11 +233,10 @@ a { color: var(--green-2); }
 .jd-foot { padding: 14px 16px; text-align: center; font-size: 14px; color: var(--muted); }
 .jd-foot a { color: inherit; text-decoration: none; text-underline-offset: 3px; border-radius: 2px; }
 .jd-foot a:hover, .jd-foot a:focus-visible { text-decoration: underline; }
-.jd-foot a:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 
 /* ------------------------------------------------------------ race screen */
 .rhead { padding: 12px 16px 10px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: start; }
-.rhead .back { background: none; border: 0; padding: 0; cursor: pointer; color: var(--muted); font: 500 13px/1 var(--display); letter-spacing: .1em; text-transform: uppercase; grid-column: 1 / -1; justify-self: start; margin-bottom: 4px; }
+.rhead .back { background: none; border: 0; padding: 0; cursor: pointer; color: var(--muted); font: 500 13px/1 var(--display); letter-spacing: .1em; text-transform: uppercase; grid-column: 1 / -1; justify-self: start; padding: 4px 6px; margin: -4px 0 0 -6px; }
 .rhead .title { font: 600 23px/1.15 var(--display); margin: 0; }
 .rhead .cond { font-size: 14px; color: var(--muted); grid-column: 1 / -1; }
 .mtp { text-align: center; background: var(--tote); color: var(--amber); border-radius: 6px; padding: 6px 9px 5px; font: 600 22px/1 var(--display); min-width: 58px; }
@@ -239,7 +266,7 @@ a { color: var(--green-2); }
 .entry .who { grid-column: 3 / -1; font-size: 13.5px; color: var(--muted); line-height: 1.3; }
 .entry .figs { display: flex; flex-wrap: wrap; gap: 5px 8px; padding: 0 12px 10px; font-size: 13.5px; align-items: center; }
 .fig { font: 600 14px/1 var(--display); padding: 3px 5px; border-radius: 4px; background: var(--paper-2); font-variant-numeric: tabular-nums; }
-.fig.best { background: var(--green); color: #f3ecd8; }
+.fig.best { background: var(--press); color: var(--press-ink); }
 .chip { font-size: 12px; padding: 3px 6px; border-radius: 4px; border: 1px solid var(--line); white-space: nowrap; }
 .chip.good { border-color: rgba(45,122,62,.5); color: var(--win); }
 .chip.bad { border-color: rgba(179,55,44,.45); color: var(--red); }
@@ -289,6 +316,7 @@ a { color: var(--green-2); }
 
 /* betting */
 .tote {
+  --cloth-edge: rgba(255, 255, 255, .4);
   background: var(--tote); color: #e9e2cf; border-radius: 10px; padding: 10px 10px 8px; margin-bottom: 12px;
   box-shadow: inset 0 0 0 3px #26352d, 0 3px 12px rgba(0,0,0,.2);
 }
@@ -304,28 +332,30 @@ a { color: var(--green-2); }
 @keyframes flash { 0% { color: #fff; } 100% { color: var(--amber); } }
 .builder { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; box-shadow: var(--shadow); }
 .seg { display: flex; flex-wrap: wrap; gap: 6px; }
+/* A bet type or an amount that isn't pressed has an edge, so it reads as a button and not as a word (its ground
+   is 1.03:1 against the card in the dark, 1.2:1 in the light). In the dark, the header's green is too close to the
+   cards and to an unpressed button: the pressed ones, and the green buttons (Buy ticket, Results), are a lighter
+   green there, with dark lettering. */
 .seg button {
-  background: var(--paper-2); border: 1px solid transparent; border-radius: 7px; padding: 8px 10px; cursor: pointer;
+  background: var(--paper-2); border: 1px solid var(--edge); border-radius: 7px; padding: 8px 10px; cursor: pointer;
   font: 500 14px/1 var(--display); letter-spacing: .06em; text-transform: uppercase;
 }
-.seg button[aria-pressed="true"] { background: var(--green); color: #f3ecd8; }
-/* In the dark, the header's green is too close to the cards and to an unpressed button: the pressed bet
-   type and amount, and the green buttons (Buy ticket, Results), use the lighter green instead. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .seg button[aria-pressed="true"],
-  :root:not([data-theme="light"]) .btn:not(.brass):not(.ghost) { background: var(--green-2); }
-}
-:root[data-theme="dark"] .seg button[aria-pressed="true"],
-:root[data-theme="dark"] .btn:not(.brass):not(.ghost) { background: var(--green-2); }
+.seg button[aria-pressed="true"] { background: var(--press); color: var(--press-ink); border-color: var(--press); }
 .bet-help { font-size: 14px; color: var(--muted); margin: 10px 0 8px; min-height: 2.6em; }
 .pick-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
 .pick-row .lbl { width: 34px; font: 500 12px/1 var(--display); letter-spacing: .08em; color: var(--muted); text-transform: uppercase; flex: none; }
 .picks-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+/* A horse to pick: its saddle cloth. Until it's picked the button's ground is washed part-way to the card's
+   colour, and the number stays at full strength on a patch of the cloth's own colour. (The whole button used to
+   be at 55%, number and focus ring too: the numbers were 2.2:1 to 4:1 on their grounds.) Picked, the whole
+   button is the cloth, with an ink edge and a lift. */
 .picks-grid button {
-  min-width: 40px; height: 40px; border-radius: 7px; border: 2px solid transparent; cursor: pointer;
-  font: 600 18px/1 var(--display); box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); opacity: .55;
+  min-width: 40px; height: 40px; padding: 0; border-radius: 7px; border: 2px solid transparent; cursor: pointer;
+  font: 600 18px/1 var(--display); box-shadow: inset 0 0 0 1px var(--cloth-edge);
+  background-image: linear-gradient(var(--veil), var(--veil));
 }
-.picks-grid button[aria-pressed="true"] { opacity: 1; border-color: var(--ink); transform: translateY(-1px); box-shadow: 0 3px 0 rgba(0,0,0,.25); }
+.picks-grid button span { display: flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; margin: 0 auto; padding: 0 3px; border-radius: 5px; background-color: inherit; width: min-content; }
+.picks-grid button[aria-pressed="true"] { background-image: none; border-color: var(--ink); transform: translateY(-1px); box-shadow: 0 3px 0 rgba(0,0,0,.25); }
 .amounts { margin-top: 10px; }
 .bet-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .bet-foot .cost { font-size: 15px; }
@@ -337,9 +367,6 @@ a { color: var(--green-2); }
   display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center;
   background-image: radial-gradient(circle at 0 50%, transparent 5px, #fbf6e3 5.5px);
 }
-/* A ticket brought into view (the one just bought is) comes to rest clear of the bar at the bottom. The race's
-   page says how tall the bar is just now, as --bar. */
-.ticket { scroll-margin-bottom: calc(var(--bar, 62px) + 12px); }
 .ticket::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: repeating-linear-gradient(#c0392b 0 6px, #fbf6e3 6px 10px); border-radius: 4px 0 0 4px; }
 .ticket .what { font-weight: 700; }
 .ticket .small { font-size: 12px; color: #6b604b; }
@@ -385,6 +412,7 @@ a { color: var(--green-2); }
 
 /* ------------------------------------------------------------ watching the race */
 .watch {
+  --cloth-edge: rgba(255, 255, 255, .4);
   position: fixed; inset: 0; z-index: 40; background: #0e120f; color: #f1ead6;
   display: flex; flex-direction: column;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
@@ -425,12 +453,11 @@ a { color: var(--green-2); }
 .order.two { min-height: 78px; }
 .order .slot { display: flex; align-items: center; gap: 3px; flex: none; }
 .order button { background: none; border: 0; padding: 2px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; flex: none; border-radius: 6px; }
-/* A thin light edge, so the black 6 shows on the dark strip. Yours has a white ring; the one the camera is
-   following has an amber one, outside the white if it's both. */
-.order .cloth { box-shadow: inset 0 0 0 1px rgba(255,255,255,.3); }
-.order button.me .cloth { box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), 0 0 0 2px #fff; }
-.order button.follow .cloth { box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), 0 0 0 2px var(--amber); }
-.order button.me.follow .cloth { box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), 0 0 0 2px #fff, 0 0 0 4px var(--amber); }
+/* A thin light edge, so the black 6 shows on the dark strip (3.5:1 against it). Yours has a white ring; the one
+   the camera is following has an amber one, outside the white if it's both. */
+.order button.me .cloth { box-shadow: inset 0 0 0 1px var(--cloth-edge), 0 0 0 2px #fff; }
+.order button.follow .cloth { box-shadow: inset 0 0 0 1px var(--cloth-edge), 0 0 0 2px var(--amber); }
+.order button.me.follow .cloth { box-shadow: inset 0 0 0 1px var(--cloth-edge), 0 0 0 2px #fff, 0 0 0 4px var(--amber); }
 /* Margins are small, dim and raised, like the ones in a chart, so a 2 or a 1 isn't read as a horse's number. */
 .order .gap { font: 500 10px/1 var(--display); color: #8f8a78; min-width: 13px; text-align: center; align-self: flex-start; }
 /* The two in a photo, side by side until the official sign says which of them was in front. */
@@ -520,6 +547,18 @@ a { color: var(--green-2); }
   .brand-name { font-size: 19px; }
   .bank { font-size: 16px; padding: 6px 8px; }
   .tabs button { font-size: 13.5px; letter-spacing: .06em; }
+}
+/* With the system's own colours forced on the page (a Windows contrast theme), a ground can't say which button is
+   pressed or which tab is open, so a border in the highlight colour does. */
+@media (forced-colors: active) {
+  .btn { border: 2px solid ButtonText; padding: 10px 16px; } /* its ground was all that made it a button */
+  .w-ctl .btn { padding: 0 14px; }
+  .seg button[aria-pressed="true"] { border: 3px solid Highlight; padding: 6px 8px; }
+  .w-ctl button[aria-pressed="true"] { border: 3px solid Highlight; padding: 7px 10px; }
+  .picks-grid button[aria-pressed="true"] { border: 4px solid Highlight; }
+  .order button[aria-pressed="true"] { outline: 2px solid Highlight; }
+  .tabs button { border-bottom-color: Canvas; }
+  .tabs button[aria-selected="true"] { border-bottom-color: Highlight; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
