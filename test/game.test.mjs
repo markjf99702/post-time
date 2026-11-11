@@ -1178,7 +1178,8 @@ test('watched at 2x the call is its shorter lines, and at 4x only the headlines,
     for (const kind of ['off', 'wire', 'placings']) assert.ok(r.slots.includes(kind), `race day ${r.day}, race ${r.no} at ${r.speed}x: no "${kind}" line`);
     assert.ok((r.said.leader || 0) + (r.said.pair || 0) >= 1, `race day ${r.day}, race ${r.no} at ${r.speed}x: nobody is ever said to lead`);
   }
-  const headlines = new Set(['pre', 'off', 'run', 'fill', 'change', 'turn', 'eighth', 'wire', 'placings']);
+  // ("It is now post time", the announcer's, is said before the off like the line before it.)
+  const headlines = new Set(['post', 'pre', 'off', 'run', 'fill', 'change', 'turn', 'eighth', 'wire', 'placings']);
   assert.deepEqual(four.flatMap(r => r.slots.filter(k => !headlines.has(k)).map(k => `race day ${r.day}, race ${r.no}: a "${k}" line`)), [], 'more than the headlines at 4x');
   // Real seconds of silence, and lines: fewer and shorter as the race goes by faster.
   const [q2, q4] = [twice, four].map(rs => sum(rs, 'quiet') / sum(rs, 'secs'));
@@ -1380,3 +1381,72 @@ test('a ticket there isn\'t the money for is refused in dollars', () => {
   assert.equal(game.player.bank, 3.4);
 });
 
+
+test('the caller knows the favourite, the price of a long shot, the riders, the distance and the horse with your money on it', () => {
+  // Across 200 calls he never said "the favourite", a price, a rider's name or the distance. Now he's told
+  // the final board (your tickets and all), the riders and your tickets, and what he says of them is true.
+  const races = playLongMeet();
+  for (const kind of ['favourite', 'price', 'spot']) assert.deepEqual(told(races, kind), [], kind);
+  const said = (re, rs = races) => rs.filter(r => r.lines.some(l => re.test(l))).length;
+  assert.ok(total(races, 'favourite') > races.length / 3, `"the favourite" in ${total(races, 'favourite')} lines of ${races.length} races`);
+  const longShots = races.filter(r => game.world && r.price);
+  assert.ok(total(races, 'price') >= 10 && total(races, 'price') === longShots.length, `a price at the wire ${total(races, 'price')} times, for ${longShots.length} winners at 15-1 or more`);
+  assert.ok(said(/, (\w+ )?(\w+) (asks|is asking|is pushing|sends) /) > 10, `a rider named in ${said(/ asks | is asking | is pushing | sends /)} races`);
+  assert.ok(said(/^They're .+, (a mile|[a-z]+( and a half)? furlongs)( and an? \w+)? on the (dirt|turf)\.$/) > races.length / 2, 'the distance and the surface before the off');
+  // And a meet with a $2 win ticket on the fifth horse of every race: it's given its place in the running
+  // when the call hasn't got to it, and what it has to find in the stretch, and every word of it is true.
+  build('your-horse');
+  const mine = [];
+  for (let d = 0; d < 4; d++) {
+    for (const race of card().races) {
+      const k = Math.min(4, race.entries.length - 1);
+      assert.ok(placeBet(race, { type: 'win', sel: [k], amt: 2 }).ok);
+      const { run } = goToGate(race);
+      const call = callFor(race, run), names = race.entries.map(e => horseOf(e).name);
+      assert.equal(callInfo(race).mine, k);
+      const r = callAgainstRace(race, run, call, names);
+      for (const kind of ['favourite', 'price', 'spot', 'leader', 'crowded', 'twice', 'places', 'words', 'finish']) assert.deepEqual(r.wrong[kind] || [], [], `race day ${d + 1}, race ${race.no}: ${kind}`);
+      mine.push(call.lines.filter(l => l.spot === k).length);
+    }
+    advanceDay();
+  }
+  assert.ok(mine.filter(n => n > 0).length > mine.length / 3, `your horse given its place in ${mine.filter(n => n > 0).length} races of ${mine.length}`);
+});
+
+test("the announcer: what the winner paid is what the tote pays, said in words, and on some races it's post time", async () => {
+  const { resultLine, priceSay, minutesLine } = await import('../js/call.js');
+  // A price as the announcer says it, never in figures.
+  assert.deepEqual([8.6, 4.2, 3, 2.1, 12.4, 104.2, 100].map(priceSay), ['eight sixty', 'four twenty', 'three dollars', 'two ten', 'twelve forty', 'one oh four twenty', 'one hundred dollars']);
+  assert.deepEqual(resultLine({ pp: 4, win: 8.6, place: 4.2, show: 3 }, 'Copper Detour'), {
+    text: 'The result is official. #4 Copper Detour paid $8.60, $4.20 and $3.00.',
+    say: 'The result is official. Number four, Copper Detour, paid eight sixty, four twenty and three dollars.',
+    kind: 'finish', slot: 'result', late: 30, rank: 0,
+  });
+  assert.deepEqual([12, 10, 6, 5, 2].map(m => minutesLine(m)?.say ?? null), [null, 'Ten minutes to post.', null, 'Five minutes to post.', 'Two minutes to post.']);
+  // Worked out before the race, with your tickets in, it's what the race pays once it's run.
+  build('announcer');
+  let posts = 0, races = 0;
+  for (let d = 0; d < 2; d++) {
+    for (const race of card().races) {
+      assert.ok(placeBet(race, { type: 'win', sel: [0], amt: 20 }).ok);
+      const before = callFor(race, simulateRace(race, game.world, { record: true }));
+      const { run, pay } = goToGate(race);
+      const w = run.results[0].h, e = race.entries[w];
+      const want = resultLine({ pp: e.pp, win: pay.win[w], place: pay.place[w], show: pay.show[w] }, horseOf(e).name);
+      assert.deepEqual(before.result, want, `race day ${d + 1}, race ${race.no}`);
+      assert.deepEqual(callFor(race, run).result, want, `race day ${d + 1}, race ${race.no}, after it's official`);
+      assert.ok(!/\d/.test(want.say), want.say);
+      const post = before.lines.find(l => l.slot === 'post');
+      if (post) {
+        posts++;
+        // Before the caller's first line, and the gates wait for both.
+        assert.equal(before.lines.indexOf(post), 0);
+        assert.equal(post.text, 'It is now post time.');
+        assert.ok(-run.t0 - post.t <= before.gate + 1e-9 && before.lines[1].t >= post.t + post.d, `race day ${d + 1}, race ${race.no}: post time at ${post.t.toFixed(2)}, the gate ${before.gate.toFixed(2)} s`);
+      }
+      races++;
+    }
+    advanceDay();
+  }
+  assert.ok(posts >= 2 && posts <= races * 0.6, `post time on ${posts} races of ${races}`);
+});

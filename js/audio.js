@@ -3,6 +3,7 @@
 // player asks for it (js/joe.js).
 import * as joe from './joe.js';
 import { raceClips, clipVoice, makingRate } from './joe-call.js';
+import { MINUTES } from './call.js'; // (call.js imports this file too: MINUTES is only read once both have loaded)
 
 let ac = null;
 let master = null;
@@ -741,6 +742,22 @@ export function hearIt(line, opts) {
   if (downloadedReads()) { hearDownloaded(line, opts); return; }
   if (canSpeak()) caller.speak(line, opts);
 }
+// Is either voice saying something (a line of the call, a Hear it, an announcement)?
+export function callerBusy() { return caller.speaking() || joeCaller.speaking() || !!playing; }
+
+// The track announcer between races (minutesLine in js/call.js): said if the call is read aloud and nothing
+// else is being said, never over another voice. In Joe's voice when he's the one reading and his sound of
+// it has been made (it's made when his worker has finished a race's lines: announcements below), and in
+// the browser's voice otherwise. His worker is never started for one.
+export function announce(line) {
+  if (!voiceOn || out || callerBusy()) return;
+  if (downloaded && downloadedReads()) {
+    const clip = announced.get(line.say);
+    if (clip) { output(); playClip(clip); return; }
+  }
+  if (voiceEnabled()) caller.speak(line, { rate: 1.15 });
+}
+
 // Stops the caller mid-line, whichever voice it is. With `finish`, the line being said is let finish, and
 // nothing follows it.
 export function hush({ finish = false } = {}) {
@@ -775,7 +792,7 @@ export function setDownloadedVoice(on) {
   if (downloaded === !!on) return;
   downloaded = !!on;
   downloadedFailed = ''; // chosen again, he's tried again
-  if (!downloaded) { joeCaller.stop(); quiet(); forget(); joe.shutdown(); }
+  if (!downloaded) { joeCaller.stop(); quiet(); forget(); joe.shutdown(); announced.clear(); }
   tell();
 }
 // For the menu: is he chosen, is he the one reading, is a line of his being made, what went wrong, and
@@ -811,7 +828,7 @@ export function rehearse(key, jobs) {
   if (!joeCanCall()) return false;
   if (!rehearsed || rehearsed.key !== key) {
     forget();
-    rehearsed = { key, clips: raceClips({ make: makeLine, idle: () => rest(0) }) };
+    rehearsed = { key, clips: raceClips({ make: makeLine, idle: announcements }) };
   }
   clearTimeout(resting);
   rehearsed.clips.want(jobs);
@@ -821,6 +838,17 @@ function makeLine(text, speed) {
   const cold = !joe.running(), began = performance.now();
   if (cold) joe.ready().then(() => { loadSeconds = (performance.now() - began) / 1000; }, () => {});
   return joe.speak(text, speed);
+}
+// His sound of the announcer's lines between races, made once a visit, after a race's lines, while his
+// worker is still up for them (so it's never started for these alone), one at a time; then the worker rests.
+const announced = new Map(); // what's said -> its clip
+let announcing = false;
+function announcements() {
+  const todo = Object.values(MINUTES).find(say => !announced.has(say));
+  if (!todo || announcing || !joe.running() || !rehearsed || rehearsed.clips.broken()) { rest(0); return; }
+  announcing = true;
+  joe.speak(todo, joe.JOE.opens).then(clip => { announcing = false; announced.set(todo, clip); announcements(); },
+    () => { announcing = false; rest(0); });
 }
 // Ends his worker once it has nothing to do: at once when a race's lines are all made, a little after a
 // Hear it. (Never while a line is being made.)

@@ -3,7 +3,7 @@
 // halfway through a race doesn't change what happened.
 
 import { buildWorld, simulateRace, makeOfficial, forumThread, nextDay as worldNextDay, ownerSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats, ensureMeet, isClosingDay } from './world.js';
-import { makeTote, board, ticketReturn, cost as betCost, legs } from './tote.js';
+import { makeTote, board, settle, ticketReturn, cost as betCost, legs } from './tote.js';
 import { reactions } from './forum.js';
 import { oddsText, lineText } from './handicap.js';
 import { liveCall } from './call.js';
@@ -390,8 +390,13 @@ export function callInfo(race) {
   for (const b of bets) for (const i of b.sel) most.set(i, (most.get(i) || 0) + (b.amt || 0));
   let mine = null;
   for (const [i, amt] of most) if (mine === null || amt > most.get(mine) || (amt === most.get(mine) && i < mine)) mine = i;
+  // What the winner pays, for the announcer: settled as makeOfficial will settle it, your tickets and all.
+  const order = done ? race.result.order.map(o => o.k) : recordingOf(race).results.map(r => r.h);
+  const pay = done ? race.result.pay : settle(toteFor(race), order, bets);
+  const h = order[0];
+  const paid = pay && pay.win ? { h, pp: race.entries[h].pp, win: pay.win[h] || 0, place: (pay.place || {})[h] || 0, show: (pay.show || {})[h] || 0 } : null;
   return {
-    odds, oddsText: final.text, fav: odds.indexOf(Math.min(...odds)), mine,
+    odds, oddsText: final.text, fav: odds.indexOf(Math.min(...odds)), mine, paid,
     riders: race.entries.map(e => (JOCKEYS[e.j] ? JOCKEYS[e.j].name.replace(/^[A-Z]\.\s*/, '') : '')),
     him: race.entries.map(e => (['f', 'm'].includes(horseOf(e).sex) ? 'her' : 'him')),
   };

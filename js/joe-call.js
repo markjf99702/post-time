@@ -53,16 +53,17 @@ export const planSeconds = climb => (line, toWire) => joeLineSeconds(line.say, j
 // What a plan of a race asks of him, for raceClips below: each line as he's given it, the speed it's said
 // at, how long from the screen opening until it comes up, the room it has before the next line does, and
 // whether that next line is the call at the wire (the plan's timetable()). `fin` is the race's final time.
-// After a photo the winner's line is wanted too, last of all: `official` is that line as he's given it.
+// After the call come the winner's line after a photo and the announcer's word on what the winner paid:
+// `after` is those lines as he's given them (a single line is taken as a list of one).
 //
 // `since` is the race's clock when the plan has been made again in the middle of a race (another speed, a
 // skip). The new plan still has the lines that came up before then, and at 2x or 4x each has half or a
 // quarter of the room it had: taken at that, their clips were too long and were made again faster, twice
 // each, before the first new line was made at all, and that line came up with no clip. A line that has
 // come up has been said, or is being: its clip is kept as it is.
-export function jobsFor(call, fin, climb, official = null, since = -Infinity) {
+export function jobsFor(call, fin, climb, after = [], since = -Infinity) {
   const jobs = call.timetable().map(({ line, at, room, wire }) => ({ say: line.say, speed: joeSpeed(climb(line, fin - line.t)), at, room: line.t <= since ? Infinity : room, wire }));
-  if (official) jobs.push({ say: official, speed: joeSpeed(0), at: jobs[jobs.length - 1].at + 3, room: Infinity, wire: false });
+  for (const say of [].concat(after || []).filter(Boolean)) jobs.push({ say, speed: joeSpeed(0), at: jobs[jobs.length - 1].at + 3, room: Infinity, wire: false });
   return jobs;
 }
 

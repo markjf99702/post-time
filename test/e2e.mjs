@@ -909,6 +909,13 @@ assert.deepEqual([paced.early, paced.wire, paced.last], [[1.15, 1], [1.2, 1], [1
 assert.deepEqual(paced.most, [1.2, 1], 'a line was asked for faster than 1.2, or at a raised pitch');
 assert.match(paced.shown, /The time, (\d:)?\d\d\.\d\d\.$/, 'the call box lost the time in digits');
 assert.match(paced.read, /The time, [a-z -]+\.$/, 'the voice is given the time in digits');
+// With the official sign up and the caller done, the announcer says what the winner paid, every price in
+// words, and the call box shows it in figures.
+const announced = await page.waitForFunction(() => {
+  const u = window.__said.find(x => /^The result is official\./.test(x.text));
+  return u && { said: u.text, shown: document.querySelector('.call .now').textContent };
+}, null, { timeout: 20000 }).then(x => x.jsonValue(), () => null);
+assert.ok(announced && /^The result is official\. Number [a-z-]+, .+, paid [a-z -]+(, [a-z -]+)*( and [a-z -]+)?\.$/.test(announced.said) && /^The result is official\. #\d+ .+ paid \$\d+\.\d\d/.test(announced.shown), `the result announced: ${JSON.stringify(announced)}`);
 // On the way to the results the caller finishes the line he's on (second, third and the time; after a
 // photo, who won it). Any other way out of a race, he stops.
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 20000 });
@@ -924,6 +931,18 @@ assert.equal(await page.evaluate(at => window.__heard.some(x => x.ev === 'cancel
 await page.waitForFunction(({ saying, at }) => window.__heard.some(x => x.ev === 'end' && x.text === saying && x.at > at), toResults, { timeout: 15000 });
 await page.waitForFunction(() => window.__quiet());
 await page.locator('.post-bar .btn', { hasText: /^Race 3/ }).click();
+// The announcer between races, in the call's voice: as the clock on the next race's page passes ten
+// minutes to post, "Ten minutes to post", once. (The page is opened with the clock at 11, 0.8 seconds short.)
+await page.waitForFunction(() => window.__quiet());
+const minutes = await page.evaluate(async () => {
+  const { game, nextRace, nav } = window.postTime, race = nextRace();
+  game.player.opened[`${race.day}:${race.no}`] = Date.now() - (2 * 13 - 0.8) * 1000;
+  const from = window.__voice.length;
+  nav.go('race', { no: race.no });
+  await new Promise(r => setTimeout(r, 2600));
+  return window.__voice.slice(from).filter(x => x !== '(cancel)' && x !== 'a');
+});
+assert.deepEqual(minutes, ['Ten minutes to post.'], 'the announcer at ten minutes to post');
 await page.click('.post-bar .btn.brass');
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 // The page goes out of sight in the middle of a race (another tab, the phone locked): the voice stops, the
@@ -1081,10 +1100,13 @@ const gate = await page.evaluate(async () => {
   for (const end = performance.now() + 20000; w.T < 0.6;) { if (performance.now() > end) throw new Error('the race never left the gate'); await new Promise(r => requestAnimationFrame(r)); }
   const spoken = heard.slice(from).filter(x => x.ev === 'speak' && !x.silent);
   const bell = window.__oscillators.slice(made).find(o => o.frequency.value === 1760);
-  const [pre, off] = w.call.lines;
+  // (On some races the announcer's "It is now post time" comes first, and the gates wait for that too.)
+  const post = w.call.lines[0].slot === 'post' ? w.call.lines[0] : null, k = post ? 1 : 0;
+  const [pre, off] = w.call.lines.slice(k);
   return {
-    wait: w.call.gate, line: pre.d, first: (spoken[0].at - tap) / 1000, bell: (bell.madeAt - tap) / 1000, off: (spoken[1].at - bell.madeAt) / 1000,
-    said: spoken.slice(0, 2).map(x => x.text), lines: [pre.say, off.say], kinds: [pre.kind, off.kind], over: heard.some(x => x.ev === 'end' && x.text === pre.say && x.at <= spoken[1].at),
+    wait: w.call.gate, line: pre.d, ahead: post ? post.d + 0.3 : 0, post: post ? [post.say, spoken[0].text] : null,
+    first: (spoken[0].at - tap) / 1000, bell: (bell.madeAt - tap) / 1000, off: (spoken[k + 1].at - bell.madeAt) / 1000,
+    said: spoken.slice(k, k + 2).map(x => x.text), lines: [pre.say, off.say], kinds: [pre.kind, off.kind], over: heard.some(x => x.ev === 'end' && x.text === pre.say && x.at <= spoken[k + 1].at),
     cancels: heard.slice(from).filter(x => x.ev === 'cancel').length,
   };
 });
@@ -1092,7 +1114,8 @@ assert.deepEqual([gate.said, gate.kinds, gate.cancels], [gate.lines, ['pre', 'of
 assert.match(gate.lines[0], / for the Odds and Ends Handicap\.$/);
 const BUGLE = await page.evaluate(async () => (await import('./js/audio.js')).BUGLE_SECONDS); // First Call, from the tap to its last note's end
 assert.ok(gate.first >= BUGLE - 0.05 && gate.first < BUGLE + 0.3 + 1.5, `the caller's first line started ${gate.first.toFixed(2)} s after the bugle did, and the bugle is ${(BUGLE - 0.05).toFixed(2)} s long`);
-assert.ok(Math.abs(gate.wait - (BUGLE + 0.3 + gate.line + 0.4)) < 0.02 && gate.wait > 5.2, `${gate.wait.toFixed(2)} s in the gate for a first line of ${gate.line.toFixed(2)} s`);
+if (gate.post) assert.equal(gate.post[1], gate.post[0], 'post time was not the first thing said');
+assert.ok(Math.abs(gate.wait - (BUGLE + 0.3 + gate.ahead + gate.line + 0.4)) < 0.02 && gate.wait > 5.2, `${gate.wait.toFixed(2)} s in the gate for a first line of ${gate.line.toFixed(2)} s`);
 assert.ok(gate.bell >= gate.wait - 0.05 && gate.bell < gate.wait + 1.5, `the bell rang ${gate.bell.toFixed(2)} s in, and the wait in the gate is ${gate.wait.toFixed(2)} s`);
 assert.ok(gate.over && Math.abs(gate.off) <= 0.2, `the off was said ${gate.off.toFixed(2)} s from the bell${gate.over ? '' : ', with the first line still being read'}`);
 
@@ -1110,8 +1133,10 @@ await page.evaluate(() => {
       // After a photo the winner's line goes up with the official sign. It isn't one of the call's lines (the
       // call hands it back on its own), and it can be said within a moment of the placings ending: it's
       // read here as a line of its own kind, timed from when it came up like the rest.
-      const official = w.call.official && x.text === w.call.official.replace(/\bDr\. /g, 'Doctor ') ? { text: w.call.official, slot: 'official' } : null;
-      const line = w.call.lines.find(l => l.say === x.text) || official, up = line && shown.filter(y => y.text === line.text && y.at <= x.at + 20).pop();
+      // So is what the winner paid, which the announcer says when the caller is done.
+      const official = w.call.official && x.text === (w.call.officialSay || w.call.official).replace(/\bDr\. /g, 'Doctor ') ? { text: w.call.official, slot: 'official' } : null;
+      const result = w.call.result && x.text === w.call.result.say ? w.call.result : null;
+      const line = w.call.lines.find(l => l.say === x.text) || official || result, up = line && shown.filter(y => y.text === line.text && y.at <= x.at + 20).pop();
       out.push({ text: x.text, at: x.at, slot: line ? line.slot : 'not in the call', leader: !!line && (line.lead !== undefined || !!line.pair), age: up ? (x.at - up.at) / 1000 : 99, rate: x.rate, ended: heard.some(y => y.ev === 'end' && y.text === x.text && y.at > x.at) });
     }
     return out;
@@ -1139,7 +1164,7 @@ const at4 = await page.evaluate(async () => {
     cancels: cancels.map(x => { const then = lines.find(l => l.at > x.at); return then ? then.slot : 'nothing after it'; }),
   };
 });
-const after4 = at4.lines.filter(l => l.at > at4.changed && l.slot !== 'official'); // (the winner's line after a photo, if it's been said by now, has its own check below)
+const after4 = at4.lines.filter(l => l.at > at4.changed && l.slot !== 'official' && l.slot !== 'result'); // (the winner's line after a photo, and what the winner paid, if they've been said by now, have checks of their own)
 assert.ok(at4.plans >= 1, 'the call was not planned again for the new speed');
 assert.ok(!at4.cutAtChange && at4.lines.find(l => l.text === at4.long).ended, `"${at4.long}" was cut off by the change to 4x`);
 assert.deepEqual(at4.cancels.filter(slot => slot !== 'wire'), [], 'a line was cancelled, and not for the call at the wire');
@@ -1181,7 +1206,7 @@ const at2 = await page.evaluate(async () => {
   if (first && first.change) while (old < 20 && front(first.t - old - 0.1) === first.lead) old += 0.1;
   return { lines, skipped, old, jumped: w.winT - 12 > T, cancels: heard.slice(window.__from).filter(x => x.ev === 'cancel').map(x => (Math.abs(x.at - skipped) < 100 ? 'skip' : (lines.find(l => l.at > x.at) || {}).slot)) };
 });
-const after2 = at2.lines.filter(l => l.at > at2.skipped && l.slot !== 'official');
+const after2 = at2.lines.filter(l => l.at > at2.skipped && l.slot !== 'official' && l.slot !== 'result');
 assert.ok(at2.jumped, 'the race was nearly over before Skip, and this checked nothing');
 assert.ok(at2.lines.some(l => l.slot === 'off') && at2.lines.some(l => l.leader && l.at < at2.skipped) && after2.some(l => l.slot === 'wire'), `at 2x the off, a line that says who leads, or the winner's line was not read: ${at2.lines.map(l => l.text).join(' / ')}`);
 assert.deepEqual(at2.cancels.filter(why => why !== 'skip' && why !== 'wire'), [], 'at 2x a line was cancelled, and not by Skip or for the call at the wire');
@@ -2592,8 +2617,8 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   });
   assert.deepEqual([plan.calling, plan.photo, plan.lines.every(l => rehearsed.asked.some(a => a[0] === l.say))], [true, true, true], "the race's plan at the gate is not the one that was rehearsed");
   await page.waitForFunction(() => { const b = [...document.querySelectorAll('.w-ctl button')].find(x => /Results/.test(x.textContent)); return b && !b.hidden; }, null, { timeout: 180000 });
-  // ...and the winner's line, which comes with the official sign, to its end.
-  await page.waitForFunction(n => window.__played.length === n && window.__played[n - 1].__ended, plan.lines.length + 1, { timeout: 30000 });
+  // ...and the winner's line, which comes with the official sign, and then what the winner paid, to its end.
+  await page.waitForFunction(n => window.__played.length === n && window.__played[n - 1].__ended, plan.lines.length + 2, { timeout: 30000 });
   const called = await page.evaluate(() => ({
     clips: window.__played.map(c => ({ at: c.__at, T: c.__T, ended: c.__ended, seconds: c.buffer.duration, pace: c.playbackRate.value, through: c.context === window.__outputs[0] })),
     browser: window.__said.filter(u => !u.silent).length, wire: window.__wire, stats: window.__audio.callStats(), asked: window.__asked.length, up: window.__joe.running(),

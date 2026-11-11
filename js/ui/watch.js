@@ -23,7 +23,7 @@ import * as audio from '../audio.js';
 const joePlan = (race, run, opts) => callFor(race, run, { lineSeconds: planSeconds(climb), ...opts });
 // What that plan asks of him: each line as he's given it, with its speed, its time and the room it has.
 // (`since` is the race's clock, when the plan has been made again in the middle of the race.)
-const joeJobs = (call, run, since) => jobsFor(call, run.finalTime, climb, call.official ? officialLine(call.official, call.officialSay).say : null, since);
+const joeJobs = (call, run, since) => jobsFor(call, run.finalTime, climb, [call.official ? officialLine(call.official, call.officialSay).say : null, call.result ? call.result.say : null], since);
 // The race that's up next, while its form is being read: the call is planned and its lines begin to be
 // made. Nothing of the result is shown, kept or settled by it.
 export function rehearse(race) {
@@ -243,7 +243,9 @@ export function renderWatch(el, nav, params) {
   // (a voice slower than it was taken to be), this one waits its turn, and how long it has waited is
   // counted on the race's clock (in slow motion a line can wait longer) and in real time once the
   // recording has ended.
+  let shown = null; // the line on the board, and when it went up
   function showLine(line, before) {
+    shown = { line, at: performance.now() };
     prev.textContent = before;
     now.textContent = line.text;
     fitCall();
@@ -487,6 +489,7 @@ export function renderWatch(el, nav, params) {
           // Only now does the caller say who won it (unless the race has been left meanwhile).
           if (call.official && !gone) showLine(officialLine(call.official, call.officialSay), now.textContent);
           done();
+          announceResult();
         };
         // The sign waits for the caller's last line (second, third and the time) to be over, by the time
         // it was planned to take. Watched at 2x or 4x the recording is done well before he is, and the
@@ -498,7 +501,21 @@ export function renderWatch(el, nav, params) {
         };
         setTimeout(wait, 1600);
       }, 1600);
-    } else setTimeout(done, 900);
+    } else { setTimeout(done, 900); announceResult(); }
+  }
+  // With the official sign up, the announcer says what the winner paid, once the caller is done: after the
+  // placings and the time (and, after a photo, the winner's line), and when nothing else is being said.
+  function announceResult() {
+    if (!call.result) return;
+    const last = call.lines[call.lines.length - 1];
+    const tryNow = () => {
+      if (gone) return;
+      // (The line on the board has had its time there too: after a photo, the winner's line.)
+      const over = up && up.line === last && shown && performance.now() >= shown.at + (shown.line.d || audio.voiceSeconds(shown.line.say, 1.15)) * 1000;
+      if ((over && !audio.callerBusy()) || performance.now() - endedAt > 20000) showLine(call.result, now.textContent);
+      else setTimeout(tryNow, 150);
+    };
+    tryNow();
   }
 
   // Put everything back the way it was, whichever way the race is left. On the way to the results the

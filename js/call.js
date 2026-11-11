@@ -44,6 +44,41 @@ export function distanceSay(f) {
 // of the player's money on it, or null). Without it the call is of the running alone.
 export const LONGSHOT = 15; // odds of 15-1 or more get a word at the wire
 
+// ---------------------------------------------------------------- the track announcer
+//
+// Between races the same voice is the track's announcer: the minutes to post as the clock passes ten, five
+// and two, "It is now post time" as the horses load (on some races: raceCall), and what the winner paid
+// with the official sign. Each is { text, say }: what's shown, and what the voice is given, every number in
+// words ("$8.60" said as "eight sixty"; a voice left to read it says "dollar eight point six oh").
+export const MINUTES = { 10: 'Ten minutes to post.', 5: 'Five minutes to post.', 2: 'Two minutes to post.' };
+export const POST_TIME = 'It is now post time.';
+export function minutesLine(mtp) { return MINUTES[mtp] ? { text: MINUTES[mtp], say: MINUTES[mtp], kind: 'pre', late: 5, rank: 0 } : null; }
+// A whole number of dollars as a mutuel price is said: "eight", "twenty-four", "one oh four", "one hundred".
+function dollarsSay(d) {
+  if (d < 100) return numWords(d);
+  if (d >= 1000) return `${numWords(Math.floor(d / 1000))} thousand${d % 1000 ? ` ${dollarsSay(d % 1000)}` : ''}`;
+  const h = Math.floor(d / 100), r = d % 100;
+  return r === 0 ? `${numWords(h)} hundred` : `${numWords(h)} ${r < 10 ? 'oh ' : ''}${numWords(r)}`;
+}
+// A price paid: $8.60 is "eight sixty", $3.00 "three dollars", $104.20 "one oh four twenty".
+export function priceSay(v) {
+  const c = Math.round(v * 100), d = Math.floor(c / 100), cents = c % 100;
+  return cents ? `${dollarsSay(d)} ${cents < 10 ? 'oh ' : ''}${numWords(cents)}` : `${dollarsSay(d)} dollar${d === 1 ? '' : 's'}`;
+}
+// With the official sign: "The result is official. Number four, Copper Detour, paid eight sixty, four twenty
+// and three dollars." `paid` is { pp, win, place, show } for the winner ($2 prices); `name` its name.
+export function resultLine(paid, name) {
+  if (!paid || !(paid.win > 0)) return null;
+  const prices = [paid.win, paid.place, paid.show].filter(v => v > 0);
+  const list = xs => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : xs[0]);
+  const money = v => `$${v.toFixed(2)}`;
+  return {
+    text: `The result is official. #${paid.pp} ${name} paid ${list(prices.map(money))}.`,
+    say: aloud(`The result is official. Number ${numWords(paid.pp)}, ${name}, paid ${list(prices.map(priceSay))}.`),
+    kind: 'finish', slot: 'result', late: 30, rank: 0,
+  };
+}
+
 const NTH = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh',
   'twelfth', 'thirteenth', 'fourteenth', 'fifteenth', 'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth', 'twentieth'];
 const nth = n => NTH[n] || `number ${numWords(n)}`;
@@ -1048,8 +1083,13 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     // (Its line is long enough that a voice a little slower than planned would still be on it at the off:
     // it's given that much more room.)
     const before = big ? pre.d * 1.15 + 0.4 : bugle ? pre.d + 0.4 : Math.min(5, Math.max(race.name ? 3.4 : 2.6, pre.d + 0.4));
-    if (bugle) gate = Math.max(gate, bugle + 0.3 + before);
-    else if (big) gate = Math.max(gate, before + 0.2);
+    // On some races (and always the Larkspur Handicap) the announcer says it's post time as the horses load,
+    // before the caller's first line, and the gates wait for it too.
+    const post = I && (big || rng(`post:${race.seed}`).chance(0.35)) ? lineAt(form(POST_TIME), 0, 'post', 'pre') : null;
+    const ahead = post ? post.d + 0.3 : 0;
+    if (bugle) gate = Math.max(gate, bugle + 0.3 + ahead + before);
+    else if (big || post) gate = Math.max(gate, ahead + before + 0.2);
+    if (post) { const was = picking; picking = []; post.t = clock(wall(-t0) - before - ahead); give(post); picking = was; }
     pre.t = clock(wall(-t0) - before);
     give(pre);
   }
@@ -1205,7 +1245,9 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     // Second, third and the time follow the winner's line directly.
     give(lineAt(rest, clock(w + 0.35), 'placings', 'finish'));
   }
-  return { lines, photo, official, officialSay, dur, gate };
+  // What the winner paid, for the announcer with the official sign.
+  const result = I && I.paid ? resultLine(I.paid, nm(I.paid.h)) : null;
+  return { lines, photo, official, officialSay, result, dur, gate };
 }
 
 // The call while a race is being watched: the plan made at the gate, the line that's up, and planning
@@ -1224,7 +1266,7 @@ export function liveCall(race, run, names, { lineSeconds, factor = () => 1, bugl
   let upLine = null, upAt = 0;  // the line that's up, and when it came up
   let seen = -Infinity;         // the race's clock, the last time anyone asked
   const first = raceCall(race, run, names, { lineSeconds, bugle, info });
-  const live = { lines: first.lines, photo: first.photo, official: first.official, officialSay: first.officialSay, dur: first.dur, gate: first.gate, plans: 1 };
+  const live = { lines: first.lines, photo: first.photo, official: first.official, officialSay: first.officialSay, result: first.result, dur: first.dur, gate: first.gate, plans: 1 };
   // Plans the rest of the race again from `clock`. The line being said is let finish (by the estimate),
   // unless `wait` says how long the voice needs, as after a cancel.
   function again(clock, now, wait = null, jumped = false) {

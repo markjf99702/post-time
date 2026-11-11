@@ -12,6 +12,7 @@ import { drawHorse } from '../draw/horse.js';
 import { oddsText, angles, newcomer } from '../handicap.js';
 import * as audio from '../audio.js';
 import { rehearse } from './watch.js';
+import { minutesLine } from '../call.js';
 import { atmLine } from './card.js';
 
 const COND = { fast: 'ft', good: 'gd', sloppy: 'sly', muddy: 'my', firm: 'fm', yielding: 'yl', soft: 'sf' };
@@ -154,6 +155,11 @@ export function renderRace(root, nav, params) {
     else if (!isNext) mtpBox.append(clockText(race.post), h('small', {}, 'post'));
     else mtpBox.append(String(mtp), h('small', {}, 'MTP'));
     if (isNext && lastMtp !== null && mtp !== lastMtp && current === 'bet') updateTote(panel, race);
+    // The announcer, as the clock passes ten, five and two minutes to post, while this page is open.
+    if (isNext && lastMtp !== null && mtp < lastMtp && minutesLine(mtp) && !said.has(`${memoKey(race)}:${mtp}`)) {
+      said.add(`${memoKey(race)}:${mtp}`);
+      audio.announce(minutesLine(mtp));
+    }
     lastMtp = mtp;
   }
   tick();
@@ -413,6 +419,8 @@ function unbought(race) {
 // A second tap sooner than this after a first is a double tap, not a second answer.
 const DOUBLE_TAP = 700; // ms
 
+// The announcer's minutes to post said so far this visit, by race.
+const said = new Set();
 // A ticket bought or cancelled changes what the call says (the horse with your money on it, and the final
 // odds), so the downloaded voice's lines for it are made again: only the ones that changed.
 let again = null;
