@@ -10,8 +10,8 @@ import { marginShort, marginText, fmtTime, fmtClock } from '../chart.js';
 import { game, save, goToGate, recordingOf, memoKey, callFor, runnersFor, raceLabel, horseOf, myBets, betCost } from '../game.js';
 import { BET_NAMES } from '../tote.js';
 import { clockText } from '../world.js';
-import { pace, climb, officialLine, SLOW } from '../call.js';
-import { planSeconds, jobsFor } from '../joe-call.js';
+import { pace, climb, officialLine, SLOW, SKIP_TO } from '../call.js';
+import { planSeconds, jobsFor, skipJobsFor } from '../joe-call.js';
 import * as audio from '../audio.js';
 
 // ---------------------------------------------------------------- the call in the downloaded voice
@@ -23,13 +23,15 @@ import * as audio from '../audio.js';
 const joePlan = (race, run, opts) => callFor(race, run, { lineSeconds: planSeconds(climb), ...opts });
 // What that plan asks of him: each line as he's given it, with its speed, its time and the room it has.
 // (`since` is the race's clock, when the plan has been made again in the middle of the race.)
+// Before the race, the lines for after Skip as well, last of all.
+const joeAhead = (call, run) => [...joeJobs(call, run), ...skipJobsFor(call, run.finalTime, climb)];
 const joeJobs = (call, run, since) => jobsFor(call, run.finalTime, climb, [call.official ? officialLine(call.official, call.officialSay).say : null, call.result ? call.result.say : null], since);
 // The race that's up next, while its form is being read: the call is planned and its lines begin to be
 // made. Nothing of the result is shown, kept or settled by it.
 export function rehearse(race) {
   if (!audio.joeCanCall() || race.status === 'official') return;
   const run = recordingOf(race);
-  audio.rehearse(memoKey(race), joeJobs(joePlan(race, run), run));
+  audio.rehearse(memoKey(race), joeAhead(joePlan(race, run), run));
 }
 
 // A race's call as it was called at normal speed, for reading back after the race (the results' "The
@@ -63,7 +65,7 @@ export function renderWatch(el, nav, params) {
   audio.primeVoice(); // this is inside the tap that started the race, from the form or from Watch again
   if (audio.joeCanCall()) {
     const his = joePlan(race, run, { bugle, lead: () => (joeCalls ? audio.joeLead() : 0) });
-    joeCalls = audio.joeTakes(memoKey(race), joeJobs(his, run));
+    joeCalls = audio.joeTakes(memoKey(race), joeAhead(his, run));
     if (joeCalls) { call = his; delete game.player.settings.callerBehind; } else game.player.settings.callerBehind = true;
   }
   const result = goToGate(race);
@@ -179,14 +181,18 @@ export function renderWatch(el, nav, params) {
       rung = true;
       if (game.player.settings.sound) audio.startRace();
     }
-    if (T < winT - 12) { T = winT - 12; scene.lastT = null; }
-    else {
+    let ahead = false;
+    if (T < winT - SKIP_TO) {
+      T = winT - SKIP_TO; scene.lastT = null;
+      // Joe's lines for after Skip were made with the rest, at normal speed: he picks the race up at once.
+      ahead = joeCalls && speed === 1 && audio.joeHas(call.skipLines().map(l => l.say));
+    } else {
       // Skipped past the wire, nobody saw the finish: no roar for it.
       if (T < winT) cheered = true;
       T = endT; scene.lastT = null;
     }
     // The caller picks the race up from there.
-    call.skip(T - t0, seconds());
+    call.skip(T - t0, seconds(), ahead);
     rehearseAgain();
   }
 

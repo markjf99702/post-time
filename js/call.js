@@ -1250,6 +1250,12 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
   return { lines, photo, official, officialSay, result, dur, gate };
 }
 
+// Skip takes a race to this many seconds before the winner reaches the wire (js/ui/watch.js).
+export const SKIP_TO = 12;
+// After Skip at normal speed the caller picks the race up this long after the tap: the time a voice takes
+// to be cancelled and start again (a quarter of a second, for Safari: GAP in js/audio.js), and a little.
+const SKIP_WAIT = 0.3;
+
 // The call while a race is being watched: the plan made at the gate, the line that's up, and planning
 // the rest again when something changes. `factor()` is how the voice's real pace compares with what the
 // plan took it to be (1 until it has been timed): when that moves by more than 8%, the rest of the race
@@ -1302,8 +1308,39 @@ export function liveCall(race, run, names, { lineSeconds, factor = () => 1, bugl
   };
   // The watching speed has changed: no line is cut off for it, and the rest is planned for the new speed.
   live.setSpeed = (s, clock, now) => { if (s !== speed) { speed = s; again(clock, now); } };
-  // The race has been skipped ahead to `clock`, and the voice cancelled: plan from there.
-  live.skip = (clock, now) => again(clock, now, 0.3, true);
+  // After Skip at normal speed, the rest of the race as it's called from SKIP_TO seconds before the wire.
+  // It's the same whenever Skip is tapped: planned from the lines before the off (the ones every tap of
+  // Skip has had said, whatever else was) and with the voice taken to be free a moment after the tap. So
+  // a voice whose sound is made ahead (Joe) can have its lines made with the rest of the race's, and pick
+  // the race up as Skip is tapped instead of three or four seconds later. Lines that were said and aren't in
+  // that plan make no difference to what it says but its choice of words: nothing in it rests on them.
+  let skipped = null;
+  const skipFrom = run.results[0].time - SKIP_TO;
+  live.skipLines = () => {
+    if (!skipped) {
+      const gateLines = first.lines.filter(l => l.t <= -run.t0 + 1e-9);
+      skipped = skipFrom > 0 ? raceCall(race, run, names, { lineSeconds, speed: 1, from: skipFrom, wait: SKIP_WAIT, said: gateLines, jumped: true, info }).lines.slice(gateLines.length) : [];
+    }
+    return skipped;
+  };
+  // The same lines as a timetable, for the voice that makes them ahead: the room each has before the next
+  // comes up. (When they'd come up isn't known until Skip is tapped: `at` is never.)
+  live.skipTable = () => {
+    const { wall } = raceClock(run, 1), lines = live.skipLines();
+    return lines.map((line, k) => { const next = lines[k + 1]; return { line, at: Infinity, room: next ? wall(next.t) - wall(line.t) : Infinity, wire: !!(next && next.wire) }; });
+  };
+  // The race has been skipped ahead to `clock`, and the voice cancelled: plan from there. With `ahead`, at
+  // normal speed, from Skip's usual place, the lines are the ones made ahead (skipLines).
+  live.skip = (clock, now, ahead = false) => {
+    if (ahead && speed === 1 && Math.abs(clock - skipFrom) < 1e-6 && live.skipLines().length) {
+      const said = live.lines.filter(l => l.t <= seen);
+      if (said.some(l => l.wire)) return;
+      live.lines = [...said, ...live.skipLines()];
+      live.plans++;
+      return;
+    }
+    again(clock, now, SKIP_WAIT, true);
+  };
   return live;
 }
 

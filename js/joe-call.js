@@ -67,6 +67,12 @@ export function jobsFor(call, fin, climb, after = [], since = -Infinity) {
   return jobs;
 }
 
+// The lines for after Skip (skipTable in js/call.js), made with the rest of a race's: after every other line,
+// since they're wanted only if Skip is tapped.
+export function skipJobsFor(call, fin, climb) {
+  return call.skipTable ? call.skipTable().map(({ line, at, room, wire }) => ({ say: line.say, speed: joeSpeed(climb(line, fin - line.t)), at, room, wire })) : [];
+}
+
 // ---------------------------------------------------------------- the clips of a race's call
 
 const EDGE = 0.05;  // seconds: a clip is to be over this long before the next line comes up
@@ -184,7 +190,8 @@ export function raceClips({ make, idle = () => {} }) {
     drop() { gone = true; clips.clear(); jobs = []; },
     broken: () => broken,
     busy: () => !!making,
-    measures: () => ({ clips: clips.size, wanted: jobs.length, seconds, sound: [...clips.values()].reduce((s, c) => s + c.seconds, 0) }),
+    measures: () => ({ clips: clips.size, wanted: new Set(jobs.map(j => j.say)).size, // (two jobs can be one line: the call at the wire, before and after Skip)
+      seconds, sound: [...clips.values()].reduce((s, c) => s + c.seconds, 0) }),
   };
 }
 

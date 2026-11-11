@@ -886,6 +886,10 @@ const UNSURE = 1.15;
 export function joeLead() {
   return Math.min(5, ((joe.running() ? 0 : loadSeconds ?? LOAD) + TYPICAL * (makingRate() ?? 0.5)) * UNSURE + 0.2);
 }
+// Has he made the sound of each of these lines, for the race being rehearsed?
+export function joeHas(says) {
+  return !!rehearsed && says.length > 0 && says.every(say => !!rehearsed.clips.clip(say));
+}
 // The race is over, or left: its clips are let go, and the next line said is the browser's again.
 export function endCall() {
   forget();

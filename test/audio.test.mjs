@@ -61,7 +61,7 @@ globalThis.SpeechSynthesisUtterance = class { constructor(text) { this.text = te
 const audio = await import('../js/audio.js');
 const { pickVoice, offeredVoices, callQueue, sayTime, lineTime, gauge, engineOf, engineRate, engineSpeed } = audio;
 const { raceCall, liveCall, pace, climb, officialLine, SLOW } = await import('../js/call.js');
-const { raceClips, clipVoice, joeSpeed, joeSeconds, planSeconds, jobsFor, makingRate, madeClip, forgetRate, SPARE } = await import('../js/joe-call.js');
+const { raceClips, clipVoice, joeSpeed, joeSeconds, planSeconds, jobsFor, skipJobsFor, makingRate, madeClip, forgetRate, SPARE } = await import('../js/joe-call.js');
 const { JOE } = await import('../js/joe.js');
 const { rng } = await import('../js/rng.js');
 const { createWorld, simulateRace, applyResult, nextDay } = await import('../js/world.js');
@@ -650,7 +650,7 @@ function replay(r, race, { timed = null, bugle = 0, each = null, plan = null, pl
   const frame = {
     get T() { return T; }, get clock() { return clock() - race.t0; },
     setSpeed(to) { if (to !== speed) { live.setSpeed(to, clock() - race.t0, r.now() / 1000); if (planned) planned(live, clock() - race.t0); } speed = to; },
-    skip() { r.queue.stop(); T = Math.max(T, race.winT - 12); live.skip(T - race.t0, r.now() / 1000); if (planned) planned(live, clock() - race.t0); },
+    skip(ahead = false) { r.queue.stop(); T = Math.max(T, race.winT - 12); live.skip(T - race.t0, r.now() / 1000, ahead); if (planned) planned(live, clock() - race.t0); },
   };
   for (;;) {
     r.advance(1000 / 30);
@@ -1094,13 +1094,13 @@ function joeRig(race, { rate = 0, fails = () => false, ahead = false } = {}) {
 // A race called by him, as the page does it: his plan of it, its lines asked for before the gate (and
 // again whenever the plan changes), and the race replayed. `wireAt` is the moment on the clock on the wall
 // that the winner reaches the wire.
-function joeReplay(race, { each = null, ...device } = {}) {
+function joeReplay(race, { each = null, skipAhead = false, ...device } = {}) {
   const rigged = joeRig(race, device);
   const lead = () => (device.rate ? 3 * device.rate + 0.2 : 0);
   let wireAt = null;
   const result = replay(rigged.r, race, {
     plan: ({ bugle }) => liveCall(race.race, race.run, race.names, { lineSeconds: planSeconds(climb), bugle, lead }),
-    planned(live, since) { rigged.clips.want(jobsFor(live, race.run.finalTime, climb, live.official ? officialLine(live.official).say : null, since)); rigged.early = false; },
+    planned(live, since) { rigged.clips.want([...jobsFor(live, race.run.finalTime, climb, live.official ? officialLine(live.official).say : null, since), ...(skipAhead && since === undefined ? skipJobsFor(live, race.run.finalTime, climb) : [])]); rigged.early = false; },
     each(frame) { if (wireAt === null && frame.T >= race.winT) wireAt = rigged.r.now(); if (each) each(frame, rigged); },
   });
   return { ...result, ...rigged, wireAt, stats: rigged.r.queue.stats() };
@@ -1316,6 +1316,42 @@ test("after a change of speed Joe's worker makes the lines still to come, and no
   }
   if (process.env.NUMBERS) console.log(`Joe, 2x or 4x twelve seconds in: ${later} lines came up after the change, ${unmade} left out because their clip wasn't made in time`);
   assert.ok(later > 100 && unmade <= later / 25, `${unmade} lines left out of ${later}`);
+});
+
+test('after Skip Joe picks the race up as it is tapped: its lines are made ahead with the rest of the race', () => {
+  // Skip plans the last twelve seconds again, in words his clips weren't made for, and his first line came
+  // 3.3 to 3.9 seconds after the tap while the worker started and made it. The lines after Skip are the
+  // same whenever it's tapped, so they're made with the rest, and he starts on them as the race is picked up.
+  const races = recorded('test-joe', 1);
+  let checked = 0, slower = 0;
+  for (const race of races) {
+    if (race.winT - race.t0 < 30) continue;
+    // The same lines whether Skip is tapped at the gate, 6 seconds in or 18.
+    const plan = () => liveCall(race.race, race.run, race.names, { lineSeconds: planSeconds(climb) });
+    const made = plan().skipLines().map(l => l.text);
+    for (const tapAt of [-1, 6, 18]) {
+      const live = plan();
+      for (let t = -race.t0; t <= tapAt; t += 0.1) live.next(t, t + race.t0);
+      live.skip(race.winT - 12 - race.t0, tapAt + race.t0, true);
+      assert.deepEqual(live.lines.filter(l => l.t >= race.winT - 12 - race.t0).map(l => l.text), made, `${race.no}: Skip at ${tapAt} s`);
+    }
+    for (const skipAhead of [true, false]) {
+      let tapped = null;
+      const { r, cameUp, stats } = joeReplay(race, { rate: 1 / 3, ahead: true, skipAhead, each(frame, { r: me }) {
+        if (tapped === null && frame.clock > 15) { tapped = me.now(); frame.skip(skipAhead); }
+      } });
+      const said = r.log.filter(x => x.ev === 'speak' && x.t > tapped);
+      const first = said[0];
+      if (skipAhead) {
+        // (As the plan has it: three tenths of a second on, or up to a second if the next thing to call comes then.)
+        assert.ok(first && first.t - tapped <= 1000 && first.t - cameUp.get(first.line).now <= 50, `${race.no}: his first line came ${first ? first.t - tapped : 'never'} ms after Skip`);
+        assert.equal(stats.unmade, 0, `${race.no}: ${stats.unmade} lines after Skip had no clip`);
+        assert.ok(said.some(x => x.line.wire), `${race.no}: the winner was never called`);
+        checked++;
+      } else if (first && first.t - tapped > 900) slower++;
+    }
+  }
+  assert.ok(checked >= 6 && slower >= checked / 2, `${checked} races skipped; without the lines made ahead the first came later in ${slower}`);
 });
 
 test('watched at 2x and 4x, Joe says what he has had time to make: nothing is cut off for it, and the winner is always called', () => {
