@@ -1304,7 +1304,9 @@ await page.waitForSelector('.races');
 // The running order on a phone, with the day's biggest field: every number is on the screen, at the gate
 // and in the middle of the race, 320 wide and 390 wide (with nine or more runners the row used to run off
 // the right edge). A field too big for one row has two, the strip is as tall at the gate as it ever gets, and
-// the picture is the same size at the gate as in the race. There are no margins for the first four seconds. Following a horse names it under the buttons.
+// the picture is the same size at the gate as in the race. There are no margins for the first four seconds.
+// Following a horse names it under the buttons (on one line, in a shorter wording if need be, on the short
+// screen).
 {
   const ctx3 = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
   const phone = await ctx3.newPage();
@@ -1337,11 +1339,12 @@ await page.waitForSelector('.races');
       const last = [...document.querySelectorAll('.order button')].pop(), hint = document.querySelector('.w-ctl .hint');
       const name = last.getAttribute('aria-label').replace(/^\d+: number (\d+), /, '#$1 ');
       last.click();
-      out.following = hint.textContent === `Following ${name}. Tap again for the leaders.`;
+      const oneLine = () => hint.getBoundingClientRect().height < 22 && hint.scrollWidth <= hint.clientWidth;
+      out.following = innerHeight > 700 ? hint.textContent === `Following ${name}. Tap again for the leaders.` : hint.textContent.startsWith(`Following ${name}.`) && oneLine();
       await frames(3);
       out.ring = getComputedStyle(document.querySelector('.order button.follow .cloth')).boxShadow.includes('245, 179, 61');
       document.querySelector('.order button.follow').click();
-      out.leaders = /^Tap a number in the running order/.test(hint.textContent);
+      out.leaders = innerHeight > 700 ? /^Tap a number in the running order/.test(hint.textContent) : hint.textContent === 'Tap a number to follow that horse.' && oneLine();
       await frames(3);
       out.stage.add(Math.round(document.querySelector('.w-stage').getBoundingClientRect().height));
       return { ...out, stage: [...out.stage], rows: [...out.rows], tall: [...out.tall], sideways: document.getElementById('watch').scrollWidth > innerWidth };
@@ -1453,7 +1456,18 @@ await page.waitForSelector('.races');
   await win.goto(base, { waitUntil: 'domcontentloaded' });
   await win.waitForSelector('.races', { timeout: 60000 });
   await win.evaluate(() => document.fonts.ready);
-  const biggest = await win.evaluate(() => { const { game, card, save } = window.postTime; game.player.settings.sound = false; save(); return card().races.reduce((a, r) => (r.entries.length > a.entries.length ? r : a)).no; });
+  // The day's biggest field, with six tickets on it.
+  const biggest = await win.evaluate(async () => {
+    const { game, card, save } = window.postTime, { placeBet } = await import('./js/game.js');
+    game.player.settings.sound = false;
+    game.player.bank = 5000;
+    const race = card().races.reduce((a, r) => (r.entries.length > a.entries.length ? r : a));
+    const tickets = [{ type: 'win', sel: [0], amt: 2 }, { type: 'exacta', sel: [0, 1], amt: 2 }, { type: 'tribox', sel: [0, 1, 2, 3, 4], amt: 2 }, { type: 'wps', sel: [1], amt: 50 }, { type: 'exbox', sel: [0, 1, 2, 3], amt: 10 }, { type: 'trifecta', sel: [2, 3, 5], amt: 100 }];
+    const bought = tickets.filter(t => placeBet(race, t).ok).length;
+    save();
+    return bought === 6 && race.no;
+  });
+  assert.ok(biggest, 'six tickets could not be bought for the check');
   const watch = async (width, height, no = biggest) => {
     await win.setViewportSize({ width, height });
     await win.evaluate(no => window.postTime.nav.go('watch', { no }), no);
@@ -1526,6 +1540,25 @@ await page.waitForSelector('.races');
   const tablet = await horizon(768, 1024);
   assert.ok(!tablet.beside && tablet.fits && tablet.tall >= 560 && Math.min(...tablet.horizon) >= 20, `at 768 by 1024 the picture is ${tablet.wide} by ${tablet.tall}, with the horizon ${tablet.horizon.join('% and ')}% of the way down`);
   await card();
+
+  // An upright phone with the browser's bars showing (375 by 548, 360 by 560, 320 by 568) is short of room,
+  // and the picture is what gives way. From the gate on, six tickets are a count and what they cost on one
+  // line, and the line under the buttons is one line, so the picture has more of the screen and nothing
+  // scrolls. (With the six tickets on three lines and the line under the buttons on two, the picture had
+  // 150 px of 548, and the screen scrolled.) A taller phone has the tickets in full, as before.
+  for (const [width, height, least] of [[375, 548, 190], [360, 560, 200], [320, 568, 170], [390, 844, 350]]) {
+    await watch(width, height);
+    const short = await win.evaluate(() => {
+      const box = s => document.querySelector(s).getBoundingClientRect(), screen = document.getElementById('watch'), tix = document.querySelector('.w-tix');
+      return { picture: Math.round(box('.w-stage').height), tickets: tix.innerText, lines: [tix, document.querySelector('.w-ctl .hint')].map(x => Math.round(x.getBoundingClientRect().height)), hint: document.querySelector('.w-ctl .hint').textContent, scrolls: screen.scrollHeight - screen.clientHeight, cut: tix.scrollWidth > tix.clientWidth };
+    });
+    assert.ok(short.picture >= least && short.scrolls <= 0, `${width} by ${height}: the picture is ${short.picture} px tall, and the screen scrolls by ${short.scrolls} px`);
+    if (height < 700) {
+      assert.match(short.tickets, /^Your tickets: 6, \$\d+\.00$/, `${width} by ${height}: the tickets line`);
+      assert.ok(short.lines[0] < 32 && short.lines[1] < 22 && !short.cut && short.hint === 'Tap a number to follow that horse.', `${width} by ${height}: the tickets line is ${short.lines[0]} px tall and the line under the buttons ${short.lines[1]}: ${short.hint}`);
+    } else assert.match(short.tickets, /^Your tickets: \$2 Win \d+ · \$2 Exacta \d+-\d+ · .* · \$100 Trifecta \d+-\d+-\d+$/, 'on a tall phone the tickets are listed');
+    await card();
+  }
   await ctx6.close();
 }
 

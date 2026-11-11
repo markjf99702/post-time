@@ -1,13 +1,13 @@
 // Watching the race: the broadcast view, the running order with margins, fractions on the clock,
 // the caller, and at the end the photo sign or the official sign.
 
-import { h, clear, cloth } from './dom.js';
+import { h, clear, cloth, money } from './dom.js';
 import { RaceScene } from '../draw/scene.js';
 import { photoFinish } from '../draw/photo.js';
 import { stateAt, runningOrder } from '../sim.js';
 import { FURLONG } from '../track.js';
 import { marginShort, marginText, fmtTime, fmtClock } from '../chart.js';
-import { game, save, goToGate, callFor, runnersFor, raceLabel, horseOf, myBets } from '../game.js';
+import { game, save, goToGate, callFor, runnersFor, raceLabel, horseOf, myBets, betCost } from '../game.js';
 import { BET_NAMES } from '../tote.js';
 import { clockText } from '../world.js';
 import { pace, officialLine, SLOW } from '../call.js';
@@ -57,6 +57,7 @@ export function renderWatch(el, nav, params) {
   const skipBtn = h('button', { type: 'button', onclick: skip }, 'Skip ▸▸');
   const doneBtn = h('button', { class: 'btn brass', type: 'button', hidden: true, onclick: () => leave('result') }, 'Results ▸');
   const HINT = 'Tap a number in the running order to follow that horse. Tap it again to follow the leaders.';
+  const HINT_SHORT = 'Tap a number to follow that horse.';
   const hint = h('div', { class: 'hint' }, HINT);
   const ctl = h('div', { class: 'w-ctl' }, ...speedBtns, soundBtn, skipBtn, h('span', { class: 'spacer' }), doneBtn, hint);
   el.append(
@@ -220,17 +221,29 @@ export function renderWatch(el, nav, params) {
     el.append(probe);
     order.style.minHeight = `${probe.offsetHeight}px`;
     probe.remove();
+    // An upright phone with the browser's bars showing is short of room, and the picture is what gives way:
+    // with eleven runners and six tickets it had 150 px of a 548 px screen. There, from the gate on, the line
+    // under the buttons is one line, and tickets that would take more than a line are a count and their cost.
+    low = matchMedia('(orientation: portrait) and (max-height: 700px)').matches;
+    el.classList.toggle('low', low);
+    if (mineList) {
+      mineList.classList.toggle('sum', false);
+      if (low && mineList.firstChild.getClientRects().length > 1) mineList.classList.toggle('sum', true);
+    }
     hint.style.minHeight = '';
-    hint.textContent = HINT;
+    hint.textContent = low ? HINT_SHORT : HINT;
     hint.style.minHeight = `${hint.offsetHeight}px`;
     showHint();
   }
   // Under the buttons: how to follow a horse or, while one is followed, which. Once the race is official
-  // there's nothing left to follow, and the line is blank (it keeps its room, so nothing moves).
-  let official = false;
+  // there's nothing left to follow, and the line is blank (it keeps its room, so nothing moves). Where the
+  // line is one line, it's the longest wording that fits it.
+  let official = false, low = false;
   function showHint() {
     const r = following === null ? null : runners[following];
-    hint.textContent = official ? '' : r ? `Following #${r.number} ${r.name}. Tap again for the leaders.` : HINT;
+    const says = official ? [''] : r ? [`Following #${r.number} ${r.name}. Tap again for the leaders.`, `Following #${r.number} ${r.name}.`] : [HINT, HINT_SHORT];
+    hint.textContent = says[0];
+    if (low) for (const text of says) { hint.textContent = text; if (hint.scrollWidth <= hint.clientWidth) break; }
   }
 
   // The strip's buttons are made once, here, and kept for the race. It used to be emptied and built again
@@ -427,11 +440,14 @@ function fieldText(race) {
 function myTickets(race) {
   const bets = myBets(race);
   if (!bets.length) return null;
-  return h('div', { class: 'w-tix' }, 'Your tickets: ', bets.map((b, i) => {
+  // Each ticket in full, and, for a short screen where they'd take more than a line, how many and what they cost.
+  const full = h('span', { class: 'full' }, 'Your tickets: ', bets.map((b, i) => {
     const sel = b.sel.map(x => race.entries[x].pp);
     const label = b.type === 'exacta' || b.type === 'trifecta' ? sel.join('-') : b.type.endsWith('box') ? sel.join(',') : sel[0];
     return h('span', {}, `${i ? ' · ' : ''}$${b.amt} ${BET_NAMES[b.type]} ${label}`);
   }));
+  const paid = bets.reduce((sum, b) => sum + (b.cost ?? betCost(b)), 0);
+  return h('div', { class: 'w-tix' }, full, h('span', { class: 'count' }, `Your tickets: ${bets.length}, ${money(paid)}`));
 }
 
 function fracName(at) {
