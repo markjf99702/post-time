@@ -1384,6 +1384,12 @@ await page.waitForSelector('.races');
   desk.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
   await desk.goto(base, { waitUntil: 'domcontentloaded' });
   await desk.waitForSelector('.races', { timeout: 60000 });
+  // A meet from a fixed seed, so the running order watched below is the same race every run. (In a meet drawn
+  // at random its count of changes in five seconds went over the limit about one run in ten, when the race
+  // happened to have more horses changing places just then.)
+  await desk.evaluate(async () => { const { createWorld } = await import('./js/world.js'); const { game, save } = window.postTime; game.world = createWorld('running-order', '2026-11-14'); save(); });
+  await desk.reload({ waitUntil: 'domcontentloaded' });
+  await desk.waitForSelector('.races', { timeout: 60000 });
   await desk.evaluate(() => document.fonts.ready);
   const biggest = await desk.evaluate(() => { const { game, card, save } = window.postTime; game.player.settings.sound = false; save(); return card().races.reduce((a, r) => (r.entries.length > a.entries.length ? r : a)).no; });
   // A scrapbook with nothing in it says how a photo gets there.
@@ -1432,6 +1438,7 @@ await page.waitForSelector('.races');
     strip.addEventListener('focusin', () => given++);
     setTimeout(() => { seen.disconnect(); resolve({ changes, given, same: document.activeElement === b, role: strip.getAttribute('role'), pressed: [...strip.querySelectorAll('button')].map(x => x.getAttribute('aria-pressed')).join() }); }, 5000);
   }));
+  if (process.env.NUMBERS) console.log(`the running order's buttons changed ${parked.changes} times in 5 seconds`);
   assert.ok(parked.changes < 5, `the running order's buttons were moved or made again ${parked.changes} times in 5 seconds`);
   assert.deepEqual([parked.same, parked.given], [true, 0], 'the button with the keyboard focus was replaced, or given the focus again, while the race ran');
   assert.ok(parked.role === 'group' && /^false(,false)+$/.test(parked.pressed), 'the running order is not a group of buttons that say whether they are pressed');
