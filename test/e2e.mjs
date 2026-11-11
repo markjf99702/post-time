@@ -2493,9 +2493,10 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
 
   // Taking him off the device: two taps, the second not straight after the first. The browser's voice is
   // the choice again, and he's offered as a download.
-  await page.click('#joeRemove');
+  // (The two taps of the double tap are made in the page, 120 ms apart, as for Start a new meet: two clicks
+  // from here can come further apart than a double tap on a busy machine.)
+  await page.evaluate(async () => { const b = document.getElementById('joeRemove'); b.click(); await new Promise(r => setTimeout(r, 120)); b.click(); });
   assert.equal((await menu()).remove, 'Tap again to take Joe off this device');
-  await page.click('#joeRemove'); // a double tap: ignored
   assert.equal(await page.evaluate(name => caches.has(name), CACHE), true, 'a double tap took the voice off the device');
   await page.waitForTimeout(800);
   await page.click('#joeRemove');
