@@ -214,10 +214,12 @@ optVoiceName.addEventListener('change', () => {
   showVoices();
   save();
 });
+// (Whether he's on this device is looked up whoever is chosen, so the list says "Joe" and not "a 76 MB
+// download" when he's here and another voice is reading. Looking fetches nothing and makes no cache.)
 function applyVoice() {
   audio.setVoiceName(savedVoice());
   audio.setDownloadedVoice(joeChosen());
-  if (joeChosen()) joe.look();
+  if (joe.offered()) joe.look();
 }
 
 // Joe's own lines in the menu, while he's the one chosen (or on his way down).

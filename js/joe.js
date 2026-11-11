@@ -41,6 +41,7 @@ export function offered() {
 let now = { state: 'none', have: 0, total: JOE.bytes, problem: '' };
 let changed = null;
 let stopper = null; // a download is running while this is set
+let turn = 0;       // goes up when a download or a removal begins or ends: a look begun before then is out of date
 function set(more) {
   const next = { ...now, ...more };
   if (next.state === now.state && next.have === now.have && next.problem === now.problem) return;
@@ -53,6 +54,7 @@ export function onChange(fn) { changed = fn; }
 // Looks in the cache. (Never opens one that isn't there: that would make it.)
 export async function look() {
   if (!offered() || stopper) return status();
+  const mine = turn;
   let state = 'none', have = 0;
   try {
     if (await caches.has(JOE.cache)) {
@@ -66,7 +68,7 @@ export async function look() {
       }
     }
   } catch { /* a browser that won't say: as good as nothing here */ }
-  if (!stopper) set({ state, have });
+  if (!stopper && mine === turn) set({ state, have });
   return status();
 }
 
@@ -106,6 +108,7 @@ async function fetched(url, size, signal, sofar) {
 export async function download() {
   if (stopper || !offered()) return;
   const stop = stopper = new AbortController(), from = base();
+  turn++;
   set({ state: 'downloading', problem: '' });
   try {
     // Ask the browser to keep what's stored here, the meet too, when it runs short of room. It may say no.
@@ -141,6 +144,7 @@ export async function download() {
     await kept(store.put(from + DONE, new Response(JSON.stringify({ bytes: have }), { headers: { 'content-type': 'application/json' } })));
     for (const key of await caches.keys()) if (OURS.test(key) && key !== JOE.cache) await caches.delete(key);
     stopper = null;
+    turn++;
     set({ state: 'ready', have: JOE.bytes, problem: '' });
   } catch (error) {
     stopper = null;
@@ -156,8 +160,10 @@ export function stopDownload() { if (stopper) stopper.abort(); }
 export async function remove() {
   stopDownload();
   shutdown();
+  turn++;
   try { for (const key of await caches.keys()) if (OURS.test(key)) await caches.delete(key); } catch { /* nothing to take off */ }
   stopper = null;
+  turn++;
   set({ state: 'none', have: 0, problem: '' });
 }
 

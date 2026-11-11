@@ -2469,6 +2469,17 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   assert.deepEqual(offline, ['ready', true], 'the downloaded voice does not work offline');
   await ctx.setOffline(false);
   net = 'up';
+  await open();
+
+  // With another voice chosen he's still on the device, and on the next visit the list says so: "Joe", not
+  // a download to make again. Looking for him fetches nothing. (The list said "Joe (a 76 MB download)".)
+  await page.selectOption('#optVoiceName', '');
+  await page.reload();
+  await open();
+  await page.waitForFunction(() => document.querySelector('#optVoiceName option[value=":joe"]').textContent === 'Joe', null, { timeout: 15000 });
+  assert.deepEqual([asked, await menu()], [[], { voice: 'Best here', reading: `Reading in ${BROWSER}`, joe: null, get: null, stop: null, remove: null, bar: false }]);
+  await page.selectOption('#optVoiceName', ':joe');
+  await joeSays('on this device');
 
   // An update of the game: the offline worker clears its own old caches and leaves the voice's alone, and
   // nothing of the voice is fetched again.
