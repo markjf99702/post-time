@@ -447,7 +447,8 @@ a { color: var(--link); }
 /* On a short screen the picture is what gives way. The call box keeps its height, so nothing jumps as lines come and go. */
 .w-stage { position: relative; flex: 0 1 min(56vh, 92vw); min-height: 150px; }
 .w-stage canvas.scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.w-map { position: absolute; right: 8px; top: 8px; width: 118px; height: 62px; background: rgba(10,14,11,.55); border-radius: 8px; padding: 4px; backdrop-filter: blur(2px); }
+/* The map's ground is dark enough without blurring the picture behind it, which was worked out again on every frame. */
+.w-map { position: absolute; right: 8px; top: 8px; width: 118px; height: 62px; background: rgba(10,14,11,.55); border-radius: 8px; padding: 4px; }
 .w-map canvas { width: 110px; height: 54px; display: block; }
 .w-flash {
   position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%);

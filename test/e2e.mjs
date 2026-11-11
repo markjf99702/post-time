@@ -339,6 +339,9 @@ await page.waitForTimeout(800);
 await page.evaluate(() => window.__watch.setT(25));
 await page.waitForTimeout(400);
 assert.ok((await page.locator('.order button').count()) >= 5, 'the running order shows');
+// The map in the corner doesn't blur the picture behind it: its ground is dark enough, and the blur was
+// worked out again on every frame of the race.
+assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.w-map')).backdropFilter), 'none', 'the map blurs the picture behind it');
 assert.ok((await page.locator('.call .now').textContent()).length > 5, 'the caller is calling it');
 // On a phone with room for it, the line before the current one is shown whole, not cut off.
 const lineBefore = await page.evaluate(async () => {
