@@ -35,6 +35,7 @@ export function renderWatch(el, nav, params) {
   const canvas = h('canvas', { class: 'scene', 'aria-label': `Race ${race.no}, running now. The race call below describes it.` });
   const mapC = h('canvas', { width: 220, height: 108, 'aria-hidden': 'true' });
   const stage = h('div', { class: 'w-stage' }, canvas, h('div', { class: 'w-map' }, mapC));
+  const frsRow = h('div', { class: 'w-top w-frs', style: { paddingTop: '2px', paddingBottom: '2px' } }, frs);
   const order = h('div', { class: 'order', role: 'group', 'aria-label': 'Running order' });
   const prev = h('div', { class: 'prev' });
   const now = h('div', { class: 'now', 'aria-live': 'polite' });
@@ -67,7 +68,7 @@ export function renderWatch(el, nav, params) {
       clock,
     ),
     stage,
-    h('div', { class: 'w-top w-frs', style: { paddingTop: '2px', paddingBottom: '2px' } }, frs),
+    frsRow,
     order,
     callBox,
     ...(mineList ? [mineList] : []), // append() would print a null as "null"
@@ -90,11 +91,11 @@ export function renderWatch(el, nav, params) {
   let speed = 1;
   let last = performance.now();
   let raf = 0;
-  let rung = false, cheered = false, ended = false, photoShown = false;
+  let rung = false, cheered = false, ended = false;
   let orderAt = -1;
   let following = null;
   // The picture follows the size of its box (the screen turning, the buttons changing at the finish).
-  const onResize = () => { fitOrder(); scene.resize(); scene.draw(Math.max(0, T)); fitCall(); };
+  const onResize = () => { fitOrder(); scene.resize(); scene.draw(Math.max(0, T)); fitCall(); fitPhoto(); };
   const resizer = typeof ResizeObserver === 'function' ? new ResizeObserver(onResize) : null;
   if (resizer) resizer.observe(stage); else window.addEventListener('resize', onResize);
   const stopResizing = () => { if (resizer) resizer.disconnect(); else window.removeEventListener('resize', onResize); };
@@ -347,6 +348,45 @@ export function renderWatch(el, nav, params) {
     if (focused && document.activeElement !== focused) focused.focus({ preventScroll: true });
   }
 
+  // The photo finish goes up in a box of its own over the picture, and it's drawn the size it's shown. On
+  // an upright phone that's short of room the picture is 150 to 200 px tall, and the photo, made to fit
+  // inside it with its caption and the sign, was 42 px wide. So where the picture is too short for a photo
+  // the width of the screen, the box runs on down over what's under the picture, the fractions and then the
+  // running order, as far as it needs and never over the call. The caption names both horses when that fits
+  // on a line, in closer letters if it has to; when it doesn't, the second horse is its number, on two lines
+  // if one won't hold it. All of it is done again when the screen turns or changes size.
+  let photo = null; // while the photo is up: its box, canvas, caption and sign, and how wide it's drawn
+  function fitPhoto() {
+    if (!photo) return;
+    const { box, pc, cap, sign } = photo;
+    const left = stage.offsetLeft, top = stage.offsetTop, wide = stage.offsetWidth;
+    Object.assign(box.style, { left: `${left}px`, top: `${top}px`, width: `${wide}px` });
+    cap.className = 'cap';
+    cap.textContent = photo.both;
+    if (cap.scrollWidth > cap.clientWidth) cap.classList.add('tight');
+    if (cap.scrollWidth > cap.clientWidth) { cap.classList.remove('tight'); cap.textContent = photo.short; }
+    if (cap.scrollWidth > cap.clientWidth) cap.classList.add('wrap');
+    // What the box holds besides the photo: its own padding, the photo's frame, the caption and the sign.
+    const cs = getComputedStyle(box), px = v => parseFloat(v) || 0;
+    const around = px(cs.paddingTop) + px(cs.paddingBottom) + 2 * px(cs.rowGap) + 12 + cap.offsetHeight + sign.offsetHeight;
+    const most = Math.min(560, wide - px(cs.paddingLeft) - px(cs.paddingRight) - 12);
+    let bottom = top + stage.offsetHeight, w;
+    const under = [frsRow, order], covered = [];
+    for (;;) {
+      w = Math.min(most, Math.floor((bottom - top - around) / 0.6));
+      // What's next under the box, in the picture's own column.
+      const next = w < most && under.find(x => Math.abs(x.offsetTop - bottom) < 2 && x.offsetLeft >= left - 1 && x.offsetLeft + x.offsetWidth <= left + wide + 1);
+      if (!next) break;
+      covered.push(next);
+      bottom = next.offsetTop + next.offsetHeight;
+    }
+    // What the box is over keeps its room and isn't shown: it read through the caption.
+    for (const x of under) x.style.visibility = covered.includes(x) ? 'hidden' : '';
+    box.style.height = `${bottom - top}px`;
+    w = Math.max(120, w);
+    if (w !== photo.w) photoFinish(pc, { run, runners, width: photo.w = w, height: Math.round(w * 0.6) });
+  }
+
   function finish() {
     ended = true;
     endedAt = performance.now();
@@ -368,21 +408,16 @@ export function renderWatch(el, nav, params) {
       setTimeout(() => {
         flash.remove();
         const pc = h('canvas');
-        const w = Math.min(560, Math.round(stage.clientWidth - 30));
-        photoFinish(pc, { run, runners, width: Math.max(260, w), height: Math.round(Math.max(260, w) * 0.6) });
         const first = runners[run.results[0].h], second = runners[run.results[1].h];
         // The official sign goes up under the caption, clear of the photo. Its room is there from the start,
         // so the photo doesn't move when it does.
         const sign = h('div', { class: 'w-flash official under' }, 'OFFICIAL');
         const short = `#${first.number} ${first.name} by a ${marginText(run.results[1].toPrev)} over #${second.number}`;
-        const cap = h('div', { class: 'cap' }, `${short} ${second.name}`);
+        const cap = h('div', { class: 'cap' });
         const box = h('div', { class: 'w-photo' }, pc, cap, sign);
-        stage.append(box);
-        // The caption names both horses when that fits on its line, in closer letters if it has to; when
-        // it doesn't, the second horse is its number.
-        if (cap.scrollWidth > cap.clientWidth) cap.classList.add('tight');
-        if (cap.scrollWidth > cap.clientWidth) { cap.classList.remove('tight'); cap.textContent = short; }
-        photoShown = true;
+        el.append(box);
+        photo = { box, pc, cap, sign, short, both: `${short} ${second.name}`, w: 0 };
+        fitPhoto();
         const raise = () => {
           sign.classList.add('up');
           signUp = true;

@@ -458,10 +458,13 @@ a { color: var(--link); }
 }
 .w-flash.official { background: #f3ecd8; color: #1f4d3a; }
 @keyframes pop { from { transform: translate(-50%, -50%) scale(.6); opacity: 0; } }
-.w-photo { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(8,10,8,.82); flex-direction: column; gap: 10px; padding: 10px; }
-.w-photo canvas { max-width: 100%; max-height: calc(100% - 100px); border: 6px solid #f3efe3; box-shadow: 0 10px 40px rgba(0,0,0,.5); image-rendering: auto; }
+/* The photo finish, in a box of its own over the picture (and over what's under the picture, where the
+   picture is too short for it): the race screen places the box and draws the photo the size it's shown here. */
+.w-photo { position: absolute; z-index: 2; display: flex; align-items: center; justify-content: center; background: rgba(8,10,8,.82); flex-direction: column; gap: 8px; padding: 8px 10px; }
+.w-photo canvas { flex: none; max-width: 100%; border: 6px solid #f3efe3; box-shadow: 0 10px 40px rgba(0,0,0,.5); image-rendering: auto; }
 .w-photo .cap { font: 500 14px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; color: #e8e0c8; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .w-photo .cap.tight { font-size: 12.5px; letter-spacing: .03em; } /* both names, where they wouldn't fit otherwise */
+.w-photo .cap.wrap { white-space: normal; text-align: center; } /* on two lines, where one won't hold even one name */
 /* After a photo the official sign is smaller and sits under the caption, so the photo stays clear. */
 .w-photo .w-flash.under { position: static; transform: none; font-size: 24px; padding: 6px 14px; visibility: hidden; animation: none; }
 .w-photo .w-flash.under.up { visibility: visible; animation: popin .35s ease-out; }
@@ -482,8 +485,9 @@ a { color: var(--link); }
 .order button.me.follow .cloth { box-shadow: inset 0 0 0 1px var(--cloth-edge), 0 0 0 2px #fff, 0 0 0 4px var(--amber); }
 /* Margins are small, dim and raised, like the ones in a chart, so a 2 or a 1 isn't read as a horse's number. */
 .order .gap { font: 500 10px/1 var(--display); color: #8f8a78; min-width: 13px; text-align: center; align-self: flex-start; }
-/* The two in a photo, side by side until the official sign says which of them was in front. */
-.order .pair { position: relative; display: flex; gap: 2px; flex: none; padding: 1px 3px; border: 1px solid var(--amber); border-radius: 7px; }
+/* The two in a photo, side by side until the official sign says which of them was in front. (The frame is
+   drawn in the space between the rows, so the strip is no taller for it.) */
+.order .pair { position: relative; display: flex; gap: 2px; flex: none; padding: 1px 3px; margin: -2px 0; border: 1px solid var(--amber); border-radius: 7px; }
 .order .pair::before {
   content: 'PHOTO'; position: absolute; left: 50%; top: -5px; transform: translateX(-50%); padding: 0 3px;
   background: #161c17; color: var(--amber); font: 600 8px/1 var(--display); letter-spacing: .12em;
@@ -532,7 +536,7 @@ a { color: var(--link); }
   .watch { display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto auto minmax(60px, 1fr) auto auto auto; }
   .w-top { grid-column: 1 / -1; }
   .w-stage { grid-column: 1; grid-row: 2 / span 4; }
-  .w-frs { grid-row: 6; }
+  .w-frs { grid-column: 1; grid-row: 6; }
   .order { grid-column: 2; grid-row: 2; align-content: flex-start; }
   .call { grid-column: 2; grid-row: 3; }
   .w-tix { grid-column: 2; grid-row: 4; }

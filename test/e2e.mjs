@@ -537,7 +537,8 @@ assert.ok(small.spill <= 1, `the race call spills ${small.spill}px out of its bo
 assert.equal(small.heights.length, 1, `the picture changes size with the call: ${small.heights}`);
 assert.ok(small.label < 24, 'the race number wraps onto two lines');
 // This one goes to a photo. The caller says who won it when the official sign goes up, not before, and
-// the line fits its box. The official sign goes up under the photo, not over it.
+// the line fits its box. The official sign goes up under the photo, not over it, and the photo's box (which
+// on a phone this short runs down over the fractions and the running order) stops short of the call.
 // Until then the running order doesn't say either: the two in the photo are side by side, lower number
 // first, with no margin between them, and in the order they finished once the sign is up.
 const photoCall = await page.evaluate(() => new Promise(resolve => {
@@ -567,9 +568,9 @@ await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 const photoSign = await page.evaluate(() => {
   const box = s => document.querySelector(s).getBoundingClientRect();
   const pic = box('.w-photo canvas'), sign = box('.w-photo .w-flash'), stage = box('.w-stage');
-  return { clear: sign.top >= pic.bottom, inside: sign.bottom <= stage.bottom + 0.5, shown: getComputedStyle(document.querySelector('.w-photo .w-flash')).visibility };
+  return { clear: sign.top >= pic.bottom, inside: pic.top >= stage.top && sign.bottom <= box('.w-photo').bottom && box('.w-photo').bottom <= box('.call').top + 0.5, shown: getComputedStyle(document.querySelector('.w-photo .w-flash')).visibility };
 });
-assert.deepEqual(photoSign, { clear: true, inside: true, shown: 'visible' }, 'the official sign covers the photo, or falls off the picture');
+assert.deepEqual(photoSign, { clear: true, inside: true, shown: 'visible' }, "the official sign covers the photo, or the photo's box is over the call");
 const resultsBtn = await page.locator('.w-ctl .btn').boundingBox();
 assert.ok(resultsBtn.y + resultsBtn.height <= 568, `the Results button is off the bottom of a small phone (${resultsBtn.y + resultsBtn.height})`);
 await page.click('.w-ctl .btn');
@@ -1488,9 +1489,12 @@ await page.waitForSelector('.races');
       const w = window.__watch, out = { field: w.run.n, lines: w.call.lines.length, top: new Set(), tall: new Set(), spill: 0, cut: 0, off: 0 };
       const frames = async n => { for (let i = 0; i < n; i++) await new Promise(r => requestAnimationFrame(r)); };
       const strip = document.querySelector('.order'), box = document.querySelector('.call');
-      for (const line of w.call.lines) {
-        w.setT(w.t0 + line.t + 0.05);
+      // (And once more just past the wire as a photo, with the first two framed as a pair.)
+      for (const line of [...w.call.lines, null]) {
+        if (!line) w.call.photo = true;
+        w.setT(line ? w.t0 + line.t + 0.05 : w.winT + 0.3);
         await frames(3);
+        if (!line && !strip.querySelector('.pair')) out.cut++;
         const at = strip.getBoundingClientRect();
         out.top.add(Math.round(box.getBoundingClientRect().top));
         out.tall.add(Math.round(at.height));
@@ -1558,6 +1562,36 @@ await page.waitForSelector('.races');
       assert.ok(short.lines[0] < 32 && short.lines[1] < 22 && !short.cut && short.hint === 'Tap a number to follow that horse.', `${width} by ${height}: the tickets line is ${short.lines[0]} px tall and the line under the buttons ${short.lines[1]}: ${short.hint}`);
     } else assert.match(short.tickets, /^Your tickets: \$2 Win \d+ · \$2 Exacta \d+-\d+ · .* · \$100 Trifecta \d+-\d+-\d+$/, 'on a tall phone the tickets are listed');
     await card();
+  }
+
+  // The photo finish on those short phones, with the biggest field and the six tickets: the photo is most of
+  // the width of the screen, drawn at the size it's shown, with its caption whole, and its box stops at the
+  // call. (It was made to fit inside the picture, 150 px tall there, with the caption and the sign: it was
+  // 42 px wide, and at 320 the caption was cut.) Turned on its side with the photo up, it's fitted again.
+  for (const [width, height] of [[375, 548], [320, 568], [390, 844]]) {
+    await watch(width, height);
+    await win.evaluate(() => { const w = window.__watch; w.call.photo = true; w.setT(w.endT); });
+    await win.waitForSelector('.w-photo canvas', { timeout: 15000 });
+    const measure = () => win.evaluate(() => {
+      const box = s => document.querySelector(s).getBoundingClientRect(), pic = document.querySelector('.w-photo canvas'), cap = document.querySelector('.w-photo .cap');
+      const shown = box('.w-photo canvas'), frame = box('.w-photo'), beside = box('.call').left >= box('.w-stage').right - 0.5;
+      return {
+        share: Math.round(100 * shown.width / innerWidth), scaled: Math.round(shown.width - 12 - pic.width), text: cap.textContent,
+        // (The letters' own box is a couple of px taller than the line they're set on; a line cut off would be 15.)
+        cut: cap.scrollWidth > cap.clientWidth || cap.scrollHeight > cap.clientHeight + 6 || box('.w-photo .cap').left < frame.left || box('.w-photo .cap').right > frame.right,
+        inside: shown.left >= frame.left && shown.right <= frame.right && shown.top >= frame.top && box('.w-photo .w-flash').bottom <= frame.bottom + 0.5,
+        clear: frame.top >= box('.w-stage').top - 0.5 && (beside ? frame.right <= box('.call').left + 0.5 : frame.bottom <= box('.call').top + 0.5),
+      };
+    });
+    const up = await measure();
+    assert.ok(up.share >= 80, `${width} by ${height}: the photo is ${up.share}% of the width of the screen`);
+    assert.deepEqual([up.scaled, up.cut, up.inside, up.clear], [0, false, true, true], `${width} by ${height}: the photo is drawn ${up.scaled} px off the size it's shown, its caption ("${up.text}") is cut, it doesn't fit its box, or the box is over the call`);
+    await win.setViewportSize({ width: height, height: width });
+    await win.waitForTimeout(300);
+    const turned = await measure();
+    assert.deepEqual([turned.scaled, turned.cut, turned.inside, turned.clear], [0, false, true, true], `${width} by ${height}, turned on its side with the photo up: it's drawn ${turned.scaled} px off the size it's shown, its caption is cut, it doesn't fit its box, or the box is over the call`);
+    await win.evaluate(() => window.__watch.leave('card'));
+    await win.waitForSelector('.races');
   }
   await ctx6.close();
 }
