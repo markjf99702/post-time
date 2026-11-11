@@ -8,6 +8,7 @@ import { JOCKEYS, TIPSTERS, TRAINERS, OWNERS } from '../data.js';
 import { marginShort, fmtTime, ordinal } from '../chart.js';
 import { drawCircle } from '../draw/circle.js';
 import { distanceName } from '../track.js';
+import { ENGINE } from '../sim.js';
 import { atmLine, redraw } from './card.js';
 import { ticketLine } from './race.js';
 
@@ -102,7 +103,10 @@ export function renderResult(root, nav, params) {
 
   root.append(h('div', { class: 'actions' },
     h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('circle', { no: race.no }) }, "Winner's circle ▸"),
-    h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('watch', { no: race.no }) }, 'Watch again'),
+    // Only a race run the way races are run now can be watched again: one run before that would be worked
+    // out again another way, and could show another horse winning. (A save carries the day's earlier races
+    // over a change to the racing.)
+    res.eng === ENGINE ? h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('watch', { no: race.no }) }, 'Watch again') : null,
   ));
   // The way on is in a bar at the bottom of the screen, where a race's page has To the gate: what the race
   // did for you on the left, and the next race (the card, after the last one) as the button. (It was the

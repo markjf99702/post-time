@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runRace, figureFor, stateAt, runningOrder } from '../js/sim.js';
+import { runRace, figureFor, stateAt, runningOrder, ENGINE } from '../js/sim.js';
 import { coursePath, FURLONG, COURSES } from '../js/track.js';
 import { rng } from '../js/rng.js';
 import { createWorld, simulateRace, buildCard, applyResult, nextDay, ageOf } from '../js/world.js';
@@ -196,6 +196,16 @@ test("a dirt horse that chased and tired isn't written down as stopping", () => 
     for (const h of w.horses) for (const p of h.pps) for (const k of ['stopped', 'tired']) if (p.cm.includes(`Chased, ${k}`)) n[p.surf][k]++;
   }
   for (const s of ['d', 't']) assert.ok(n[s].stopped * 4 < n[s].tired, `on ${s === 'd' ? 'dirt' : 'turf'}: ${n[s].stopped} chased and stopped, ${n[s].tired} chased and tired`);
+});
+
+// A result says which way of running a race made it, so a race run before the racing changed isn't
+// worked out again another way to be watched again (js/ui/results.js).
+test('a race made official records the way it was run', () => {
+  const w = createWorld('engine', '2026-09-26');
+  const r = w.cards[0].races[0];
+  applyResult(w, r, simulateRace(r, w, { record: true }), r.entries.map(() => 5));
+  assert.equal(r.result.eng, ENGINE);
+  assert.deepEqual(r.result.order.map(o => o.k), simulateRace(r, w, { record: true }).results.map(x => x.h), 'watched again, the race comes out the way it was made official');
 });
 
 test('the world builds a full card with past performances that happened', () => {

@@ -2053,6 +2053,17 @@ await page.waitForSelector('.races');
     return { y: Math.round(scrollY), whole: r.top >= under && r.bottom <= innerHeight, offCentre: Math.round(Math.abs((r.top + r.bottom) / 2 - (under + innerHeight) / 2)) };
   });
   const cash = await run('cash');
+  // A race run before the racing was changed (in a save that carried the day's earlier races over the change)
+  // isn't offered to be watched again: worked out again from its seed it would run another way, and could show
+  // another horse winning.
+  const older = await between.evaluate(no => {
+    const { card, nav } = window.postTime, r = card().races.find(x => x.no === no), eng = r.result.eng;
+    delete r.result.eng; nav.go('result', { no });
+    const buttons = [...document.querySelectorAll('.actions .btn')].map(b => b.textContent);
+    r.result.eng = eng; nav.go('result', { no });
+    return buttons;
+  }, cash.no);
+  assert.deepEqual(older, ["Winner's circle ▸"], 'a race run the way races were run before is offered to be watched again');
   assert.deepEqual(await resultBar(), { said: `You cashed $${cash.back.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, button: 'Race 2 ▸', ...shown }, 'the bar on a result with a ticket cashed');
   await between.click('.rhead .back');
   await between.waitForSelector('.races');

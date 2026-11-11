@@ -35,6 +35,14 @@ export function figureFor(time, distance, surface, cond) {
   return Math.round(80 + (parTime(distance, surface, cond) - time) / secondsPerPoint(distance));
 }
 
+// Which way of running a race this is. A race that has been run is worked out again from its seed when
+// it's watched again, so one run by an earlier way would play out differently from the result it was
+// given: a different horse could win on the screen. The number goes up whenever a change means the same
+// seed and entries run another way, and a result records the number it was run by (world.js applyResult).
+// (1 was every race before the posts, the start and the dirt pace were changed in November 2026; its
+// results carry no number.)
+export const ENGINE = 2;
+
 const START_LOSS = 0.33; // seconds lost breaking from a standstill (calibrated in test/sim.test.mjs)
 
 // American dirt races are run fast early and slow late: six furlongs goes in about :22.4, :45.6 and 1:10.6,

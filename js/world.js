@@ -3,7 +3,7 @@
 // same way as the ones you watch, so every line in the past performances really happened.
 
 import { rng } from './rng.js';
-import { runRace, figureFor } from './sim.js';
+import { runRace, figureFor, ENGINE } from './sim.js';
 import { coursePath, FURLONG } from './track.js';
 import { runningLine, tripComment } from './chart.js';
 import { SIRES, DAMSIRES, JOCKEYS, TRAINERS, OWNERS, SILK_COLORS, PATTERNS, STAKES, BIG_STAKES, makeName, damName } from './data.js';
@@ -511,7 +511,7 @@ export function applyResult(world, race, run, odds) {
   race.status = 'official';
   race.result = {
     order: run.results.map(r => ({ k: r.h, pos: r.pos, behind: +r.behind.toFixed(2), toPrev: +r.toPrev.toFixed(2), time: +r.time.toFixed(2) })),
-    fr, time: +run.finalTime.toFixed(2),
+    fr, time: +run.finalTime.toFixed(2), eng: ENGINE,
   };
   return race.result;
 }
