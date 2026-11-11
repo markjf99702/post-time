@@ -1,7 +1,7 @@
 // Your scrapbook of winner's circle photos, your record at the windows, and how to play.
 
 import { h, money, jdFoot } from './dom.js';
-import { game, START_BANK, bestDay } from '../game.js';
+import { game, START_BANK, bestDay, notSaved } from '../game.js';
 import { TIPSTERS } from '../data.js';
 import { longDate, dayDate, dateISO } from '../world.js';
 import { photoCard } from './results.js';
@@ -51,6 +51,17 @@ function stat(label, value, note) {
   return h('div', { class: 'stat' }, h('span', { class: 'kicker' }, label), h('b', { class: 'money' }, value), note ? h('span', { class: 'muted', style: { fontSize: '12.5px' } }, note) : null);
 }
 
+// What How to play says about saving, which depends on where the game is running. In a browser that's
+// refusing to save (its storage is blocked or full; a frame with no storage of its own), "Everything is
+// saved in this browser" stood under a line at the top of the page saying the browser isn't keeping the
+// meet. And the one-file copy has nothing that would let it work offline "once it has loaded": it's a
+// file, and opens wherever the file is.
+const singleFile = typeof __SINGLE_FILE__ !== 'undefined';
+function savingText() {
+  if (notSaved()) return "This browser isn't keeping anything, so this meet lasts until you close the page. Nothing is sent anywhere.";
+  return `Everything is saved in this browser: your bankroll, tickets, scrapbook and the whole racing world. Nothing is sent anywhere.${singleFile ? '' : ' It works offline once it has loaded.'}`;
+}
+
 export function renderHelp(root, nav) {
   root.append(
     h('div', { class: 'rhead' },
@@ -83,7 +94,7 @@ export function renderHelp(root, nav) {
       h('p', {}, "The caller's lines run under the picture as the race goes. Tick Read the race call aloud in the menu to have them spoken."),
       h('p', {}, "Back the winner and you're in the winner's circle photo. It goes in your scrapbook."),
       h('h3', {}, 'Saving'),
-      h('p', {}, 'Everything is saved in this browser: your bankroll, tickets, scrapbook and the whole racing world. Nothing is sent anywhere. It works offline once it has loaded.'),
+      h('p', { class: 'saving' }, savingText()),
       jdFoot(),
     ),
   );

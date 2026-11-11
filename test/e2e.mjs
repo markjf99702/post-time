@@ -471,8 +471,14 @@ assert.equal(await unsaved.isVisible(), true, "nothing says the browser isn't ke
 assert.equal(await unsaved.textContent(), "This browser isn't keeping your meet, so it will be gone when you close the page.");
 const unsavedBox = await unsaved.boundingBox(), headerBox = await page.locator('#top').boundingBox();
 assert.ok(unsavedBox.y >= headerBox.y + headerBox.height - 1 && unsavedBox.x >= 0 && unsavedBox.x + unsavedBox.width <= 390, 'the line about saving is under the header or off the side');
+// And How to play says the same under Saving, where it said "Everything is saved in this browser" with that
+// line over it. When saving works it says what's saved, and that it works offline.
+const saving = async () => { await page.evaluate(() => window.postTime.nav.go('help')); return page.locator('.help .saving').textContent(); };
+assert.equal(await saving(), "This browser isn't keeping anything, so this meet lasts until you close the page. Nothing is sent anywhere.");
 await page.evaluate(() => { Storage.prototype.setItem = window.realSetItem; window.postTime.save(); });
 assert.equal(await unsaved.isVisible(), false, 'the line about saving stays after a save has worked');
+assert.equal(await saving(), 'Everything is saved in this browser: your bankroll, tickets, scrapbook and the whole racing world. Nothing is sent anywhere. It works offline once it has loaded.');
+await page.evaluate(() => window.postTime.nav.go('card'));
 
 // Fits a phone: nothing scrolls sideways.
 assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the page scrolls sideways on a phone');
