@@ -1,13 +1,13 @@
 // A race before it runs: the past performances, the paddock, the forum and the betting window.
 
-import { h, money, cloth, silksCanvas, clear, ago, plural, dotted } from './dom.js';
+import { h, money, stake, cloth, silksCanvas, clear, ago, plural, dotted } from './dom.js';
 import { game, card, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor } from '../game.js';
 import { ownerSilks, ageOf, shortDate, clockText, CLASSES, meetStats, isHandicap, prepsOf } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
 import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES, CLOTH } from '../data.js';
 import { callText, marginShort, fmtTime, fmtWork } from '../chart.js';
 import { runStyle } from '../forum.js';
-import { BET_NAMES, cost as betCost, BASE } from '../tote.js';
+import { BET_NAMES, cost as betCost, MIN } from '../tote.js';
 import { drawHorse } from '../draw/horse.js';
 import { oddsText, angles, newcomer } from '../handicap.js';
 import * as audio from '../audio.js';
@@ -103,7 +103,7 @@ export function renderRace(root, nav, params) {
     if (bet && !asked) {
       asked = true;
       notBefore = performance.now() + DOUBLE_TAP;
-      say([`You picked ${pickShort(race, bet)} for ${money(betCost(bet), { cents: false })} and haven't bought it. Tap again to go without it.`]);
+      say([`You picked ${pickShort(race, bet)} for ${stake(betCost(bet))} and haven't bought it. Tap again to go without it.`]);
       return;
     }
     audio.wake(); audio.primeVoice();
@@ -131,7 +131,7 @@ export function renderRace(root, nav, params) {
     const bet = slip();
     bar.classList.toggle('pending', !!bet);
     if (bet) {
-      say([h('b', {}, pickName(race, bet)), `, ${money(betCost(bet), { cents: false })}: not bought yet`]);
+      say([h('b', {}, pickName(race, bet)), `, ${stake(betCost(bet))}: not bought yet`]);
       bar.append(
         h('button', { class: 'btn ghost', type: 'button', onclick: toGate }, 'To the gate ▸'),
         h('button', { class: 'btn brass', type: 'button', onclick: buySlip }, `Buy ticket · ${money(betCost(bet))}`),
@@ -432,7 +432,7 @@ const TO = { win: 'to win', place: 'to place', show: 'to show', wps: 'across the
 const numbers = (race, bet) => bet.sel.map(i => race.entries[i].pp).join(bet.type.endsWith('box') ? ', ' : '-');
 const named = (race, bet) => { const e = race.entries[bet.sel[0]]; return `#${e.pp} ${horseOf(e).name}`; };
 function pickLine(race, bet) {
-  return TO[bet.type] ? `$${bet.amt} ${TO[bet.type]} on ${named(race, bet)}` : `$${bet.amt} ${BET_NAMES[bet.type].toLowerCase()} ${numbers(race, bet)}`;
+  return TO[bet.type] ? `${stake(bet.amt)} ${TO[bet.type]} on ${named(race, bet)}` : `${stake(bet.amt)} ${BET_NAMES[bet.type].toLowerCase()} ${numbers(race, bet)}`;
 }
 function pickName(race, bet) {
   return TO[bet.type] ? `${named(race, bet)} ${TO[bet.type]}` : `${BET_NAMES[bet.type]} ${numbers(race, bet)}`;
@@ -487,7 +487,7 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
     clear(builder);
     const types = h('div', { class: 'seg', role: 'group', 'aria-label': 'Bet type' });
     for (const t of ['win', 'place', 'show', 'wps', 'exacta', 'exbox', 'trifecta', 'tribox']) {
-      types.append(h('button', { type: 'button', 'aria-pressed': String(st.type === t), onclick: () => { st.type = t; st.picks = [[], [], []]; if (st.amt < BASE[legType(t)]) st.amt = BASE[legType(t)]; draw(); } }, BET_NAMES[t]));
+      types.append(h('button', { type: 'button', 'aria-pressed': String(st.type === t), onclick: () => { st.type = t; st.picks = [[], [], []]; if (st.amt < MIN[legType(t)]) st.amt = MIN[legType(t)]; draw(); } }, BET_NAMES[t]));
     }
     builder.append(types, h('p', { class: 'bet-help' }, HELP[st.type]));
     const rows = st.type === 'exacta' ? ['1st', '2nd'] : st.type === 'trifecta' ? ['1st', '2nd', '3rd'] : [st.type.endsWith('box') ? 'Pick' : 'Horse'];
@@ -513,9 +513,9 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
       builder.append(h('div', { class: 'pick-row' }, h('span', { class: 'lbl' }, label), grid));
     });
     const amts = h('div', { class: 'seg amounts', role: 'group', 'aria-label': 'Amount' });
-    for (const a of [1, 2, 5, 10, 20, 50, 100]) {
-      if (a < BASE[legType(st.type)]) continue;
-      amts.append(h('button', { type: 'button', 'aria-pressed': String(st.amt === a), onclick: () => { st.amt = a; draw(); } }, `$${a}`));
+    for (const a of [0.5, 1, 2, 5, 10, 20, 50, 100]) {
+      if (a < MIN[legType(st.type)]) continue;
+      amts.append(h('button', { type: 'button', 'aria-pressed': String(st.amt === a), onclick: () => { st.amt = a; draw(); } }, stake(a)));
     }
     builder.append(amts);
     const bet = currentBet(st, race.entries.length);
@@ -523,7 +523,7 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
     const msg = h('div', { class: 'cost' });
     // The pick in words, so the number can be checked against the name without going back to the form;
     // what it costs when that's more than one bet; and what there is to spend.
-    if (bet) msg.append(h('b', {}, pickLine(race, bet)), c > st.amt ? h('span', { class: 'money' }, ` · ${money(c)} (${c / st.amt} bets of $${st.amt})`) : '', h('span', { class: 'muted' }, ` · you have ${money(game.player.bank)}`));
+    if (bet) msg.append(h('b', {}, pickLine(race, bet)), c > st.amt ? h('span', { class: 'money' }, ` · ${money(c)} (${Math.round(c / st.amt)} bets of ${stake(st.amt)})`) : '', h('span', { class: 'muted' }, ` · you have ${money(game.player.bank)}`));
     else msg.append(h('span', { class: 'muted' }, needs(st)));
     // With no money for a ticket and none bought, the way to the ATM is here, where the cost would be.
     const broke = open ? atmLine(changed) : null;
@@ -619,7 +619,7 @@ function updateTote(panel, race) {
 // "3-4-" over "6"), unless they're more than a line by themselves.
 export function ticketLine(bet, numbers) {
   const picked = bet.type === 'exacta' || bet.type === 'trifecta' ? numbers.join('-') : bet.type.endsWith('box') ? numbers.join(', ') : numbers[0];
-  return h('div', { class: 'what' }, `$${bet.amt} ${BET_NAMES[bet.type].toUpperCase()} `, h('span', { class: 'bit' }, picked));
+  return h('div', { class: 'what' }, `${stake(bet.amt)} ${BET_NAMES[bet.type].toUpperCase()} `, h('span', { class: 'bit' }, picked));
 }
 
 function ticketList(race, open, changed) {

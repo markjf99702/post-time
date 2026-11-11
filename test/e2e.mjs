@@ -286,6 +286,16 @@ await page.locator('.pick-row').nth(1).locator('button').nth(0).click();
 await page.click('.builder .btn');
 assert.equal(await page.locator('.ticket').count(), 2, 'two tickets printed');
 assert.equal(await page.locator('#bank').textContent(), '$196.00', 'the tickets came out of the bankroll');
+// An exacta can be bet for $1 and a trifecta for 50 cents, as at a track; win, place and show stay at $2.
+const leastFor = async type => {
+  await page.locator('.seg button', { hasText: new RegExp(`^${type}$`) }).click();
+  return page.locator('.seg.amounts button').first().textContent();
+};
+assert.deepEqual([await leastFor('Exacta'), await leastFor('Exacta box'), await leastFor('Trifecta'), await leastFor('Trifecta box')], ['$1', '$1', '50¢', '50¢'], "exotics don't start at a track's least amount");
+for (const k of [0, 1, 2]) await page.locator('.pick-row').nth(0).locator('button').nth(k).click();
+await page.locator('.seg.amounts button', { hasText: /^50¢$/ }).click();
+assert.match(await page.locator('.bet-foot .cost').textContent(), /^50¢ trifecta box \d+, \d+, \d+ · \$3\.00 \(6 bets of 50¢\) · you have \$196\.00$/);
+assert.equal(await leastFor('Win'), '$2', 'a win ticket can be bought for less than $2');
 // In the dark, the pressed bet type and amount stand out from the others, and Buy ticket from its card.
 await page.emulateMedia({ colorScheme: 'dark' });
 const dark = await page.evaluate(() => {

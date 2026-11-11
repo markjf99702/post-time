@@ -27,6 +27,13 @@ export function money(n, { sign = false, cents = true } = {}) {
   return `${n < 0 ? '−' : sign && n > 0 ? '+' : ''}$${s}`;
 }
 
+// What a ticket is for, as a bettor says it: "$2", "$10", and under a dollar "50¢". (The amount buttons and
+// the tickets used to print every amount as "$" and the number, which would be "$0.5".)
+export function stake(n) {
+  if (n < 1) return `${Math.round(n * 100)}¢`;
+  return Number.isInteger(n) ? money(n, { cents: false }) : money(n);
+}
+
 export function cloth(num, size = '') {
   const [bg, fg] = CLOTH[num] || CLOTH[1];
   return h('span', { class: `cloth ${size}`, style: { background: bg, color: fg }, 'aria-label': `number ${num}` }, String(num));

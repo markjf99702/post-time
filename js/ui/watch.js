@@ -1,7 +1,7 @@
 // Watching the race: the broadcast view, the running order with margins, fractions on the clock,
 // the caller, and at the end the photo sign or the official sign.
 
-import { h, clear, cloth, money } from './dom.js';
+import { h, clear, cloth, money, stake } from './dom.js';
 import { RaceScene } from '../draw/scene.js';
 import { photoFinish } from '../draw/photo.js';
 import { stateAt, runningOrder } from '../sim.js';
@@ -594,7 +594,7 @@ function myTickets(race) {
   const full = h('span', { class: 'full' }, 'Your tickets: ', bets.map((b, i) => {
     const sel = b.sel.map(x => race.entries[x].pp);
     const label = b.type === 'exacta' || b.type === 'trifecta' ? sel.join('-') : b.type.endsWith('box') ? sel.join(',') : sel[0];
-    return h('span', {}, `${i ? ' · ' : ''}$${b.amt} ${BET_NAMES[b.type]} ${label}`);
+    return h('span', {}, `${i ? ' · ' : ''}${stake(b.amt)} ${BET_NAMES[b.type]} ${label}`);
   }));
   const paid = bets.reduce((sum, b) => sum + (b.cost ?? betCost(b)), 0);
   return h('div', { class: 'w-tix' }, full, h('span', { class: 'count' }, `Your tickets: ${bets.length}, ${money(paid)}`));

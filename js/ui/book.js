@@ -172,7 +172,7 @@ export function renderHelp(root, nav) {
       h('p', {}, MOVING),
       h('dl', {},
         h('dt', {}, 'Win, place, show'), h('dd', {}, 'Your horse finishes first; first or second; first, second or third.'),
-        h('dt', {}, 'Exacta, trifecta'), h('dd', {}, 'The first two, or the first three, in order. A box covers every order of the horses you pick, one bet per order.'),
+        h('dt', {}, 'Exacta, trifecta'), h('dd', {}, 'The first two, or the first three, in order. A box covers every order of the horses you pick, one bet per order. An exacta can be bet for $1 and a trifecta for 50 cents, as at a track. What paid is given for a $2 exacta and a $1 trifecta, and a smaller ticket is paid its share.'),
         h('dt', {}, 'Odds'), h('dd', {}, '5-2 means $5 profit for every $2 bet, so a $2 win ticket pays $7. Payouts are worked out per dollar and rounded down to the dime, so a $2 ticket pays in steps of 20 cents, and never less than $2.10.'),
       ),
       h('h3', {}, 'The race'),

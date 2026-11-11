@@ -7,6 +7,10 @@ import { publicRating, postEdge, probsFrom, oddsText } from './handicap.js';
 
 export const TAKEOUT = { win: 0.16, place: 0.16, show: 0.16, exacta: 0.2, trifecta: 0.25 };
 export const BASE = { win: 2, place: 2, show: 2, exacta: 2, trifecta: 1 };
+// The least a ticket can be bet for, in each pool. Payouts are still quoted for the base above, as tracks
+// quote them, and a smaller ticket is paid its share (ticketReturn): $1 is half a $2 exacta, and 50 cents
+// half a $1 trifecta. (Exactas were $2 and trifectas $1, twice what tracks sell them for.)
+export const MIN = { win: 2, place: 2, show: 2, exacta: 1, trifecta: 0.5 };
 
 const PADDOCK_LATE = 0.08;
 const POOL = { MCL: 70000, MSW: 95000, C10: 65000, C16: 80000, C25: 95000, C40: 110000, ALW: 140000, STK: 260000 };
