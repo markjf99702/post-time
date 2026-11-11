@@ -2610,6 +2610,20 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
     assert.deepEqual([hushed.early, await page.evaluate(() => window.__played.length)], [true, hushed.n], 'the Sound button did not stop him at once, or he went on with the call');
     await page.evaluate(() => [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === 'Sound').click());
     await page.waitForFunction(n => window.__played.length > n, hushed.n, { timeout: 30000 });
+    // At 2x the rest of the race is planned again, and the plan still has the lines that have come up, each
+    // with half the room it had. They keep the clips they have: his worker goes on to the lines still to
+    // come. (It was asked for each of them again, twice, faster, before it made the first new line, which
+    // came up with no clip.)
+    const up = await page.evaluate(() => {
+      const w = window.__watch, up = w.call.timetable().filter(x => x.line.t <= w.T - w.t0).map(x => x.line.say);
+      window.__asked.length = 0;
+      [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === '2×').click();
+      return up;
+    });
+    await page.waitForFunction(() => window.__asked.length > 0, null, { timeout: 15000 });
+    await page.waitForTimeout(1000);
+    const again = await page.evaluate(() => { const asked = window.__asked.map(a => a[0]); [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === '1×').click(); return asked; });
+    assert.ok(up.length >= 3 && !again.some(say => up.includes(say)), `at 2x, ${up.length} lines in, his worker was asked again for lines already said: ${again.filter(say => up.includes(say)).join(' / ')}`);
     await midLine();
     await page.evaluate(() => window.__watch.leave('card'));
     const left = await stopped();

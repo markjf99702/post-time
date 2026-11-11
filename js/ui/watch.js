@@ -22,7 +22,8 @@ import * as audio from '../audio.js';
 // sound ahead of the race (js/joe-call.js).
 const joePlan = (race, run, opts) => callFor(race, run, { lineSeconds: planSeconds(climb), ...opts });
 // What that plan asks of him: each line as he's given it, with its speed, its time and the room it has.
-const joeJobs = (call, run) => jobsFor(call, run.finalTime, climb, call.official ? officialLine(call.official).say : null);
+// (`since` is the race's clock, when the plan has been made again in the middle of the race.)
+const joeJobs = (call, run, since) => jobsFor(call, run.finalTime, climb, call.official ? officialLine(call.official).say : null, since);
 // The race that's up next, while its form is being read: the call is planned and its lines begin to be
 // made. Nothing of the result is shown, kept or settled by it.
 export function rehearse(race) {
@@ -120,7 +121,8 @@ export function renderWatch(el, nav, params) {
     bugle: audio.voiceEnabled() ? bugle : 0,
   });
   // His lines for the rest of the race, when the plan has changed under him (another speed, a skip).
-  const rehearseAgain = () => { if (joeCalls) audio.rehearse(memoKey(race), joeJobs(call, run)); };
+  // The lines that have come up by now keep the clips they have: only the ones to come are made.
+  const rehearseAgain = () => { if (joeCalls) audio.rehearse(memoKey(race), joeJobs(call, run, callClock() - t0)); };
   let T = -call.gate;      // sim time; negative is the wait in the gate
   let speed = 1;
   let last = performance.now();

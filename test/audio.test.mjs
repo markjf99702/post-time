@@ -625,7 +625,7 @@ test('a voice that never says when it starts or ends still reads the call, a lin
 // and the call planned to its pace, as the page does; `each(frame)` is called every frame, to change the
 // speed or skip. Returns the call, when each line came up, and what the queue made of them.
 // `plan` is for a voice with a plan of its own (the downloaded one): it makes the call, and `planned` is
-// told whenever that call is made or made again.
+// told whenever that call is made or made again (and, when it's made again, the race's clock then).
 function replay(r, race, { timed = null, bugle = 0, each = null, plan = null, planned = null } = {}) {
   const factor = () => (timed ? timed.factor() : 1);
   const live = plan ? plan({ bugle }) : liveCall(race.race, race.run, race.names, { lineSeconds: (line, toWire) => lineTime(line.say, pace(line, toWire).rate, { factor: factor() }), factor, bugle });
@@ -640,8 +640,8 @@ function replay(r, race, { timed = null, bugle = 0, each = null, plan = null, pl
   r.queue.prepare(live.lines);
   const frame = {
     get T() { return T; }, get clock() { return clock() - race.t0; },
-    setSpeed(to) { if (to !== speed) { live.setSpeed(to, clock() - race.t0, r.now() / 1000); if (planned) planned(live); } speed = to; },
-    skip() { r.queue.stop(); T = Math.max(T, race.winT - 12); live.skip(T - race.t0, r.now() / 1000); if (planned) planned(live); },
+    setSpeed(to) { if (to !== speed) { live.setSpeed(to, clock() - race.t0, r.now() / 1000); if (planned) planned(live, clock() - race.t0); } speed = to; },
+    skip() { r.queue.stop(); T = Math.max(T, race.winT - 12); live.skip(T - race.t0, r.now() / 1000); if (planned) planned(live, clock() - race.t0); },
   };
   for (;;) {
     r.advance(1000 / 30);
@@ -1040,7 +1040,7 @@ function joeReplay(race, { each = null, ...device } = {}) {
   let wireAt = null;
   const result = replay(rigged.r, race, {
     plan: ({ bugle }) => liveCall(race.race, race.run, race.names, { lineSeconds: planSeconds(climb), bugle, lead }),
-    planned(live) { rigged.clips.want(jobsFor(live, race.run.finalTime, climb, live.official ? officialLine(live.official).say : null)); rigged.early = false; },
+    planned(live, since) { rigged.clips.want(jobsFor(live, race.run.finalTime, climb, live.official ? officialLine(live.official).say : null, since)); rigged.early = false; },
     each(frame) { if (wireAt === null && frame.T >= race.winT) wireAt = rigged.r.now(); if (each) each(frame, rigged); },
   });
   return { ...result, ...rigged, wireAt, stats: rigged.r.queue.stats() };
@@ -1229,6 +1229,33 @@ test('a line that would still be going when the call at the wire is due is left 
     assert.deepEqual([r.log.filter(x => x.ev === 'stop').length, r.queue.stats().cut, r.queue.stats().unfit], [0, 0, saidIt ? 0 : 1], `with ${room} s to the wire`);
     assert.ok(speaks[speaks.length - 1].t - wireAt <= 200, `with ${room} s to the wire, the call at the wire came ${speaks[speaks.length - 1].t - wireAt} ms late`);
   }
+});
+
+test("after a change of speed Joe's worker makes the lines still to come, and none that has been said", () => {
+  // The plan made again has every line of the race in it, the ones said already too, and at 2x and 4x each
+  // of those has half or a quarter of the room it had. Their clips were taken to be too long for it and
+  // were made again, twice each, before the first new line was made at all: twelve seconds into a race
+  // that was eight clips and six seconds of the worker's time, and the first two lines at the new speed
+  // came up with no clip and went unsaid. A line that has come up keeps the clip it has.
+  const races = recorded('test-joe', 1);
+  let later = 0, unmade = 0;
+  for (const race of races) {
+    for (const speed of [2, 4]) {
+      let changedAt = null;
+      const { cameUp, asked, stats } = joeReplay(race, { rate: 1 / 3, ahead: true, each(frame, { r: me }) {
+        if (changedAt === null && frame.clock > 12) { changedAt = me.now(); frame.setSpeed(speed); }
+      } });
+      const at = `${race.no} at ${speed}x`;
+      const before = new Set([...cameUp].filter(([, x]) => x.now <= changedAt).map(([line]) => line.say));
+      const after = asked.filter(a => a.at >= changedAt);
+      assert.ok(before.size >= 4 && after.length > 0, `${at}: ${before.size} lines said before the change, ${after.length} clips made after it`);
+      const again = after.filter(a => before.has(a.say));
+      assert.deepEqual(again.map(a => [a.say, a.speed]), [], `${at}: lines already said were made again`);
+      later += [...cameUp.values()].filter(x => x.now > changedAt).length; unmade += stats.unmade;
+    }
+  }
+  if (process.env.NUMBERS) console.log(`Joe, 2x or 4x twelve seconds in: ${later} lines came up after the change, ${unmade} left out because their clip wasn't made in time`);
+  assert.ok(later > 100 && unmade <= later / 25, `${unmade} lines left out of ${later}`);
 });
 
 test('watched at 2x and 4x, Joe says what he has had time to make: nothing is cut off for it, and the winner is always called', () => {
