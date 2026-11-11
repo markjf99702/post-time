@@ -1302,8 +1302,8 @@ await page.waitForSelector('.races');
 
 // The running order on a phone, with the day's biggest field: every number is on the screen, at the gate
 // and in the middle of the race, 320 wide and 390 wide (with nine or more runners the row used to run off
-// the right edge). A field too big for one row has two, and the picture is the same size at the gate as in
-// the race. There are no margins for the first four seconds. Following a horse names it under the buttons.
+// the right edge). A field too big for one row has two, the strip is as tall at the gate as it ever gets, and
+// the picture is the same size at the gate as in the race. There are no margins for the first four seconds. Following a horse names it under the buttons.
 {
   const ctx3 = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
   const phone = await ctx3.newPage();
@@ -1318,7 +1318,7 @@ await page.waitForSelector('.races');
     await phone.evaluate(no => window.postTime.nav.go('watch', { no }), biggest);
     await phone.waitForSelector('.watch:not([hidden]) canvas.scene');
     const strip = await phone.evaluate(async () => {
-      const w = window.__watch, out = { field: w.run.n, off: [], stage: new Set(), rows: new Set(), margins: {} };
+      const w = window.__watch, out = { field: w.run.n, off: [], stage: new Set(), rows: new Set(), tall: new Set(), margins: {} };
       const frames = async n => { for (let i = 0; i < n; i++) await new Promise(r => requestAnimationFrame(r)); };
       w.pause();
       for (const t of [-3, 2.5, 6, 20, w.winT - 14, w.winT - 6, w.winT - 1]) {
@@ -1329,6 +1329,7 @@ await page.waitForSelector('.races');
         if (buttons.length !== w.run.n) out.off.push(`${buttons.length} numbers at ${t.toFixed(0)} s`);
         out.stage.add(Math.round(document.querySelector('.w-stage').getBoundingClientRect().height));
         out.rows.add(new Set(buttons.map(b => Math.round(b.getBoundingClientRect().top))).size);
+        out.tall.add(Math.round(document.querySelector('.order').getBoundingClientRect().height));
         out.margins[Math.round(t)] = document.querySelectorAll('.order .gap').length;
       }
       // Follow the last horse in the order, and stop following it.
@@ -1342,11 +1343,11 @@ await page.waitForSelector('.races');
       out.leaders = /^Tap a number in the running order/.test(hint.textContent);
       await frames(3);
       out.stage.add(Math.round(document.querySelector('.w-stage').getBoundingClientRect().height));
-      return { ...out, stage: [...out.stage], rows: [...out.rows], two: document.querySelector('.order').classList.contains('two'), sideways: document.getElementById('watch').scrollWidth > innerWidth };
+      return { ...out, stage: [...out.stage], rows: [...out.rows], tall: [...out.tall], sideways: document.getElementById('watch').scrollWidth > innerWidth };
     });
     assert.deepEqual(strip.off, [], `${width} wide, ${strip.field} runners: running-order numbers off the screen`);
     assert.equal(strip.stage.length, 1, `${width} wide: the picture changes size as the running order does: ${strip.stage}`);
-    assert.ok(Math.max(...strip.rows) <= (strip.two ? 2 : 1) && !strip.sideways, `${width} wide, ${strip.field} runners: the running order takes ${strip.rows} rows`);
+    assert.ok(Math.max(...strip.rows) <= 2 && strip.tall.length === 1 && !strip.sideways, `${width} wide, ${strip.field} runners: the running order takes ${strip.rows} rows, and is ${strip.tall} px tall`);
     assert.deepEqual([strip.margins[-3], strip.margins[3], strip.margins[6], strip.margins[20]], [0, 0, strip.field - 1, strip.field - 1], `${width} wide: margins in the first four seconds, or none after`);
     assert.deepEqual([strip.following, strip.ring, strip.leaders], [true, true, true], "following a horse isn't shown under the buttons or with an amber ring");
     await phone.evaluate(() => window.postTime.nav.go('card'));
@@ -1440,6 +1441,57 @@ await page.waitForSelector('.races');
   }
   assert.deepEqual(missed, [], 'a mouse press held 150 ms on a running-order number did not follow that horse');
   await ctx4.close();
+}
+
+// The race screen at the sizes of window it's watched in.
+{
+  const ctx6 = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, hasTouch: true });
+  const win = await ctx6.newPage();
+  win.on('pageerror', e => problems.push(e.message));
+  win.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
+  await win.goto(base, { waitUntil: 'domcontentloaded' });
+  await win.waitForSelector('.races', { timeout: 60000 });
+  await win.evaluate(() => document.fonts.ready);
+  const biggest = await win.evaluate(() => { const { game, card, save } = window.postTime; game.player.settings.sound = false; save(); return card().races.reduce((a, r) => (r.entries.length > a.entries.length ? r : a)).no; });
+  const watch = async (width, height, no = biggest) => {
+    await win.setViewportSize({ width, height });
+    await win.evaluate(no => window.postTime.nav.go('watch', { no }), no);
+    await win.waitForSelector('.watch:not([hidden]) canvas.scene');
+    await win.evaluate(() => window.__watch.pause());
+  };
+  const card = async () => { await win.evaluate(() => window.postTime.nav.go('card')); await win.waitForSelector('.races'); };
+
+  // A phone on its side, with the day's biggest field: the running order and the call are in a column beside
+  // the picture, and neither moves as the lines of the call come and go. The running order has the room at
+  // the gate for the rows it will need (three, for eleven in that column), every number is in the column,
+  // and no line spills out of the call's box. (The running order had whatever room the call left it: over
+  // one call the call's top edge moved on 23 of 27 lines, and at 667 wide the running order was cut on two.)
+  for (const [width, height] of [[844, 390], [667, 375]]) {
+    await watch(width, height);
+    const col = await win.evaluate(async () => {
+      const w = window.__watch, out = { field: w.run.n, lines: w.call.lines.length, top: new Set(), tall: new Set(), spill: 0, cut: 0, off: 0 };
+      const frames = async n => { for (let i = 0; i < n; i++) await new Promise(r => requestAnimationFrame(r)); };
+      const strip = document.querySelector('.order'), box = document.querySelector('.call');
+      for (const line of w.call.lines) {
+        w.setT(w.t0 + line.t + 0.05);
+        await frames(3);
+        const at = strip.getBoundingClientRect();
+        out.top.add(Math.round(box.getBoundingClientRect().top));
+        out.tall.add(Math.round(at.height));
+        out.spill = Math.max(out.spill, box.scrollHeight - box.clientHeight);
+        if (strip.scrollHeight > strip.clientHeight + 1) out.cut++;
+        out.off += [...strip.querySelectorAll('button')].filter(b => { const r = b.getBoundingClientRect(); return r.left < at.left || r.right > at.right || r.bottom > at.bottom + 0.5; }).length;
+      }
+      const stage = document.querySelector('.w-stage').getBoundingClientRect();
+      return { ...out, top: [...out.top], tall: [...out.tall], beside: box.getBoundingClientRect().left >= stage.right - 0.5 };
+    });
+    assert.ok(col.beside && col.lines > 8, `${width} by ${height}: the call isn't beside the picture, or the call has ${col.lines} lines`);
+    assert.deepEqual([col.top.length, col.tall.length], [1, 1], `${width} by ${height}, ${col.field} runners: the call's top edge is at ${col.top} px and the running order is ${col.tall} px tall over one call`);
+    assert.deepEqual([col.cut, col.off], [0, 0], `${width} by ${height}, ${col.field} runners: the running order is cut, or has numbers outside it`);
+    assert.ok(col.spill <= 1, `${width} by ${height}: a line of the call spills ${col.spill}px out of its box`);
+    await card();
+  }
+  await ctx6.close();
 }
 
 // The ticket just bought prints where it can be seen: once the page has come to rest it is whole between the

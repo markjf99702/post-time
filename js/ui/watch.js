@@ -207,16 +207,18 @@ export function renderWatch(el, nav, params) {
     }
   }
 
-  // A field too big for one row of the running order on this screen gets two (it used to run off the
-  // right edge, three horses of eleven on a phone, with nothing to say so). Whether it will is worked out
-  // at the gate from the widest the row gets, a margin before every number, and the room for two rows is
-  // kept from then on, so the picture above never changes size as the margins come and go. The line under
-  // the buttons keeps the room its longest wording needs, for the same reason.
+  // A field too big for one row of the running order gets two, or three in the narrow column beside the
+  // picture (it used to run off the right edge, three horses of eleven on a phone, with nothing to say so).
+  // How many is worked out at the gate, and again when the screen turns: a copy of the strip at its real
+  // width, with a margin before every number, the widest it gets, is left to wrap, and the room it takes is
+  // kept from then on. So the picture above, and the call below, never move as the margins come and go.
+  // (A few pixels are held back for the margins wider than this one.) The line under the buttons keeps the
+  // room its longest wording needs, for the same reason.
   function fitOrder() {
-    const probe = h('div', { class: 'order', 'aria-hidden': 'true', style: { position: 'absolute', left: '0', right: '0', visibility: 'hidden', flexWrap: 'nowrap' } },
+    const probe = h('div', { class: 'order', 'aria-hidden': 'true', style: { position: 'absolute', left: '0', top: '0', width: `${order.offsetWidth - 6}px`, visibility: 'hidden' } },
       runners.map((r, k) => h('span', { class: 'slot' }, k ? h('span', { class: 'gap' }, '2¼') : null, h('button', { type: 'button', tabindex: '-1' }, cloth(r.number, 'sm')))));
     el.append(probe);
-    order.classList.toggle('two', probe.scrollWidth > order.clientWidth + 0.5);
+    order.style.minHeight = `${probe.offsetHeight}px`;
     probe.remove();
     hint.style.minHeight = '';
     hint.textContent = HINT;

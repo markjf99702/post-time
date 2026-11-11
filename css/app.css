@@ -467,12 +467,12 @@ a { color: var(--link); }
 .w-photo .w-flash.under.up { visibility: visible; animation: popin .35s ease-out; }
 @keyframes popin { from { transform: scale(.6); opacity: 0; } }
 /* The running order: each number with the margin to the one in front before it. A field too big for one row
-   on this screen has two (the race screen marks it at the gate), with the room for both kept from then on. */
+   at this width has two or three: the race screen works out at the gate how many, and keeps the room for
+   them from then on. */
 .order {
   display: flex; flex-wrap: wrap; gap: 6px 3px; padding: 8px 10px; background: #161c17; align-items: center; align-content: center;
   min-height: 52px;
 }
-.order.two { min-height: 78px; }
 .order .slot { display: flex; align-items: center; gap: 3px; flex: none; }
 .order button { background: none; border: 0; padding: 2px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; flex: none; border-radius: 6px; }
 /* A thin light edge, so the black 6 shows on the dark strip (3.5:1 against it). Yours has a white ring; the one
@@ -514,12 +514,16 @@ a { color: var(--link); }
   .w-stage { flex-basis: min(62vh, 56vw); }
   .call { font-size: 22px; flex-basis: calc(2.6em + 39px); }
 }
+/* A phone on its side: the picture on the left, and the running order, the call and the buttons in a column
+   on the right. The running order keeps the height it was given at the gate and the call has what's left, so
+   neither moves as the lines come and go. (The running order had what was left and the call its own height:
+   the call's top edge moved on 23 of 27 lines, anywhere from 131 to 224 px down.) */
 @media (orientation: landscape) and (max-height: 520px) {
-  .watch { display: grid; grid-template-columns: 1fr 260px; grid-template-rows: auto 1fr auto auto; }
+  .watch { display: grid; grid-template-columns: minmax(0, 1fr) 260px; grid-template-rows: auto auto minmax(60px, 1fr) auto; }
   .w-top { grid-column: 1 / -1; padding: 4px 10px; }
   .w-stage { grid-row: 2 / span 3; height: auto; }
-  .order { grid-column: 2; grid-row: 2; flex-wrap: wrap; align-content: flex-start; overflow: auto; }
-  .call { grid-column: 2; grid-row: 3; font-size: 15px; min-height: 60px; }
+  .order { grid-column: 2; grid-row: 2; align-content: flex-start; }
+  .call { grid-column: 2; grid-row: 3; font-size: 15px; }
   .w-ctl { grid-column: 2; grid-row: 4; padding: 6px 10px; }
   .w-ctl .hint { display: none; }
 }
