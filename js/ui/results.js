@@ -42,7 +42,7 @@ export function renderResult(root, nav, params) {
         const back = settled.returns[i];
         return h('div', { class: `ticket ${back > 0 ? 'cashed' : 'lost'}` },
           h('div', {}, h('div', { class: 'what' }, `$${b.amt} ${BET_NAMES[b.type].toUpperCase()} ${label}`), h('div', { class: 'small' }, `COST ${money(b.cost)}`)),
-          back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : h('span', { class: 'small' }, 'torn up'),
+          back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : h('span', { class: 'small torn' }, 'torn up'),
         );
       })),
       // The race that left you without the price of a ticket says so, with the way to the ATM.

@@ -559,7 +559,7 @@ function ticketList(race, open, changed) {
         h('div', { class: 'what' }, `$${b.amt} ${BET_NAMES[b.type].toUpperCase()} ${label}`),
         h('div', { class: 'small' }, `LRK R${race.no} · ${sel.map(n => horseOf(race.entries.find(e => e.pp === n)).name).join(' / ')} · COST ${money(b.cost)}`),
       ),
-      back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : back === 0 ? h('span', { class: 'small' }, 'no luck') : open ? h('button', { type: 'button', onclick: () => { cancelBet(race, i); changed(); } }, 'Cancel') : null,
+      back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : back === 0 ? h('span', { class: 'small torn' }, 'torn up') : open ? h('button', { type: 'button', onclick: () => { cancelBet(race, i); changed(); } }, 'Cancel') : null,
     ));
   });
   return wrap;

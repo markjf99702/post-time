@@ -1296,6 +1296,43 @@ await page.waitForSelector('.races');
     await shop.locator('.ticket button').first().click();
     assert.deepEqual([await shop.locator('.ticket').count(), await printing()], [width === 390 ? 2 : 4, 0], 'cancelling a ticket prints another one again');
   }
+
+  // A losing ticket is torn where nothing is printed: the tear runs down the gutter before the words
+  // "torn up", on the result and on the Bet tab, on this small phone. (It was cut at 51 to 59% of the width,
+  // through the horses' numbers: "5, 7, 2, 1" read "5, , 2, 1".) A trifecta box on the last four home is the
+  // longest thing a ticket says. Where the tear is, is read from the ticket's own outline.
+  const last4 = await shop.evaluate(async () => {
+    const { simulateRace } = await import('./js/world.js');
+    const { game, card } = window.postTime;
+    return simulateRace(card().races[0], game.world, { record: true }).results.map(r => r.h).slice(-4);
+  });
+  await shop.locator('.seg button', { hasText: /^Trifecta box$/ }).click();
+  for (const i of last4) await shop.locator('.pick-row').nth(0).locator('button').nth(i).click();
+  await shop.click('.builder .btn');
+  await shop.evaluate(() => { window.postTime.nav.go('watch', { no: 1 }); window.postTime.nav.go('result', { no: 1 }); });
+  await shop.waitForSelector('.official .ticket.lost');
+  const torn = () => shop.evaluate(() => [...document.querySelectorAll('.ticket.lost')].map(t => {
+    const box = t.getBoundingClientRect();
+    // The outline's corners that aren't at the ticket's own edges are the tear.
+    const xs = [...getComputedStyle(t).clipPath.matchAll(/(calc\(100% - ([\d.]+)px\)|([\d.]+)%|([\d.]+)px) [\d.]+(?:%|px)/g)]
+      .map(m => (m[2] ? box.width - m[2] : m[3] ? box.width * m[3] / 100 : +m[4])).filter(x => x > 1 && x < box.width - 1);
+    const from = box.left + Math.min(...xs), to = box.left + Math.max(...xs);
+    const print = [];
+    for (const el of t.querySelectorAll('.what, .small')) {
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      print.push(...[...r.getClientRects()].map(q => ({ left: q.left, right: q.right, text: el.textContent })));
+    }
+    return { corners: xs.length, cut: print.filter(q => q.right > from && q.left < to).map(q => q.text), label: [...t.children].pop().textContent, alone: print.filter(q => q.left >= to).map(q => q.text).join() };
+  }));
+  for (const where of ['the result', 'the Bet tab']) {
+    const tickets = await torn();
+    assert.ok(tickets.length >= 3 && tickets.every(t => t.corners === 8), `${where}: ${tickets.length} torn tickets, with ${tickets.map(t => t.corners)} corners to their tears`);
+    assert.deepEqual(tickets.flatMap(t => t.cut), [], `${where}: the tear in a losing ticket goes through its print`);
+    assert.deepEqual([...new Set(tickets.map(t => `${t.label} | ${t.alone}`))], ['torn up | torn up'], `${where}: a losing ticket's right-hand piece should say "torn up" and nothing else`);
+    await shop.evaluate(() => window.postTime.nav.go('race', { no: 1, tab: 'bet' }));
+    await shop.waitForSelector('.tickets .ticket.lost');
+  }
   await ctx5.close();
 }
 

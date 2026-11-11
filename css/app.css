@@ -337,7 +337,20 @@ a { color: var(--green-2); }
 @keyframes print { from { transform: translateY(-14px); clip-path: inset(0 0 100% 0); } to { transform: none; clip-path: inset(0); } }
 .ticket.cashed { background-color: #eaf5e4; }
 .ticket.cashed .stamp { color: #2d7a3e; border: 2px solid #2d7a3e; padding: 2px 6px; border-radius: 4px; transform: rotate(-6deg); font-weight: 700; }
-.ticket.lost { opacity: .6; clip-path: polygon(0 0, 55% 0, 51% 30%, 57% 58%, 52% 100%, 0 100%, 0 0, 100% 0, 100% 100%, 54% 100%, 59% 60%, 53% 32%, 57% 0); }
+/* A losing ticket, torn in two. The tear runs down the gutter between the print and the words "torn up", which
+   have a column of their own of a fixed width, so it never goes through a letter or a horse's number. (It was cut
+   at 51 to 59% of the ticket's width, through whatever was printed there: "5, 7, 2, 1" read "5, , 2, 1".) The ink
+   and the stripe fade and the paper stays paper, a shade duller so the tear shows on a light card. (The whole
+   ticket used to be faded, which made it a grey slab in the dark.) */
+.ticket.lost {
+  --torn: #f3ecd6; background-color: var(--torn); background-image: radial-gradient(circle at 0 50%, transparent 5px, var(--torn) 5.5px);
+  color: #6f6551; grid-template-columns: minmax(0, 1fr) 56px; column-gap: 16px;
+  clip-path: polygon(0 0, calc(100% - 78px) 0, calc(100% - 82px) 30%, calc(100% - 75px) 58%, calc(100% - 80px) 100%, 0 100%, 0 0,
+    100% 0, 100% 100%, calc(100% - 75px) 100%, calc(100% - 70px) 60%, calc(100% - 77px) 32%, calc(100% - 73px) 0);
+}
+.ticket.lost::before { background: repeating-linear-gradient(#dba79f 0 6px, var(--torn) 6px 10px); }
+.ticket.lost .small { color: #746a56; }
+.ticket.lost .torn { text-align: right; white-space: nowrap; }
 
 .post-bar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
