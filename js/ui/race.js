@@ -628,7 +628,7 @@ function toteBoard(race) {
     const move = now < line - 1e-9 ? 'in' : now > line + 1e-9 ? 'out' : '';
     const said = move === 'in' ? 'shorter than' : move === 'out' ? 'longer than' : 'the same as';
     grid.append(h('div', { class: `tote-cell${i === fav ? ' fav' : ''}`, data: { i } },
-      h('div', { class: 'top' }, cloth(e.pp, 'sm'), i === fav ? h('span', { class: 'fav-tag', 'aria-hidden': 'true' }, 'FAV') : null),
+      h('div', { class: 'tc-top' }, cloth(e.pp, 'sm'), i === fav ? h('span', { class: 'fav-tag', 'aria-hidden': 'true' }, 'FAV') : null),
       // The horse's name, where the board has room for it (the stylesheet shows it from a tablet's width up).
       h('div', { class: 'nm' }, horseOf(e).name),
       h('div', { class: 'odds' }, odds[i]),
