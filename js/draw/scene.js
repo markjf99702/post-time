@@ -6,7 +6,7 @@
 
 import { drawHorse, NOSE } from './horse.js';
 import { stateAt, RAIL } from '../sim.js';
-import { poles, headingAt, mapPoint, COURSES, STRAIGHT, FINISH_FROM_TOP } from '../track.js';
+import { poles, headingAt, mapPoint, COURSES, STRAIGHT, FINISH_FROM_TOP, LENGTH } from '../track.js';
 import { CLOTH } from '../data.js';
 import { rng } from '../rng.js';
 
@@ -126,7 +126,11 @@ export class RaceScene {
     const cap = toGo < 450 ? Math.min(maxSpan, aspect > 1.4 ? 26 : aspect > 0.9 ? 17 : 15) : maxSpan;
     let span = Math.max(minSpan, Math.min(cap, lead.p - tail + 13));
     let x = lead.p + 5 - span / 2;
-    // After the wire, let them run out of the picture.
+    // Once the winner is past the wire the camera stays on it, the wire a little right of the middle, until
+    // the third horse is home (it used to follow the winner out, and the placings were decided off the
+    // picture). Then they run out of the picture.
+    const third = run.results[Math.min(2, run.results.length - 1)];
+    if (lead.p >= D - 2 && t < run.t0 + third.time + 0.8) return { x: Math.min(x, D - 0.12 * span), span, hold: true };
     if (lead.p > D + 30) x = Math.min(x, D + 30 + (lead.p - D - 30) * 0.3);
     return { x, span };
   }
@@ -143,7 +147,10 @@ export class RaceScene {
     if (!this.cam || this.lastT === null || realDt > 1.5) this.cam = { off, span: tg.span };
     else {
       const k = 1 - Math.exp(-realDt * 2.5);
-      this.cam.off += (off - this.cam.off) * k;
+      // (Held on the wire, it eases to a place on the ground, not to a place by the leader, which would leave
+      // it trailing several metres behind a still target.)
+      if (tg.hold) { const at = ref + this.cam.off; this.cam.off = at + (tg.x - at) * k - ref; }
+      else this.cam.off += (off - this.cam.off) * k;
       this.cam.span += (tg.span - this.cam.span) * k * 0.7;
     }
     this.cam.x = ref + this.cam.off;
@@ -648,13 +655,16 @@ export class RaceScene {
       ctx.fill();
     }
     let zPrev = Infinity;
-    const marked = [];
+    const marked = [], away = [];
     for (const h of order) {
       this.gateParts(h.z, zPrev);
       zPrev = h.z;
       const x = this.hx(h.p, h.z), y = this.py(0, h.z);
       const k = this.f / h.z;
-      if (x < -3 * k || x > W + 3 * k) continue;
+      if (x < -3 * k || x > W + 3 * k) {
+        if (this.runners[h.i].mine && t > 2) away.push({ h, ahead: x > W });
+        continue;
+      }
       // Clods of dirt thrown up behind.
       if (h.v > 8 && t > 0) {
         ctx.fillStyle = dustColor + '0.35)';
@@ -683,6 +693,49 @@ export class RaceScene {
     // (it was a plain white triangle, the same for every ticket): ringed in white, or in amber for the one
     // followed, as its number is in the running order. Drawn after all the horses, so none is hidden.
     for (const m of marked) this.drawChip(m);
+    // A horse of yours out of the picture (left behind in a runaway, say) is a marker at the picture's edge:
+    // its number, which way it is, and how far it is from the leader, in lengths.
+    const lead = Math.max(...st.map(s => s.p));
+    away.sort((a, b) => b.h.p - a.h.p).forEach(({ h, ahead }, n) => {
+      const behind = (lead - NOSE - h.p) / LENGTH;
+      this.drawEdge({ r: this.runners[h.i], ahead, n, text: ahead ? '' : behind < 0.75 ? '' : `${Math.round(behind)} L` });
+    });
+  }
+
+  drawEdge({ r, ahead, n, text }) {
+    const { ctx, W } = this;
+    const [bg, fg] = CLOTH[r.number] || CLOTH[1];
+    // (Above the horses' heads, over the infield, so it's never on top of a horse at the edge.)
+    const hgt = 18, y = this.hor + 0.42 * (this.py(0, this.zRail) - this.hor) - hgt - n * (hgt + 6);
+    ctx.font = '700 13px Oswald, sans-serif';
+    const num = String(r.number);
+    const nw = Math.max(16, ctx.measureText(num).width + 8);
+    ctx.font = '600 12px Oswald, sans-serif';
+    const tw = text ? ctx.measureText(text).width + 8 : 0;
+    const wid = 14 + nw + tw + 4;
+    const x0 = ahead ? W - wid - 4 : 4;
+    ctx.fillStyle = 'rgba(14,18,15,.82)';
+    ctx.beginPath();
+    if (ahead) { ctx.moveTo(x0, y); ctx.lineTo(x0 + wid - 8, y); ctx.lineTo(x0 + wid, y + hgt / 2); ctx.lineTo(x0 + wid - 8, y + hgt); ctx.lineTo(x0, y + hgt); }
+    else { ctx.moveTo(x0 + 8, y); ctx.lineTo(x0 + wid, y); ctx.lineTo(x0 + wid, y + hgt); ctx.lineTo(x0 + 8, y + hgt); ctx.lineTo(x0, y + hgt / 2); }
+    ctx.closePath();
+    ctx.fill();
+    const nx = ahead ? x0 + 4 : x0 + 12;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(nx, y + 2, nw, hgt - 4);
+    ctx.fillStyle = bg;
+    ctx.fillRect(nx + 1.5, y + 3.5, nw - 3, hgt - 7);
+    ctx.fillStyle = fg;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '700 12px Oswald, sans-serif';
+    ctx.fillText(num, nx + nw / 2, y + hgt / 2 + 0.5);
+    if (text) {
+      ctx.fillStyle = '#f1ead6';
+      ctx.font = '600 12px Oswald, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(text, nx + nw + 5, y + hgt / 2 + 0.5);
+    }
   }
 
   drawChip({ x, y, k, r, follow }) {

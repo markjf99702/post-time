@@ -7,7 +7,7 @@ import { photoFinish } from '../draw/photo.js';
 import { stateAt, runningOrder } from '../sim.js';
 import { FURLONG } from '../track.js';
 import { marginShort, marginText, fmtTime, fmtClock } from '../chart.js';
-import { game, save, goToGate, recordingOf, memoKey, callFor, runnersFor, raceLabel, horseOf, myBets, betCost, multiFor, multiState, multiNumbers } from '../game.js';
+import { game, save, goToGate, raceKey, recordingOf, memoKey, callFor, runnersFor, raceLabel, horseOf, myBets, betCost, multiFor, multiState, multiNumbers } from '../game.js';
 import { BET_NAMES } from '../tote.js';
 import { clockText } from '../world.js';
 import { pace, climb, officialLine, SLOW, SKIP_TO } from '../call.js';
@@ -113,7 +113,10 @@ export function renderWatch(el, nav, params) {
     callerBtn.setAttribute('aria-pressed', String(on));
     save();
   } }, micIcon());
-  const skipBtn = h('button', { type: 'button', onclick: skip }, 'Skip ▸▸');
+  // Skip says what it will do: from the gate on, to the stretch (twelve seconds from the wire); from there, to
+  // the finish.
+  const skipBtn = h('button', { type: 'button', class: 'skip', onclick: skip }, 'To the stretch ▸▸');
+  const skipLabel = () => { const say = T < winT - SKIP_TO ? 'To the stretch ▸▸' : 'To the finish ▸▸'; if (skipBtn.textContent !== say) skipBtn.textContent = say; };
   // Pause holds everything where it is: the race and its clock, the caller (mid-line: he goes on from the
   // next one) and the sound. The space bar does the same, anywhere on the race screen but on another button.
   // (A picture, like the Caller's microphone, so the row of buttons still fits a phone on one line.)
@@ -225,6 +228,8 @@ export function renderWatch(el, nav, params) {
     }
     scene.draw(Math.max(0, T));
     scene.drawMap(mapC.getContext('2d'), mapC.width, mapC.height, Math.max(0, T));
+
+    skipLabel();
 
     // Clock and fractions.
     clock.textContent = T < 0 ? clockText(race.post) : clockT < 0 ? '0:00.0' : fmtClock(Math.min(clockT, run.results[0].time));
@@ -486,14 +491,41 @@ export function renderWatch(el, nav, params) {
     if (w !== photo.w) photoFinish(pc, { run, runners, width: photo.w = w, height: Math.round(w * 0.6) });
   }
 
+  // The result, put up with the official sign the way an infield board does: the first four, each with its
+  // number, its name and the margin to the one ahead, and the final time to the hundredth, over the picture,
+  // which is dimmed under it (the horses hang in mid-stride there). After a photo it comes up once the photo
+  // has had its few seconds with the sign under it. The tickets' line says how each one did.
+  let board = null;
+  function showBoard() {
+    if (board || gone) return;
+    if (photo) { // the photo gives way, and what was under it is shown again
+      photo.box.remove();
+      for (const x of [frsRow, order]) x.style.visibility = '';
+      photo = null;
+    }
+    const rows = run.results.slice(0, 4).map((r, k) => {
+      const who = runners[r.h];
+      return h('div', { class: 'row' }, h('span', { class: 'pos' }, String(k + 1)), cloth(who.number, 'sm'), h('span', { class: 'nm' }, who.name), h('span', { class: 'mg' }, k ? marginShort(r.toPrev) : ''));
+    });
+    board = h('div', { class: 'w-board', role: 'status' },
+      h('div', { class: 'card' },
+        h('div', { class: 'w-flash official' }, 'OFFICIAL'),
+        ...rows,
+        h('div', { class: 'time' }, `Time ${fmtTime(run.results[0].time)}`),
+      ),
+    );
+    stage.querySelector('.w-flash')?.remove();
+    stage.append(board);
+    if (mineList) { const tall = mineList.offsetHeight; mineList.settle(); if (mineList.offsetHeight > tall) mineList.classList.add('sum'); }
+  }
+
   function finish() {
     ended = true;
     endedAt = performance.now();
     audio.raceOver();
     setTimeout(() => audio.stopRace(), 2500);
-    const flash = h('div', { class: 'w-flash' }, call.photo ? 'PHOTO' : 'OFFICIAL');
-    if (!call.photo) flash.classList.add('official');
-    stage.append(flash);
+    if (call.photo) stage.append(h('div', { class: 'w-flash' }, 'PHOTO'));
+    else showBoard();
     const done = () => {
       doneBtn.hidden = false;
       skipBtn.hidden = true;
@@ -507,7 +539,7 @@ export function renderWatch(el, nav, params) {
     };
     if (call.photo) {
       setTimeout(() => {
-        flash.remove();
+        stage.querySelector('.w-flash')?.remove();
         const pc = h('canvas');
         const first = runners[run.results[0].h], second = runners[run.results[1].h];
         // The official sign goes up under the caption, clear of the photo. Its room is there from the start,
@@ -527,6 +559,7 @@ export function renderWatch(el, nav, params) {
           if (call.official && !gone) showLine(officialLine(call.official, call.officialSay), now.textContent);
           done();
           announceResult();
+          setTimeout(showBoard, 3000);
         };
         // The sign waits for the caller's last line (second, third and the time) to be over, by the time
         // it was planned to take. Watched at 2x or 4x the recording is done well before he is, and the
@@ -655,7 +688,27 @@ function myTickets(race) {
   const paid = [...bets, ...here].reduce((sum, b) => sum + (b.cost ?? betCost(b)), 0);
   const alive = multi.filter(x => x.st === 'alive').map(x => `${SHORT[x.t.type]} alive`);
   const count = bets.length + here.length ? [`Your tickets: ${bets.length + here.length}, ${money(paid)}`] : [];
-  return h('div', { class: 'w-tix' }, full, h('span', { class: 'count' }, [...count, ...alive].join(' · ')));
+  const box = h('div', { class: 'w-tix' }, full, h('span', { class: 'count' }, [...count, ...alive].join(' · ')));
+  // With the official sign, each ticket's line says how it did: "$2 Win 3: paid $7.40", "lost"; a double or
+  // Pick 3 that goes on to a later race, "alive" or "out". (A winning ticket was marked only by the cash
+  // window's ring, which a phone on silent never plays.) The short screen's count says what they paid.
+  box.settle = () => {
+    const returns = game.player.settled[raceKey(race)]?.returns || [];
+    const winner = race.result.order[0].k;
+    const said = [
+      ...bets.map((b, i) => (returns[i] > 0 ? `paid ${money(returns[i])}` : 'lost')),
+      ...multi.map(({ t }) => {
+        const last = t.legs[t.legs.length - 1] === race.no;
+        if (last) return t.back > 0 ? `paid ${money(t.back)}` : 'lost';
+        return t.sel[t.legs.indexOf(race.no)].includes(winner) ? 'alive' : 'out';
+      }),
+    ];
+    const back = returns.reduce((a, r) => a + r, 0) + multi.filter(x => x.t.legs[x.t.legs.length - 1] === race.no).reduce((a, x) => a + (x.t.back || 0), 0);
+    clear(full);
+    full.append('Your tickets: ', ...lines.map((l, i) => h('span', { class: said[i].startsWith('paid') ? 'won' : '' }, `${i ? ' · ' : ''}${l.replace(/: alive$/, '')}: ${said[i]}`)));
+    box.lastChild.textContent = back > 0 ? `Your tickets paid ${money(back)}` : said.includes('alive') ? `Your ${multi.filter((x, i) => said[bets.length + i] === 'alive').map(x => SHORT[x.t.type]).join(' and ')} alive` : 'Your tickets: none paid';
+  };
+  return box;
 }
 const SHORT = { dd: 'Double', p3: 'Pick 3' };
 

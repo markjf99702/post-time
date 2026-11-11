@@ -542,6 +542,22 @@ a { color: var(--link); }
 }
 .w-flash.official { background: #f3ecd8; color: #1f4d3a; }
 @keyframes pop { from { transform: translate(-50%, -50%) scale(.6); opacity: 0; } }
+/* The result with the official sign, over the picture, dimmed under it: the first four and the time, the way
+   an infield board puts them up. */
+.w-board { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; background: rgba(8,10,8,.5); animation: fadein .4s; padding: 8px; }
+.w-board .card { background: rgba(14,20,16,.92); border: 1px solid rgba(243,236,216,.25); border-radius: 10px; padding: 10px 12px 8px; min-width: min(300px, 100%); max-width: 100%; box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+.w-board .w-flash.official { position: static; transform: none; display: block; text-align: center; font-size: 26px; padding: 6px 14px; margin-bottom: 8px; animation: popin .35s ease-out; }
+.w-board .row { display: grid; grid-template-columns: 1.1em auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 3px 0; font: 500 15px/1.2 var(--display); letter-spacing: .04em; color: #f1ead6; }
+.w-board .pos { color: var(--amber); text-align: right; font-variant-numeric: tabular-nums; }
+.w-board .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
+.w-board .mg { color: #c9c2ad; font-size: 13.5px; min-width: 2.2em; text-align: right; }
+.w-board .time { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(243,236,216,.18); font: 500 14px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: #c9c2ad; text-align: right; font-variant-numeric: tabular-nums; }
+/* On a short picture the board is closer set, so it stays inside it. */
+.w-stage.small .w-board .w-flash.official { font-size: 18px; padding: 3px 10px; margin-bottom: 4px; }
+.w-stage.small .w-board .row { padding: 1px 0; font-size: 13.5px; }
+.w-stage.small .w-board .card { padding: 6px 10px 5px; }
+.w-stage.small .w-board .time { margin-top: 3px; padding-top: 3px; font-size: 12.5px; }
+.w-tix .won { color: #f5d77a; }
 /* The photo finish, in a box of its own over the picture (and over what's under the picture, where the
    picture is too short for it): the race screen places the box and draws the photo the size it's shown here. */
 .w-photo { position: absolute; z-index: 2; display: flex; align-items: center; justify-content: center; background: rgba(8,10,8,.82); flex-direction: column; gap: 8px; padding: 8px 10px; }

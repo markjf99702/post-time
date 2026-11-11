@@ -174,9 +174,38 @@ const apart = await page.evaluate(async () => {
   scene.drawMap(mctx, 220, 108, run.t0 + 30);
   c.remove();
   const pp = n => String(race.entries[n].pp);
-  return { gate: gap(0), running: gap(10), wide: scene.drawnOff(RAIL + 30, 10) <= scene.zRail - 26 - 0.8 + 1e-9, numbers: said.filter(x => x === pp(2) || x === pp(4)).length, rings: rings.slice(-4) };
+  return { gate: gap(0), running: gap(10), wide: scene.drawnOff(RAIL + 30, 10) <= scene.zRail - 26 - 0.8 + 1e-9, numbers: said.includes(pp(2)) && said.includes(pp(4)), rings: rings.slice(-4) };
 });
-assert.deepEqual(apart, { gate: 1, running: 1.9, wide: true, numbers: 2, rings: [4.2, 6, 4.2, 6] }, 'horses side by side are drawn on top of each other, or yours is not marked with its number and drawn last on the map, ringed');
+assert.deepEqual(apart, { gate: 1, running: 1.9, wide: true, numbers: true, rings: [4.2, 6, 4.2, 6] }, 'horses side by side are drawn on top of each other, or yours is not marked with its number and drawn last on the map, ringed');
+
+// Once the winner is past the wire the camera stays on the wire until the third horse is home: two seconds after
+// the winner crossed, with the third still to come, the wire is still in the picture. (The camera followed the winner out, and the placings were decided off the picture.) And a horse of
+// yours out of the picture is a marker at its edge: its number and how far it is from the leader.
+const held = await page.evaluate(async () => {
+  const { simulateRace, ownerSilks } = await import('./js/world.js');
+  const { RaceScene } = await import('./js/draw/scene.js');
+  const w = window.sameSeed;
+  const runs = w.cards[0].races.map(race => ({ race, run: simulateRace(race, w) }));
+  const { race, run } = runs.reduce((a, b) => (b.run.results[2].time - b.run.results[0].time > a.run.results[2].time - a.run.results[0].time ? b : a));
+  const last = run.results[run.results.length - 1].h;
+  const runners = race.entries.map((e, i) => { const h = w.horses[e.hid]; return { number: e.pp, coat: h.coat, marks: h.marks, silks: ownerSilks(h.owner), name: h.name, mine: i === last }; });
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:fixed;left:0;top:0;width:390px;height:360px';
+  document.body.append(c);
+  const scene = new RaceScene(c, { race, run, runners, wx: w.cards[0].wx });
+  const ctx = c.getContext('2d'), said = [], fillText = ctx.fillText;
+  ctx.fillText = function (text, ...a) { said.push(String(text)); return fillText.call(this, text, ...a); };
+  // (No race on this card is a runaway, so the third is taken to be three seconds behind the winner, and
+  // the picture is looked at two seconds after the winner crossed: the leader is 30-odd metres past the wire.)
+  run.results = run.results.map((r, k) => (k === 2 ? { ...r, time: run.results[0].time + 3 } : r));
+  const third = run.t0 + run.results[0].time + 2;
+  for (let t = run.t0 + run.results[0].time - 8; t <= third; t += 1 / 30) scene.draw(t);
+  ctx.fillText = fillText;
+  const x = scene.px(race.distance, scene.zRail);
+  c.remove();
+  return { wire: x >= 0 && x <= scene.W, marker: said.some(t => /^\d+ L$/.test(t)) && said.includes(String(race.entries[last].pp)) };
+});
+assert.deepEqual([held.wire, held.marker], [true, true], 'the camera left the wire before the third horse was home, or a horse of yours out of the picture has no marker at its edge');
 
 // A look at a later race shows its opening odds, and doesn't start its clock.
 await page.locator('.race-row').nth(2).click();
@@ -526,6 +555,26 @@ assert.deepEqual(shownOrder, officialOrder, 'the running order at the end is not
 const lastCall = await page.evaluate(() => ({ now: document.querySelector('.call .now').textContent, prev: document.querySelector('.call .prev').textContent, official: window.__watch.call.official }));
 if (lastCall.official) assert.deepEqual([lastCall.now, /The time, /.test(lastCall.prev)], [lastCall.official, true], "after a photo the call doesn't end on the winner's line");
 else assert.match(lastCall.now, /The time, /, "the call's last line never came up");
+// The result goes up with the official sign, the way an infield board puts it up: the first four, each with its
+// number, name and the margin to the one ahead, and the time to the hundredth, over the picture, dimmed under
+// it. (After a photo it comes up once the photo has had its few seconds with the sign.) And the tickets' line
+// says how each ticket did: "$2 Win 3: paid $7.40", or "lost".
+await page.waitForSelector('.w-board', { timeout: 15000 });
+await page.evaluate(async () => { window.__fmt = await import('./js/chart.js'); });
+const board = await page.evaluate(() => {
+  const r = window.postTime.card().races[0], s = window.postTime.game.player.settled['0:1'];
+  const { fmtTime, marginShort } = window.__fmt;
+  return {
+    rows: [...document.querySelectorAll('.w-board .row')].map(x => x.innerText.replace(/\s+/g, ' ').trim()),
+    want: r.result.order.slice(0, 4).map((o, k) => `${k + 1} ${r.entries[o.k].pp} ${window.postTime.game.world.horses[r.entries[o.k].hid].name.toUpperCase()}${k ? ` ${marginShort(o.toPrev)}` : ''}`),
+    time: document.querySelector('.w-board .time').textContent, wantTime: `Time ${fmtTime(r.result.time)}`,
+    over: getComputedStyle(document.querySelector('.w-board')).backgroundColor,
+    tickets: document.querySelector('.w-tix .full').textContent,
+    wantTickets: `Your tickets: ${window.postTime.game.player.bets['0:1'].map((b, i) => `${b.type === 'win' ? '$2 Win' : '$2 Exacta'} ${b.sel.map(x => r.entries[x].pp).join('-')}: ${s.returns[i] > 0 ? `paid $${s.returns[i].toFixed(2)}` : 'lost'}`).join(' · ')}`,
+  };
+});
+assert.deepEqual([board.rows, board.time, board.tickets], [board.want, board.wantTime, board.wantTickets], 'the result is not put up with the official sign, or the tickets line does not say how each ticket did');
+assert.match(board.over, /rgba\(8, 10, 8, 0\.5\)/, 'the picture under the result is not dimmed');
 await page.click('.w-ctl .btn');
 await page.waitForSelector('.official');
 assert.equal(await page.locator('.board tbody tr.mine').count() >= 1, true, 'your horses are marked in the order of finish');
@@ -1265,11 +1314,13 @@ await page.waitForSelector('.watch:not([hidden]) canvas.scene');
 const skipped = await page.evaluate(async () => {
   const w = window.__watch, made = window.__oscillators.length, crowd = window.__crowd;
   const inGate = w.T < 0;
-  [...document.querySelectorAll('.w-ctl button')].find(b => /^Skip/.test(b.textContent)).click();
+  const skip = document.querySelector('.w-ctl .skip'), before = skip.textContent;
+  skip.click();
   for (let i = 0; i < 20; i++) await new Promise(r => requestAnimationFrame(r));
-  return { inGate, toRun: Math.round(w.winT - w.T), bells: window.__oscillators.slice(made).filter(o => o.frequency.value === 1760).length, crowd: window.__crowd !== crowd };
+  return { inGate, toRun: Math.round(w.winT - w.T), bells: window.__oscillators.slice(made).filter(o => o.frequency.value === 1760).length, crowd: window.__crowd !== crowd, labels: [before, skip.textContent] };
 });
-assert.deepEqual(skipped, { inGate: true, toRun: 12, bells: 0, crowd: true }, 'after Skip from the gate the starting bell rings in mid-stretch, or the crowd never starts');
+// (Skip says what it will do: to the stretch, then from there to the finish.)
+assert.deepEqual(skipped, { inGate: true, toRun: 12, bells: 0, crowd: true, labels: ['To the stretch ▸▸', 'To the finish ▸▸'] }, 'after Skip from the gate the starting bell rings in mid-stretch, the crowd never starts, or Skip doesn\'t say where it goes');
 // On a wide screen the picture has the height of the window under the line at the top, and gives way when
 // that line grows. The camera keeps its place when the picture changes size (it used to snap to where it
 // was easing to), and Results is the height of the buttons it joins, so neither the row of buttons nor the
@@ -1425,7 +1476,7 @@ const at2 = await page.evaluate(async () => {
   const until = (what, ms) => { const end = performance.now() + ms; return () => { if (performance.now() > end) throw new Error(`still waiting for ${what}`); return true; }; };
   for (const going = until('a line that says who leads', 40000); going() && !spoke(l => l.t > 0 && (l.lead !== undefined || l.pair));) await wait(30);
   const skipped = performance.now(), T = w.T;
-  button('Skip').click();
+  document.querySelector('.w-ctl .skip').click();
   for (const going = until('the end of the call at 2x', 60000); going() && !spoke(l => l.placings);) await wait(50);
   const lines = window.__read();
   // The first line said after the skip, if it calls a new leader: how long that horse had had its head in front.
