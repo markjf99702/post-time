@@ -76,12 +76,16 @@ export function renderWatch(el, nav, params) {
   const scene = new RaceScene(canvas, { race, run, runners, wx: game.world.cards[game.world.day].wx });
   // The call is planned here, at the gate, for the voice that will read it: how long this voice takes over
   // a line decides which lines fit where. (With the voice off it's planned the same way, so the call box
-  // shows the same lines either way.)
+  // shows the same lines either way.) With the sound and the voice both on, the gate has an order to it:
+  // the bugle, then the caller's first line, then the bell. The caller waits for the bugle to end and the
+  // gates wait for the caller, so a race with a name stands in the gate a little longer.
+  const bugle = game.player.settings.sound ? audio.bugle() / 1000 : 0;
   const call = callFor(race, run, {
     lineSeconds: (line, toWire) => audio.voiceSeconds(line.say, pace(line, toWire).rate),
     factor: audio.voiceFactor,
+    bugle: audio.voiceEnabled() ? bugle : 0,
   });
-  let T = -5.2;            // sim time; negative is the wait in the gate
+  let T = -call.gate;      // sim time; negative is the wait in the gate
   let speed = 1;
   let last = performance.now();
   let raf = 0;
@@ -93,7 +97,6 @@ export function renderWatch(el, nav, params) {
   const resizer = typeof ResizeObserver === 'function' ? new ResizeObserver(onResize) : null;
   if (resizer) resizer.observe(stage); else window.addEventListener('resize', onResize);
   const stopResizing = () => { if (resizer) resizer.disconnect(); else window.removeEventListener('resize', onResize); };
-  if (game.player.settings.sound) audio.bugle();
   audio.prepareCall(call.lines);
 
   // The race's clock for the call, in seconds from the gates opening: the recording's while it runs (slow

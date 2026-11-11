@@ -508,10 +508,10 @@ test('a voice that never says when it starts or ends still reads the call, a lin
 // slow motion and all. `timed` is a gauge (see gauge() in js/audio.js) for a voice whose lines are timed
 // and the call planned to its pace, as the page does; `each(frame)` is called every frame, to change the
 // speed or skip. Returns the call, when each line came up, and what the queue made of them.
-function replay(r, race, { timed = null, each = null } = {}) {
+function replay(r, race, { timed = null, bugle = 0, each = null } = {}) {
   const factor = () => (timed ? timed.factor() : 1);
-  const live = liveCall(race.race, race.run, race.names, { lineSeconds: (line, toWire) => lineTime(line.say, pace(line, toWire).rate, { factor: factor() }), factor });
-  let T = -5.2, ended = false, endedAt = 0, speed = 1, signed = false;
+  const live = liveCall(race.race, race.run, race.names, { lineSeconds: (line, toWire) => lineTime(line.say, pace(line, toWire).rate, { factor: factor() }), factor, bugle });
+  let T = -live.gate, ended = false, endedAt = 0, speed = 1, signed = false;
   const clock = () => (ended ? race.endT + (r.now() - endedAt) / 1000 : T);
   const cameUp = new Map();
   const say = line => { cameUp.set(line, { clock: clock(), now: r.now() }); r.queue.speak(line, { ...pace(line, race.winT - T), clock }); };
@@ -541,7 +541,7 @@ function replay(r, race, { timed = null, each = null } = {}) {
     if (ended && r.now() - endedAt > 16000) break;
   }
   const after = r.queue.stats();
-  return { live, cameUp, dropped: after.dropped - before.dropped, cut: after.cut - before.cut };
+  return { live, cameUp, gate: live.gate, dropped: after.dropped - before.dropped, cut: after.cut - before.cut };
 }
 
 // Race days of a meet, recorded, for the replays below.
@@ -756,15 +756,45 @@ test('"And they\'re off!" is said in a race with a name, even by a slow voice', 
     const named = { ...first, race: { ...first.race, name, seed: `${first.race.seed}:${name}` }, close: false };
     for (const syllablesASecond of [3.7, 4.3, 4.9]) {
       const r = rig({ syllablesASecond });
-      const { live } = replay(r, named);
+      const { live, gate } = replay(r, named);
       const [pre, off] = live.lines;
-      assert.deepEqual([pre.kind, off.kind], ['pre', 'off']);
+      assert.deepEqual([pre.kind, off.kind, gate], ['pre', 'off', 5.2]);
       assert.ok(named.t0 + pre.t > -5.2 && (name ? pre.text.endsWith(` for the ${name}.`) : !/ for the /.test(pre.text)), `${name}: the first line is "${pre.text}", due ${(named.t0 + pre.t).toFixed(2)}`);
       const start = r.log.filter(x => x.ev !== 'stop' && x.T < 3).map(x => `${x.ev} ${x.text}`);
       assert.deepEqual(start.slice(0, 4), [`speak ${pre.say}`, `end ${pre.say}`, `speak ${off.say}`, `end ${off.say}`], `${name || 'no name'}, ${syllablesASecond} syllables a second`);
       assert.equal(r.log.filter(x => x.ev === 'stop' && x.T < 3).length, 0, `${name}: a line was cut off at the start`);
     }
   }
+});
+
+test('with the bugle playing, the caller waits for it and the gates wait for the caller', () => {
+  // The caller's first line came 2.6 seconds after the screen opened, over the last 1.2 seconds of the
+  // bugle, and a race's name ran into the starting bell. Now: the bugle, three tenths of a second, the
+  // line, four tenths more, the bell. A race with a name stands in the gate that much longer.
+  const [first] = recorded('test-voice', 1);
+  const BUGLE = 3.83; // seconds: what audio.bugle() returns for its notes
+  const waits = [];
+  for (const { name } of [...STAKES, BIG_STAKES, { name: '' }]) {
+    const named = { ...first, race: { ...first.race, name, seed: `${first.race.seed}:${name}` }, close: false };
+    for (const [voice, syllablesASecond] of [['as planned', 4.3], ['15% slower', 4.3 / 1.15], ['15% quicker', 4.3 * 1.15]]) {
+      const r = rig({ syllablesASecond, startAfter: 120 });
+      const { live, gate } = replay(r, named, { bugle: BUGLE });
+      const [pre, off] = live.lines;
+      const at = `${name || 'no name'}, a voice ${voice}`;
+      assert.ok(Math.abs(gate - (BUGLE + 0.3 + pre.d + 0.4)) < 1e-9 && gate >= 5.2, `${at}: ${gate.toFixed(2)} s in the gate for a first line of ${pre.d.toFixed(2)} s`);
+      const said = r.log.filter(x => x.ev === 'speak'), ends = r.log.filter(x => x.ev === 'end');
+      // On the clock on the wall, from the screen opening (when the bugle starts).
+      assert.deepEqual(said.slice(0, 2).map(x => x.line), [pre, off], at);
+      assert.ok(said[0].t / 1000 >= BUGLE + 0.3 - 0.04 && said[0].t / 1000 <= BUGLE + 0.3 + 0.04, `${at}: the first line starts ${(said[0].t / 1000).toFixed(2)} s in, and the bugle is ${BUGLE} s long`);
+      assert.ok(Math.abs(said[1].T) <= 0.2, `${at}: the off is said ${said[1].T.toFixed(2)} s from the bell`);
+      assert.ok(ends[0].t <= said[1].t, `${at}: the first line was still being said at the off`);
+      assert.equal(r.log.filter(x => x.ev === 'stop' && x.T < 3).length, 0, `${at}: a line was cut off at the start`);
+      if (voice === 'as planned') waits.push(gate);
+    }
+  }
+  assert.ok(Math.min(...waits) > 5.2 && Math.min(...waits) < 6.3 && Math.max(...waits) > 7 && Math.max(...waits) < 8.2, `from ${Math.min(...waits).toFixed(2)} to ${Math.max(...waits).toFixed(2)} s in the gate`);
+  // Without the bugle (the sound off, or the voice): as it was.
+  assert.equal(replay(rig(), { ...first, close: false }).gate, 5.2);
 });
 
 test('the call is read at 2x and 4x: no line is cut off for a change of speed, and none is said late', () => {

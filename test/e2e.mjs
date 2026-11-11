@@ -884,19 +884,41 @@ await page.setViewportSize({ width: 390, height: 844 });
 await page.evaluate(() => window.postTime.nav.go('card'));
 await page.waitForSelector('.races');
 
+// The gate, with the sound and the voice both on: the bugle, then the caller, then the bell. The caller's
+// first words used to be spoken over the bugle's last notes, and a race's name ran into the bell. Now his
+// first line starts when the bugle is over (its notes are 3.78 seconds long), the gates wait for him, and
+// "they're off" is said with the bell, in a race with a name as in any other.
 await page.click('#menuBtn');
 await page.check('#optSound');
 await page.check('#optVoice');
 await page.click('#menuBtn');
 await page.waitForFunction(() => window.__quiet());
 await page.click('.race-row.next');
-await page.evaluate(() => {
-  window.__from = window.__heard.length;
+const gate = await page.evaluate(async () => {
+  window.postTime.nextRace().name = 'Odds and Ends Handicap';
+  const heard = window.__heard, from = window.__from = heard.length, made = window.__oscillators.length;
+  const tap = performance.now();
   document.querySelector('.post-bar .btn.brass').click();
+  const w = window.__watch;
   // Every line as it comes up in the call box, with the time.
   const shown = window.__shown = [], box = document.querySelector('.call .now');
   new MutationObserver(() => shown.push({ text: box.textContent, at: performance.now() })).observe(box, { childList: true, characterData: true, subtree: true });
+  for (const end = performance.now() + 20000; w.T < 0.6;) { if (performance.now() > end) throw new Error('the race never left the gate'); await new Promise(r => requestAnimationFrame(r)); }
+  const spoken = heard.slice(from).filter(x => x.ev === 'speak' && !x.silent);
+  const bell = window.__oscillators.slice(made).find(o => o.frequency.value === 1760);
+  const [pre, off] = w.call.lines;
+  return {
+    wait: w.call.gate, line: pre.d, first: (spoken[0].at - tap) / 1000, bell: (bell.madeAt - tap) / 1000, off: (spoken[1].at - bell.madeAt) / 1000,
+    said: spoken.slice(0, 2).map(x => x.text), lines: [pre.say, off.say], kinds: [pre.kind, off.kind], over: heard.some(x => x.ev === 'end' && x.text === pre.say && x.at <= spoken[1].at),
+    cancels: heard.slice(from).filter(x => x.ev === 'cancel').length,
+  };
 });
+assert.deepEqual([gate.said, gate.kinds, gate.cancels], [gate.lines, ['pre', 'off'], 0], 'the first two lines read should be the one before the off and the off');
+assert.match(gate.lines[0], / for the Odds and Ends Handicap\.$/);
+assert.ok(gate.first >= 3.78 && gate.first < 3.78 + 0.3 + 1.5, `the caller's first line started ${gate.first.toFixed(2)} s after the bugle did, and the bugle is 3.78 s long`);
+assert.ok(Math.abs(gate.wait - (3.83 + 0.3 + gate.line + 0.4)) < 0.02 && gate.wait > 5.2, `${gate.wait.toFixed(2)} s in the gate for a first line of ${gate.line.toFixed(2)} s`);
+assert.ok(gate.bell >= gate.wait - 0.05 && gate.bell < gate.wait + 1.5, `the bell rang ${gate.bell.toFixed(2)} s in, and the wait in the gate is ${gate.wait.toFixed(2)} s`);
+assert.ok(gate.over && Math.abs(gate.off) <= 0.2, `the off was said ${gate.off.toFixed(2)} s from the bell${gate.over ? '' : ', with the first line still being read'}`);
 
 // The call is read at 4x and at 2x (it used to be hushed at both). A change of speed doesn't cut off the line
 // being said; the rest of the race is called for the new speed, each line said as it comes up. Here: to 4x

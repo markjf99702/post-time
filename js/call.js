@@ -356,13 +356,13 @@ const up = s => s[0].toUpperCase() + s.slice(1);
 // says has the race won, `named` the horses a run through the field got to, and `sides` where it put a
 // horse (on the rail, on the outside).
 //
-// Options: `lineSeconds(line, secondsToWire)` says how long a line takes to say, and `speed` is how fast
-// the race is being watched (1, 2 or 4: at 2 the shortest wording of each line is taken, at 4 only the
-// headlines are called).
+// Options: `lineSeconds(line, secondsToWire)` says how long a line takes to say; `speed` is how fast the
+// race is being watched (1, 2 or 4: at 2 the shortest wording of each line is taken, at 4 only the
+// headlines are called); `bugle` is the length of the bugle call, when the first line is to wait for it.
 // To plan the rest of a race again from the middle (the speed changed, the race was skipped ahead, the
 // voice turned out slower than thought), `from` is the time on the race's clock to plan from, `wait` the
 // real seconds from then until the voice is free, and `said` the lines given so far, which are kept.
-export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed = 1, from = null, wait = 0, said = [] } = {}) {
+export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed = 1, from = null, wait = 0, said = [], bugle = 0 } = {}) {
   const fresh = from === null;
   const R = rng(fresh ? `call:${race.seed}` : `call:${race.seed}:${Math.round(from * 10)}:${speed}`);
   const D = run.distance, t0 = run.t0, fin = run.finalTime, n = names.length;
@@ -775,13 +775,16 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
   let w = -Infinity; // when the voice is next free, in real seconds from the off
   const give = line => { line.picks = picking; lines.push(line); note(line); w = wall(line.t) + line.d; };
 
+  let gate = 5.2; // how long the horses stand in the gate before the off, in seconds
   if (fresh) {
     // Before the off. A race's name takes the voice a while ("The field is in the gate for the Odds and
     // Ends Handicap." is about three seconds), so that line comes up sooner than the plain one, to be done
-    // by the off.
+    // by the off. With the bugle playing it comes when the bugle is over, and the gates wait for it: the
+    // bugle, a moment, the line, a moment more, the bell.
     picking = [];
     const pre = lineAt(form(`${pick('pre', PRE)[1]}${race.name ? ` for the ${race.name}` : ''}.`), 0, 'pre', 'pre');
-    const before = Math.min(5, Math.max(race.name ? 3.4 : 2.6, pre.d + 0.4));
+    const before = bugle ? pre.d + 0.4 : Math.min(5, Math.max(race.name ? 3.4 : 2.6, pre.d + 0.4));
+    if (bugle) gate = Math.max(gate, bugle + 0.3 + before);
     pre.t = clock(wall(-t0) - before);
     give(pre);
   }
@@ -910,20 +913,20 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     // Second, third and the time follow the winner's line directly.
     give(lineAt(rest, clock(w + 0.35), 'placings', 'finish'));
   }
-  return { lines, photo, official, dur };
+  return { lines, photo, official, dur, gate };
 }
 
 // The call while a race is being watched: the plan made at the gate, the line that's up, and planning
 // the rest again when something changes. `factor()` is how the voice's real pace compares with what the
 // plan took it to be (1 until it has been timed): when that moves by more than 8%, the rest of the race
 // is planned again. All times given to it are the race's clock and real seconds.
-export function liveCall(race, run, names, { lineSeconds, factor = () => 1 } = {}) {
+export function liveCall(race, run, names, { lineSeconds, factor = () => 1, bugle = 0 } = {}) {
   let speed = 1;
   let madeFor = factor();
   let upLine = null, upAt = 0;  // the line that's up, and when it came up
   let seen = -Infinity;         // the race's clock, the last time anyone asked
-  const first = raceCall(race, run, names, { lineSeconds });
-  const live = { lines: first.lines, photo: first.photo, official: first.official, dur: first.dur, plans: 1 };
+  const first = raceCall(race, run, names, { lineSeconds, bugle });
+  const live = { lines: first.lines, photo: first.photo, official: first.official, dur: first.dur, gate: first.gate, plans: 1 };
   // Plans the rest of the race again from `clock`. The line being said is let finish (by the estimate),
   // unless `wait` says how long the voice needs, as after a cancel.
   function again(clock, now, wait = null) {
