@@ -6,10 +6,10 @@ import { game, card, raceKey, horseOf, nextRace, raceLabel, myBets, photoRecord 
 import { ownerSilks, longDate } from '../world.js';
 import { JOCKEYS, TIPSTERS, TRAINERS, OWNERS } from '../data.js';
 import { marginShort, fmtTime, ordinal } from '../chart.js';
-import { BET_NAMES } from '../tote.js';
 import { drawCircle } from '../draw/circle.js';
 import { distanceName } from '../track.js';
 import { atmLine, redraw } from './card.js';
+import { ticketLine } from './race.js';
 
 export function renderResult(root, nav, params) {
   const race = card().races.find(r => r.no === params.no);
@@ -37,11 +37,9 @@ export function renderResult(root, nav, params) {
     wrap.append(h('div', { class: 'summary' },
       h('div', {}, h('div', { class: 'kicker' }, net >= 0 ? 'You cashed' : 'Your tickets'), h('div', { class: `big money ${net >= 0 ? 'pos' : 'neg'}` }, money(settled.back)), h('div', { class: 'muted' }, `on ${money(settled.spent)} bet · ${money(net, { sign: true })}`)),
       h('div', { class: 'tickets', style: { marginTop: 0, flex: '1 1 220px' } }, bets.map((b, i) => {
-        const sel = b.sel.map(x => race.entries[x].pp);
-        const label = b.type === 'exacta' || b.type === 'trifecta' ? sel.join('-') : b.type.endsWith('box') ? sel.join(', ') : sel[0];
         const back = settled.returns[i];
         return h('div', { class: `ticket ${back > 0 ? 'cashed' : 'lost'}` },
-          h('div', {}, h('div', { class: 'what' }, `$${b.amt} ${BET_NAMES[b.type].toUpperCase()} ${label}`), h('div', { class: 'small' }, `COST ${money(b.cost)}`)),
+          h('div', {}, ticketLine(b, b.sel.map(x => race.entries[x].pp)), h('div', { class: 'small' }, `COST ${money(b.cost)}`)),
           back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : h('span', { class: 'small torn' }, 'torn up'),
         );
       })),
@@ -60,7 +58,7 @@ export function renderResult(root, nav, params) {
       const pp = hs.pps.find(p => p.d === race.day && p.no === race.no);
       return h('tr', { class: mine.has(o.k) ? 'mine' : '' },
         h('td', { class: 'fin' }, ordinal(o.pos)),
-        h('td', {}, cloth(e.pp, 'sm'), ' ', h('b', {}, hs.name), h('div', { class: 'cm' }, `${JOCKEYS[e.j].name} · ${pp ? pp.cm : ''} · fig ${pp ? pp.fig : ''}`),
+        h('td', {}, cloth(e.pp, 'sm'), ' ', h('b', {}, hs.name), h('div', { class: 'cm' }, `${JOCKEYS[e.j].name} · ${pp ? pp.cm : ''} · fig\u00a0${pp ? pp.fig : ''}`),
           // The trainer it has now is the one who claimed it: it can't have run again since.
           pp && pp.claimed ? h('div', { class: 'cm' }, `Claimed by ${TRAINERS[hs.trainer]} for $${pp.claimed.price.toLocaleString('en-US')}`) : null),
         h('td', { class: 'r money' }, k === 0 ? '' : marginShort(o.toPrev)),
@@ -143,7 +141,7 @@ export function photoCard(rec, you) {
   const frame = h('figure', { class: 'photo-frame', style: { margin: '0 auto' } },
     c,
     h('figcaption', { class: 'caption' },
-      h('span', {}, 'Larkspur Downs'), h('span', { class: 'r' }, `Race ${rec.no} · ${shortLong(rec.date)}`),
+      h('span', {}, 'Larkspur Downs'), h('span', { class: 'r' }, `Race ${rec.no} · `, h('span', { class: 'long' }, shortLong(rec.date)), h('span', { class: 'short' }, shortLong(rec.date, 3))),
       h('span', { class: 'horse' }, rec.horse.name),
       h('span', {}, rec.name || classText(rec)), h('span', { class: 'r' }, `${rec.dist} · ${fmtTime(rec.time)}`),
       h('span', {}, `${rec.jockey} up`), h('span', { class: 'r' }, `Tr. ${rec.trainer}`),
@@ -164,4 +162,8 @@ function classText(rec) {
   const price = rec.claim ? ` $${rec.claim.toLocaleString('en-US')}` : '';
   return names[rec.cls] || `${rec.cls === 'MCL' ? 'Maiden claiming' : 'Claiming'}${price}`;
 }
-function shortLong(iso) { return longDate(iso).replace(/^\w+, /, ''); }
+// A race's date without its weekday, "November 14, 2026", or with the month cut to `letters`: "Nov 14, 2026".
+function shortLong(iso, letters) {
+  const date = longDate(iso).replace(/^\w+, /, '');
+  return letters ? date.replace(/^\w+/, month => month.slice(0, letters)) : date;
+}

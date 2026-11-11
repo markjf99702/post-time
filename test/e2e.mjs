@@ -1971,6 +1971,31 @@ await page.waitForSelector('.races');
   assert.deepEqual(taps, { types: 40, amounts: 40, cancel: 40, menu: [44, 44], header: 58, voice: ['44px', '44px'], zooms: [] }, 'things to tap on the Bet tab and in the header');
   await between.click('.ticket button');
   assert.equal(await between.locator('#bank').textContent(), '$200.00');
+  // The bar gives a price the way the button beside it does: "$6,000", where it said "$6000". And a ticket's
+  // numbers stay together, at the window and on the result: a line too long for the ticket breaks before
+  // them. ("1, 2, 3, 4," over "5" and "3-4-" over "6" were how they were printed.)
+  await between.evaluate(() => { window.postTime.game.player.bank = 7000; });
+  await between.locator('.seg button', { hasText: /^Trifecta box$/ }).click();
+  for (const k of [0, 1, 2, 3, 4]) await between.locator('.pick-row').nth(0).locator('button').nth(k).click();
+  await between.locator('.seg.amounts button', { hasText: /^\$100$/ }).click();
+  assert.equal(await between.locator('.post-bar .info').textContent(), 'Trifecta box 1, 2, 3, 4, 5, $6,000: not bought yet');
+  await between.evaluate(() => document.querySelector('.post-bar .btn.ghost').click());
+  assert.equal(await between.locator('.post-bar .info').textContent(), "You picked a trifecta box (1, 2, 3, 4, 5) for $6,000 and haven't bought it. Tap again to go without it.");
+  await between.click('.post-bar .btn.brass');
+  await between.locator('.seg button', { hasText: /^Trifecta$/ }).click();
+  for (const [row, k] of [[0, 2], [1, 3], [2, 5]]) await between.locator('.pick-row').nth(row).locator('button').nth(k).click();
+  await between.click('.builder .btn');
+  // (The tickets whose numbers aren't a piece of their own, or are a piece broken across two lines.)
+  const split = () => between.evaluate(() => [...document.querySelectorAll('.ticket .what')].filter(w => {
+    const numbers = w.querySelector('.bit');
+    return !numbers || numbers.getBoundingClientRect().height > parseFloat(getComputedStyle(numbers).lineHeight) * 1.5;
+  }).map(w => w.textContent));
+  assert.deepEqual(await between.locator('.ticket .what').allTextContents(), ['$100 TRIFECTA BOX 1, 2, 3, 4, 5', '$100 TRIFECTA 3-4-6']);
+  for (const width of [390, 320]) {
+    await between.setViewportSize({ width, height: 664 });
+    assert.deepEqual(await split(), [], `${width} wide: a ticket's numbers are split across two lines at the window`);
+  }
+  await between.setViewportSize({ width: 390, height: 664 });
 
   // After a race the way on is in a bar at the bottom of the screen: what the race did for you, and the next
   // race as the button. (It was the last button on the page, 1,700 px down this 664 px screen and more.) The
@@ -2008,11 +2033,19 @@ await page.waitForSelector('.races');
     return { y: Math.round(scrollY), whole: r.top >= under && r.bottom <= innerHeight, offCentre: Math.round(Math.abs((r.top + r.bottom) / 2 - (under + innerHeight) / 2)) };
   });
   const cash = await run('cash');
-  assert.deepEqual(await resultBar(), { said: `You cashed $${cash.back.toFixed(2)}`, button: 'Race 2 ▸', ...shown }, 'the bar on a result with a ticket cashed');
+  assert.deepEqual(await resultBar(), { said: `You cashed $${cash.back.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, button: 'Race 2 ▸', ...shown }, 'the bar on a result with a ticket cashed');
   await between.click('.rhead .back');
   await between.waitForSelector('.races');
   assert.deepEqual([(await upNext()).y, (await upNext()).whole], [0, true], 'with race 2 up, the card should open at the top');
   await go('result', { no: 1 });
+  for (const width of [390, 320]) {
+    await between.setViewportSize({ width, height: 664 });
+    assert.deepEqual([await between.locator('.ticket').count(), await split()], [4, []], `${width} wide: a ticket's numbers are split across two lines on the result`);
+    // In the order of finish, "fig" and its number are on one line ("fig" used to end a line, with the number under it).
+    const figs = (await between.locator('.board .cm').allTextContents()).filter(t => !t.startsWith('Claimed by'));
+    assert.ok(figs.length >= 5 && figs.every(t => /· fig \d+$/.test(t)), `the order of finish: ${figs.join(' | ')}`);
+  }
+  await between.setViewportSize({ width: 390, height: 664 });
   await between.click('.post-bar .btn');
   assert.deepEqual([await between.locator('.rhead .kicker').textContent(), await between.locator('.post-bar .btn').textContent()], ['Race 2 · Post 3:02', 'To the gate ▸'], "the result's button didn't go to race 2");
   await run('lose');
@@ -2049,6 +2082,29 @@ await page.waitForSelector('.races');
   assert.deepEqual(await tall(), [40], "the race screen's buttons, with Results");
   await between.evaluate(() => window.__watch.leave('card'));
   await between.waitForSelector('.races');
+
+  // On the narrowest phones. The paddock is two horses to a row at 320 wide, as it is at 390 (it was one,
+  // a horse to a screen). The winner's circle caption has the track's name on one line, beside a short date
+  // (the long one, "November 14, 2026", pushed "Larkspur Downs" onto two lines). And the tabs stick under
+  // the header with no slit between them for the page to show through (there was 1 px of it at 380 wide and
+  // narrower, where the header is 57 px tall and the tabs stuck at 58).
+  for (const [width, date] of [[320, 'short'], [360, 'long'], [390, 'long']]) {
+    await between.setViewportSize({ width, height: 664 });
+    await go('race', { no: 8, tab: 'paddock' });
+    const across = await between.evaluate(() => { const tops = [...document.querySelectorAll('.pdk')].map(p => Math.round(p.getBoundingClientRect().top)); return tops.filter(t => t === tops[0]).length; });
+    assert.equal(across, 2, `${width} wide: the paddock is ${across} to a row`);
+    await between.evaluate(() => window.scrollTo(0, 400));
+    const slit = await between.evaluate(() => +(document.querySelector('.tabs').getBoundingClientRect().top - document.getElementById('top').getBoundingClientRect().bottom).toFixed(2));
+    assert.ok(slit <= 0, `${width} wide: ${slit} px of the page shows between the header and the tabs`);
+    await go('circle', { no: 8 });
+    const caption = await between.evaluate(() => {
+      const [track, when] = document.querySelectorAll('.photo-frame .caption > span'), line = parseFloat(getComputedStyle(track).lineHeight);
+      const seen = [...when.querySelectorAll('span')].filter(s => getComputedStyle(s).display !== 'none');
+      return { oneLine: track.getBoundingClientRect().height < line * 1.5 && when.getBoundingClientRect().height < line * 1.5, date: seen.map(s => s.className).join(), text: seen.map(s => s.textContent).join() };
+    });
+    assert.deepEqual([caption.oneLine, caption.date], [true, date], `${width} wide: the photo's caption has "${caption.text}"`);
+    assert.match(caption.text, date === 'short' ? /^[A-Z][a-z]{2} \d+, \d{4}$/ : /^[A-Z][a-z]{2,} \d+, \d{4}$/);
+  }
 
   await ctx7.close();
 }

@@ -98,7 +98,7 @@ export function renderRace(root, nav, params) {
     if (bet && !asked) {
       asked = true;
       notBefore = performance.now() + DOUBLE_TAP;
-      say([`You picked ${pickShort(race, bet)} for $${betCost(bet)} and haven't bought it. Tap again to go without it.`]);
+      say([`You picked ${pickShort(race, bet)} for ${money(betCost(bet), { cents: false })} and haven't bought it. Tap again to go without it.`]);
       return;
     }
     audio.wake(); audio.primeVoice();
@@ -125,7 +125,7 @@ export function renderRace(root, nav, params) {
     const bet = slip();
     bar.classList.toggle('pending', !!bet);
     if (bet) {
-      say([h('b', {}, pickName(race, bet)), `, $${betCost(bet)}: not bought yet`]);
+      say([h('b', {}, pickName(race, bet)), `, ${money(betCost(bet), { cents: false })}: not bought yet`]);
       bar.append(
         h('button', { class: 'btn ghost', type: 'button', onclick: toGate }, 'To the gate ▸'),
         h('button', { class: 'btn brass', type: 'button', onclick: buySlip }, `Buy ticket · ${money(betCost(bet))}`),
@@ -593,6 +593,14 @@ function updateTote(panel, race) {
   old.replaceWith(fresh);
 }
 
+// What a ticket is, as it's printed on it: "$2 TRIFECTA BOX 1, 2, 3, 4, 5". The numbers are a piece of their
+// own, so a line too long for the ticket breaks before them and not among them ("1, 2, 3, 4," over "5",
+// "3-4-" over "6"), unless they're more than a line by themselves.
+export function ticketLine(bet, numbers) {
+  const picked = bet.type === 'exacta' || bet.type === 'trifecta' ? numbers.join('-') : bet.type.endsWith('box') ? numbers.join(', ') : numbers[0];
+  return h('div', { class: 'what' }, `$${bet.amt} ${BET_NAMES[bet.type].toUpperCase()} `, h('span', { class: 'bit' }, picked));
+}
+
 function ticketList(race, open, changed) {
   const wrap = h('div', { class: 'tickets' });
   const bets = myBets(race);
@@ -603,11 +611,10 @@ function ticketList(race, open, changed) {
   printing = null;
   bets.forEach((b, i) => {
     const sel = b.sel.map(x => race.entries[x].pp);
-    const label = b.type === 'exacta' || b.type === 'trifecta' ? sel.join('-') : b.type.endsWith('box') ? sel.join(', ') : sel[0];
     const back = settled ? settled.returns[i] : null;
     wrap.append(h('div', { class: `ticket${i === fresh ? ' printed' : ''}${back > 0 ? ' cashed' : back === 0 ? ' lost' : ''}` },
       h('div', {},
-        h('div', { class: 'what' }, `$${b.amt} ${BET_NAMES[b.type].toUpperCase()} ${label}`),
+        ticketLine(b, sel),
         h('div', { class: 'small' }, `LRK R${race.no} · ${sel.map(n => horseOf(race.entries.find(e => e.pp === n)).name).join(' / ')} · COST ${money(b.cost)}`),
       ),
       back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : back === 0 ? h('span', { class: 'small torn' }, 'torn up') : open ? h('button', { type: 'button', onclick: () => { cancelBet(race, i); changed(); } }, 'Cancel') : null,
