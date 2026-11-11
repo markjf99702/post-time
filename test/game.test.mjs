@@ -10,12 +10,12 @@ globalThis.localStorage = {
   removeItem: k => { store.delete(k); },
 };
 globalThis.window = new EventTarget();
-const { game, newMeet, load, save, notSaved, card, toteFor, placeBet, goToGate, mtpState, currentBoard, advanceDay, callFor, horseOf, runnersFor, photoRecord, forumFor } = await import('../js/game.js');
+const { game, newMeet, load, save, notSaved, card, toteFor, placeBet, goToGate, mtpState, currentBoard, advanceDay, callFor, horseOf, runnersFor, photoRecord, forumFor, bestDay } = await import('../js/game.js');
 const { stateAt, RAIL } = await import('../js/sim.js');
 const { LENGTH, FURLONG, segmentAt } = await import('../js/track.js');
 const { raceCall, raceClock } = await import('../js/call.js');
 const { marginShort } = await import('../js/chart.js');
-const { buildWorld, meetStats, ownerSilks } = await import('../js/world.js');
+const { buildWorld, meetStats, ownerSilks, simulateRace } = await import('../js/world.js');
 const { TRAINERS, OWNERS, SIRES } = await import('../js/data.js');
 const { runStyle } = await import('../js/forum.js');
 const { makeTote, board } = await import('../js/tote.js');
@@ -1137,3 +1137,33 @@ test('a meet in progress runs the way it did: three race days of a fixed meet co
   }
   assert.deepEqual(played, PINNED);
 });
+
+test("the best day is the one you came out furthest ahead on, today included, and there's none until a day is won", () => {
+  assert.equal(bestDay([]), null);
+  // A losing first day used to show as "Best day −$10.00".
+  assert.equal(bestDay([{ day: 0, no: 1, spent: 10, back: 0, best: 0 }]), null, 'a day that lost money is the best day');
+  assert.equal(bestDay([{ day: 0, no: 1, spent: 4, back: 4, best: 4 }]), null, 'a day that broke even is the best day');
+  const ledger = [
+    { day: 0, no: 1, spent: 10, back: 0 }, { day: 0, no: 2, spent: 2, back: 9.6 },
+    { day: 1, no: 1, spent: 4, back: 30.2 }, { day: 1, no: 5, spent: 6, back: 0 },
+    { day: 2, no: 3, spent: 2, back: 20.1 },
+  ];
+  assert.deepEqual(bestDay(ledger), { day: 1, net: 20.2 });
+  // Today counts as soon as its races are run: nothing waits for the next race day to be asked for.
+  build('best-day');
+  const race = card().races[0], winner = goToGateWith(race);
+  assert.equal(game.player.best, null, 'nothing is saved as the best day until the next race day');
+  assert.deepEqual(bestDay(), { day: 0, net: +(winner.back - winner.spent).toFixed(2) });
+});
+
+// A $2 win ticket on the horse that's going to win, bought and run.
+function goToGateWith(race) {
+  const first = buildResult(race);
+  assert.ok(placeBet(race, { type: 'win', sel: [first], amt: 2 }).ok);
+  return goToGate(race);
+}
+function buildResult(race) {
+  // The race comes out of its seed and its entries, so running it ahead of time says who wins.
+  return simulateRace(race, game.world, { record: true }).results[0].h;
+}
+

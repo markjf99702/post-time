@@ -130,6 +130,8 @@ export function renderCircle(root, nav, params) {
 
 export function photoCard(rec, you) {
   const c = h('canvas', { width: 720, height: 500 });
+  // What the photo was worth is everything cashed on the race, which can be more than one ticket.
+  const cashed = (game.player.settled[`${rec.day}:${rec.no}`]?.returns || []).filter(x => x > 0).length;
   const frame = h('figure', { class: 'photo-frame', style: { margin: '0 auto' } },
     c,
     h('figcaption', { class: 'caption' },
@@ -138,7 +140,7 @@ export function photoCard(rec, you) {
       h('span', {}, rec.name || classText(rec)), h('span', { class: 'r' }, `${rec.dist} · ${fmtTime(rec.time)}`),
       h('span', {}, `${rec.jockey} up`), h('span', { class: 'r' }, `Tr. ${rec.trainer}`),
       h('span', { style: { gridColumn: '1 / -1' } }, `Owner ${rec.ownerName}`),
-      you && rec.won ? h('span', { class: 'you-note' }, `That's you on the right, holding a ticket that paid ${money(rec.won)}.`) : null,
+      you && rec.won ? h('span', { class: 'you-note' }, `That's you on the right, holding ${cashed > 1 ? 'tickets' : 'a ticket'} that paid ${money(rec.won)}.`) : null,
     ),
   );
   requestAnimationFrame(() => {

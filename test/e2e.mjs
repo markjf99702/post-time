@@ -1473,6 +1473,50 @@ await page.waitForSelector('.races');
   await shop.waitForSelector('.official');
   const onResult = await bankroll();
   assert.deepEqual([onResult.shown, onResult.flash], [racing.has, true], "the result doesn't show the new bankroll, or shows it without its flash");
+
+  // The end of the card, and the record. With the last race run, "That's the card" and Next race day are at
+  // the top of the card, on the screen when it opens, as well as under the eight results (where the button
+  // was about 1,170 px down this 844 px screen). The record's best day is worked out from the betting record
+  // with today in it (it used to wait until Next race day was pressed), and it and the biggest ticket say
+  // "None yet" until there's a winning one. A photo says "tickets" when more than one ticket cashed.
+  const lastRace = await shop.evaluate(async () => {
+    const g = await import('./js/game.js');
+    const { simulateRace } = await import('./js/world.js');
+    const { money } = await import('./js/ui/dom.js');
+    const { game, card, nextRace, nav } = window.postTime;
+    // Two win tickets on the winner of race 3, one on the winner of race 4, and the rest run with nothing on them.
+    for (const [no, tickets] of [[3, 2], [4, 1]]) {
+      const race = card().races[no - 1], first = simulateRace(race, game.world, { record: true }).results[0].h;
+      for (let k = 0; k < tickets; k++) g.placeBet(race, { type: 'win', sel: [first], amt: 2 });
+    }
+    while (nextRace()) g.goToGate(nextRace());
+    nav.go('card');
+    const top = document.querySelector('.day .day-over') || document.createElement('div'), b = (top.querySelector('.btn') || top).getBoundingClientRect();
+    const net = game.player.ledger.reduce((sum, x) => sum + x.back - x.spent, 0), biggest = Math.max(...game.player.ledger.map(x => x.best));
+    return {
+      card: [top.textContent.replace(/Next race day.*/, ''), b.top >= document.getElementById('top').getBoundingClientRect().bottom && b.bottom <= innerHeight && scrollY === 0, [...document.querySelectorAll('.btn')].filter(x => x.textContent === 'Next race day ▸').length],
+      want: { 'Biggest ticket': money(biggest), 'Best day': Math.round(net * 100) > 0 ? money(net, { sign: true }) : 'None yet' }, saved: game.player.best,
+    };
+  });
+  assert.deepEqual(lastRace.card, ["That's the card.", true, 2], 'a finished card should have Next race day on the screen when it opens, and under the results too');
+  await shop.evaluate(() => window.postTime.nav.go('book'));
+  const record = await shop.evaluate(() => ({
+    stats: Object.fromEntries([...document.querySelectorAll('.stat')].map(x => [x.querySelector('.kicker').textContent, x.querySelector('b').textContent])),
+    photos: Object.fromEntries([...document.querySelectorAll('.photo-frame')].map(f => [f.textContent.match(/Race (\d)/)[1], f.querySelector('.you-note').textContent.replace(/ that paid.*/, '')])),
+  }));
+  assert.equal(lastRace.saved, null, 'the best day was saved before the next race day, and this checked nothing');
+  assert.deepEqual({ 'Biggest ticket': record.stats['Biggest ticket'], 'Best day': record.stats['Best day'] }, lastRace.want, "the record's biggest ticket or best day");
+  assert.deepEqual([record.photos[3], record.photos[4]], ["That's you on the right, holding tickets", "That's you on the right, holding a ticket"], 'a photo for two cashed tickets should say "tickets"');
+  // Nothing won yet, on a record with nothing in it.
+  const none = await shop.evaluate(() => {
+    const { game, nav } = window.postTime, kept = game.player.ledger;
+    game.player.ledger = [{ day: 0, no: 1, spent: 10, back: 0, best: 0 }];
+    nav.go('book');
+    const stats = Object.fromEntries([...document.querySelectorAll('.stat')].map(x => [x.querySelector('.kicker').textContent, x.querySelector('b').textContent]));
+    game.player.ledger = kept;
+    return [stats['Biggest ticket'], stats['Best day']];
+  });
+  assert.deepEqual(none, ['None yet', 'None yet'], 'with nothing won, the record should say so (it said "Biggest ticket $0.00" and "Best day −$10.00")');
   await ctx5.close();
 }
 

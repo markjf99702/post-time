@@ -315,6 +315,18 @@ export function advanceDay() {
   save();
 }
 
+// The race day you came out furthest ahead on, by the betting record, with today's races so far in it; null
+// until there's a day you came out ahead on. (The record page used to show what's saved as `best`, which
+// is written only when the next race day is asked for, and was the least bad day when every day had lost:
+// "Best day −$10.00".)
+export function bestDay(ledger = game.player.ledger) {
+  const days = new Map();
+  for (const x of ledger) days.set(x.day, (days.get(x.day) || 0) + x.back - x.spent);
+  let best = null;
+  for (const [day, net] of days) if (round2(net) > 0 && (!best || net > best.net)) best = { day, net: round2(net) };
+  return best;
+}
+
 export function dayTotals(c = card()) {
   let spent = 0, back = 0;
   for (const r of c.races) {

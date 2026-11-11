@@ -47,6 +47,9 @@ export function renderCard(root, nav) {
         tot.pending ? h('span', { class: 'muted' }, `${tot.spent ? ' · ' : ''}${money(tot.pending)} riding on races to come`) : null,
       ) : null,
       atmLine(() => redraw(nav)),
+      // With the last race run, the way on is here as well as under the eight results, where it was about
+      // 1,170 px down a phone's 844: a card opened the next morning had nothing on it to press.
+      !nxt ? h('div', { class: 'day-over' }, h('p', { class: 'h2' }, "That's the card."), nextDayButton(nav)) : null,
     ),
     h('ol', { class: 'races' }, c.races.map(r => h('li', {}, raceRow(r, nxt, nav)))),
   );
@@ -56,10 +59,14 @@ export function renderCard(root, nav) {
     foot.append(
       h('p', { class: 'h2' }, "That's the card."),
       h('p', { class: 'muted' }, 'Entries for next Saturday are drawn. Some of today\'s horses will be back in two or three weeks.'),
-      h('button', { class: 'btn brass', type: 'button', onclick: () => { advanceDay(); nav.go('card'); window.scrollTo(0, 0); } }, 'Next race day ▸'),
+      nextDayButton(nav),
     );
   }
   root.append(foot, jdFoot());
+}
+
+function nextDayButton(nav) {
+  return h('button', { class: 'btn brass', type: 'button', onclick: () => { advanceDay(); nav.go('card'); window.scrollTo(0, 0); } }, 'Next race day ▸');
 }
 
 function raceRow(r, nxt, nav) {

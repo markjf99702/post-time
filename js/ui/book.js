@@ -1,9 +1,9 @@
 // Your scrapbook of winner's circle photos, your record at the windows, and how to play.
 
 import { h, money, jdFoot } from './dom.js';
-import { game, START_BANK } from '../game.js';
+import { game, START_BANK, bestDay } from '../game.js';
 import { TIPSTERS } from '../data.js';
-import { longDate } from '../world.js';
+import { longDate, dayDate, dateISO } from '../world.js';
 import { photoCard } from './results.js';
 import { MOVING } from './race.js';
 
@@ -13,6 +13,8 @@ export function renderBook(root, nav) {
   const back = p.ledger.reduce((s, x) => s + x.back, 0);
   const best = p.ledger.reduce((m, x) => Math.max(m, x.best), 0);
   const cashed = p.ledger.filter(x => x.back > 0).length;
+  // Worked out from the record, so today counts before the next race day is asked for.
+  const top = bestDay();
   root.append(
     h('div', { class: 'rhead' },
       h('button', { class: 'back', type: 'button', onclick: () => nav.go('card') }, '‹ The card'),
@@ -24,8 +26,8 @@ export function renderBook(root, nav) {
       stat('Bet', money(spent)),
       stat('Back', money(back)),
       stat('Races cashed', `${cashed} of ${p.ledger.length}`),
-      stat('Biggest ticket', money(best)),
-      p.best ? stat('Best day', money(p.best.net, { sign: true }), longDate(p.best.date).replace(/^\w+, /, '')) : null,
+      stat('Biggest ticket', best > 0 ? money(best) : 'None yet'),
+      stat('Best day', top ? money(top.net, { sign: true }) : 'None yet', top ? longDate(dateISO(dayDate(game.world, top.day))).replace(/^\w+, /, '') : ''),
     ),
   );
   root.append(h('h2', { class: 'h2 pad', style: { paddingBottom: 0 } }, "Winner's circle photos"));

@@ -228,6 +228,9 @@ a { color: var(--link); }
 .atm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .atm p { margin: 0; flex: 1 1 200px; }
 .day .atm { margin-top: 12px; }
+/* The last race is run: "That's the card" and the way to the next race day, above the results as well as below. */
+.day-over { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.day-over .h2 { margin: 0; }
 .summary .atm { flex: 1 0 100%; padding-top: 10px; border-top: 1px solid var(--line); }
 .bet-foot .atm { flex: 1 1 260px; font-size: 15px; }
 .jd-foot { padding: 14px 16px; text-align: center; font-size: 14px; color: var(--muted); }
