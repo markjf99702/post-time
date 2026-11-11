@@ -888,6 +888,34 @@ test('"And they\'re off!" is said in a race with a name, even by a slow voice', 
   }
 });
 
+test("the Larkspur Handicap's first line names its purse and its distance, and the gates wait for it", () => {
+  // Closing day's big race was called like any other Saturday's stakes. Its first line now has the purse and
+  // the distance, said in words, and the horses stand in the gate until it's over, with or without the bugle.
+  const [first] = recorded('test-voice', 1);
+  const big = { ...first, race: { ...first.race, name: BIG_STAKES.name, f: BIG_STAKES.f, purse: BIG_STAKES.purse, seed: `${first.race.seed}:big` }, close: false };
+  for (const bugle of [0, 3.83]) {
+    for (const syllablesASecond of [4.3 / 1.15, 4.3, 4.3 * 1.15]) {
+      const r = rig({ syllablesASecond, startAfter: 120 });
+      const { live, gate } = replay(r, big, { bugle });
+      const [pre, off] = live.lines;
+      const at = `${bugle ? 'with' : 'without'} the bugle, ${syllablesASecond.toFixed(2)} syllables a second`;
+      assert.match(pre.text, /for the Larkspur Handicap, \$300,000 at a mile and an eighth\.$/, at);
+      assert.match(pre.say, /for the Larkspur Handicap, three hundred thousand dollars at a mile and an eighth\.$/, at);
+      assert.ok(gate > 5.2 && gate >= pre.d * 1.15 + 0.4 + (bugle ? bugle + 0.3 : 0.2) - 1e-9, `${at}: ${gate.toFixed(2)} s in the gate for a first line of ${pre.d.toFixed(2)} s`);
+      const said = r.log.filter(x => x.ev === 'speak'), ends = r.log.filter(x => x.ev === 'end');
+      assert.deepEqual(said.slice(0, 2).map(x => x.line), [pre, off], at);
+      assert.ok(ends[0].t <= said[1].t, `${at}: the first line was still being said at the off`);
+      assert.ok(Math.abs(said[1].T) <= 0.2, `${at}: the off is said ${said[1].T.toFixed(2)} s from the bell`);
+      assert.equal(r.log.filter(x => x.ev === 'stop' && x.T < 3).length, 0, `${at}: a line was cut off at the start`);
+    }
+  }
+  // Another stakes is as it was.
+  const other = { ...first, race: { ...first.race, name: STAKES[2].name, f: 9, purse: 150000 }, close: false };
+  const { live, gate } = replay(rig(), other);
+  assert.equal(gate, 5.2);
+  assert.ok(live.lines[0].text.endsWith(`for the ${STAKES[2].name}.`));
+});
+
 test('with the bugle playing, the caller waits for it and the gates wait for the caller', () => {
   // The caller's first line came 2.6 seconds after the screen opened, over the last 1.2 seconds of the
   // bugle, and a race's name ran into the starting bell. Now: the bugle, three tenths of a second, the

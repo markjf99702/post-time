@@ -2890,18 +2890,27 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   await play(4);
   assert.equal(await meet.locator('.day .kicker').textContent(), 'Race day 5 of 10 · the Larkspur Handicap in five weeks');
   await play(4);
-  assert.equal(await meet.locator('.day .kicker').textContent(), 'Race day 9 of 10 · the Larkspur Handicap next Saturday');
+  assert.equal(await meet.locator('.day .kicker').textContent(), 'Race day 9 of 10');
+  assert.equal(await meet.locator('.day .big-next').textContent(), 'Next Saturday: the Larkspur Handicap, $300,000');
   await play(1);
   assert.equal(await meet.locator('.day .kicker').textContent(), 'Larkspur Handicap day · race day 10 of 10');
+  assert.equal(await meet.locator('.day .big-next').count(), 0);
+  assert.deepEqual(await meet.locator('.race-row.big .what').allTextContents(), ['Larkspur Handicap'], 'the Handicap has the brass border, and only it');
   // The Handicap's form says which weekly stakes sent each horse pointed to it.
   await meet.evaluate(() => window.postTime.nav.go('race', { no: 8 }));
   assert.ok(await meet.locator('.entry .chip', { hasText: /^(Won the|2nd in the) / }).count() >= 4, 'no horse in the Handicap says which stakes sent it');
-  // The day run: "That's the meet", and its closing page.
+  // The day run, with a ticket on the Handicap's winner: its photo says what it won.
   await meet.evaluate(async () => {
     const G = await import('./js/game.js');
-    for (const race of G.card().races) G.goToGate(race);
-    window.postTime.nav.go('card');
+    for (const race of G.card().races) {
+      if (race.no === 8) G.placeBet(race, { type: 'win', sel: [G.recordingOf(race).results[0].h], amt: 2 });
+      G.goToGate(race);
+    }
+    window.postTime.nav.go('circle', { no: 8 });
   });
+  assert.match(await meet.locator('.photo-frame.big .caption').textContent(), /Winner of the Larkspur Handicap/);
+  // "That's the meet", and its closing page.
+  await meet.evaluate(() => window.postTime.nav.go('card'));
   assert.equal(await meet.locator('.day-over .h2').textContent(), "That's the meet.");
   await meet.click('.day-over .btn');
   assert.equal(await meet.locator('.rhead .kicker').textContent(), 'Meet 1 · closing day');

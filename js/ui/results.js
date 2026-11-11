@@ -149,12 +149,14 @@ export function photoCard(rec, you) {
   const c = h('canvas', { width: 720, height: 500 });
   // What the photo was worth is everything cashed on the race, which can be more than one ticket.
   const cashed = (game.player.settled[`${rec.day}:${rec.no}`]?.returns || []).filter(x => x > 0).length;
-  const frame = h('figure', { class: 'photo-frame', style: { margin: '0 auto' } },
+  // The Larkspur Handicap's photo says so, and is framed in brass in the scrapbook.
+  const big = rec.name === BIG_STAKES.name;
+  const frame = h('figure', { class: `photo-frame${big ? ' big' : ''}`, style: { margin: '0 auto' } },
     c,
     h('figcaption', { class: 'caption' },
       h('span', {}, 'Larkspur Downs'), h('span', { class: 'r' }, `Race ${rec.no} · `, h('span', { class: 'long' }, shortLong(rec.date)), h('span', { class: 'short' }, shortLong(rec.date, 3))),
       h('span', { class: 'horse' }, rec.horse.name),
-      h('span', {}, rec.name || classText(rec)), h('span', { class: 'r' }, `${rec.dist} · ${fmtTime(rec.time)}`),
+      h('span', {}, big ? `Winner of the ${rec.name}` : rec.name || classText(rec)), h('span', { class: 'r' }, `${rec.dist} · ${fmtTime(rec.time)}`),
       h('span', {}, `${rec.jockey} up`), h('span', { class: 'r' }, `Tr. ${rec.trainer}`),
       h('span', { style: { gridColumn: '1 / -1' } }, `Owner ${rec.ownerName}`),
       you && rec.won ? h('span', { class: 'you-note' }, `That's you on the right, holding ${cashed > 1 ? 'tickets' : 'a ticket'} that paid ${money(rec.won)}.`) : null,

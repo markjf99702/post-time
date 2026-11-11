@@ -13,6 +13,7 @@ import { segmentAt, LENGTH, FURLONG } from './track.js';
 import { rng } from './rng.js';
 import { marginText, lengthsText } from './chart.js';
 import { sayTime } from './audio.js';
+import { BIG_STAKES } from './data.js';
 
 // Numbers in words, since the voice reads the call: "twenty-two", and "oh" for a nought.
 const ONES = ['oh', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
@@ -202,6 +203,11 @@ function scan(run) {
 // Each is a list of [id, ...] so that one can be left out when it wouldn't be true (a horse is only
 // "into the far turn" at the start of it) and the rest keep their ids. pick() below chooses among them.
 
+// The distances the big race can be run at, said the way a caller says them, and its purse.
+const BIG_DISTANCE = { 8: 'a mile', 8.5: 'a mile and a sixteenth', 9: 'a mile and an eighth', 10: 'a mile and a quarter' };
+const dollars = n => `$${n.toLocaleString('en-US')}`;
+const HUNDREDS = { 100: 'one hundred', 150: 'one hundred and fifty', 200: 'two hundred', 250: 'two hundred and fifty', 300: 'three hundred', 400: 'four hundred', 500: 'five hundred' };
+const dollarWords = n => (n % 1000 === 0 && HUNDREDS[n / 1000] ? `${HUNDREDS[n / 1000]} thousand dollars` : dollars(n));
 const PRE = [[0, 'The field is in the gate'], [1, "They're in the gate"], [2, "They're all in line"], [3, "They're all in"]];
 const OFF = [[0, "And they're off!"], [1, "They're off!"], [2, 'And away they go!'], [3, "They're racing!"], [4, "And they're away!"]];
 const STUMBLE = [[0, x => `${x} stumbles at the start!`], [1, x => `${x} stumbles coming out!`], [2, x => `A stumble at the start for ${x}!`], [3, x => `${x} stumbles leaving the gate!`]];
@@ -954,10 +960,18 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     // Ends Handicap." is about three seconds), so that line comes up sooner than the plain one, to be done
     // by the off. With the bugle playing it comes when the bugle is over, and the gates wait for it: the
     // bugle, a moment, the line, a moment more, the bell.
+    // The Larkspur Handicap, the meet's big race on closing day, has its purse and its distance said too,
+    // and the gates wait for that, as they wait for the bugle.
     picking = [];
-    const pre = lineAt(form(`${pick('pre', PRE)[1]}${race.name ? ` for the ${race.name}` : ''}.`), 0, 'pre', 'pre');
-    const before = bugle ? pre.d + 0.4 : Math.min(5, Math.max(race.name ? 3.4 : 2.6, pre.d + 0.4));
+    const opener = `${pick('pre', PRE)[1]}${race.name ? ` for the ${race.name}` : ''}`;
+    const big = race.name === BIG_STAKES.name && BIG_DISTANCE[race.f];
+    const pre = lineAt(big ? form(`${opener}, ${dollars(race.purse)} at ${big}.`, null, `${opener}, ${dollarWords(race.purse)} at ${big}.`)
+      : form(`${opener}.`), 0, 'pre', 'pre');
+    // (Its line is long enough that a voice a little slower than planned would still be on it at the off:
+    // it's given that much more room.)
+    const before = big ? pre.d * 1.15 + 0.4 : bugle ? pre.d + 0.4 : Math.min(5, Math.max(race.name ? 3.4 : 2.6, pre.d + 0.4));
     if (bugle) gate = Math.max(gate, bugle + 0.3 + before);
+    else if (big) gate = Math.max(gate, before + 0.2);
     pre.t = clock(wall(-t0) - before);
     give(pre);
   }

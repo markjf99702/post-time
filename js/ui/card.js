@@ -2,7 +2,7 @@
 
 import { h, money, cloth, jdFoot, dotted } from './dom.js';
 import { game, card, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay } from '../game.js';
-import { longDate, clockText, raceDayOf, meetDays, isClosingDay } from '../world.js';
+import { longDate, clockText, raceDayOf, meetDays, isClosingDay, isHandicap } from '../world.js';
 import { BIG_STAKES } from '../data.js';
 import { distanceName } from '../track.js';
 
@@ -61,6 +61,8 @@ export function renderCard(root, nav) {
         tot.spent ? ['Today: bet ', h('b', { class: 'money' }, money(tot.spent)), ', back ', h('b', { class: 'money' }, money(tot.back)), ' ', h('b', { class: `money ${tot.net >= 0 ? 'pos' : 'neg'}` }, `(${money(tot.net, { sign: true })})`)] : null,
         tot.pending ? h('span', { class: 'muted' }, `${tot.spent ? ' · ' : ''}${money(tot.pending)} riding on races to come`) : null,
       ) : null,
+      // The Saturday before closing day says what's coming.
+      raceDayOf(w) === meetDays(w) - 1 ? h('p', { class: 'big-next' }, `Next Saturday: the ${BIG_STAKES.name}, ${money(BIG_STAKES.purse, { cents: false })}`) : null,
       atmLine(() => redraw(nav)),
       // With the last race run, the way on is here as well as under the eight results, where it was about
       // 1,170 px down a phone's 844: a card opened the next morning had nothing on it to press.
@@ -93,7 +95,7 @@ function nextDayButton(nav, closing) {
 export function dayKicker(w) {
   const n = raceDayOf(w), of = meetDays(w), left = of - n;
   if (!left) return `${BIG_STAKES.name} day · race day ${n} of ${of}`;
-  if (left === 1) return `Race day ${n} of ${of} · the ${BIG_STAKES.name} next Saturday`;
+  if (left === 1) return `Race day ${n} of ${of}`; // the line under the weather says what next Saturday is
   return `Race day ${n} of ${of} · the ${BIG_STAKES.name} in ${countWord(left)} weeks`;
 }
 const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
@@ -103,7 +105,8 @@ function raceRow(r, nxt, nav) {
   const isNext = nxt && r.no === nxt.no;
   const done = r.status === 'official';
   const tags = [];
-  if (r.cls === 'STK') tags.push(h('span', { class: 'tag stk' }, r.name.includes('Larkspur') ? 'Feature' : 'Stakes'));
+  const big = isHandicap(r);
+  if (r.cls === 'STK') tags.push(h('span', { class: `tag stk${big ? ' big' : ''}` }, big ? 'Feature' : 'Stakes'));
   if (r.surface === 'turf') tags.push(h('span', { class: 'tag turf' }, 'Turf'));
   if (r.fm) tags.push(h('span', { class: 'tag' }, 'Fillies & mares'));
   const mine = myBets(r);
@@ -125,7 +128,7 @@ function raceRow(r, nxt, nav) {
     );
   }
   return h('button', {
-    class: `race-row${done ? ' done' : ''}${isNext ? ' next' : ''}`, type: 'button',
+    class: `race-row${done ? ' done' : ''}${isNext ? ' next' : ''}${big ? ' big' : ''}`, type: 'button',
     onclick: () => nav.go(done ? 'result' : 'race', { no: r.no }),
   },
   h('div', { class: 'no' }, h('small', {}, 'Race'), String(r.no)),
