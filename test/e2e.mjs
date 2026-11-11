@@ -2314,6 +2314,10 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
     AudioBufferSourceNode.prototype.start = function (...a) { if (this.buffer && this.buffer.sampleRate === 22050) window.__played.push(this); return start.apply(this, a); };
     const persist = StorageManager.prototype.persist;
     StorageManager.prototype.persist = function () { window.__keep++; return persist.call(this); };
+    // And the speed each line is asked of the downloaded voice's worker at.
+    window.__speeds = [];
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message, ...rest) { if (message && message.type === 'speak') window.__speeds.push(message.speed); return post.call(this, message, ...rest); };
   });
   const page = await ctx.newPage();
   const problems = [], left = [];
@@ -2428,6 +2432,10 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   // One clip, through the one sound output the page has (the bugle's and the bell's), played as it was
   // made: not sped up, not retuned. The browser's voice said nothing.
   assert.deepEqual([played.clips, played.outputs, played.through, played.going, played.pace, played.detune, played.browser], [1, 1, true, 'running', 1, 0, 0]);
+  // The line was asked of his worker at the speed his call opens at. (The clip's length can't show that:
+  // see below.)
+  const [speeds, opens] = await page.evaluate(async () => [window.__speeds, (await import('./js/joe.js')).JOE.opens]);
+  assert.deepEqual(speeds, [opens], 'Hear it asked for the line at another speed than the call opens at');
   // As long as Python Piper's own sound of the line at that speed, within a tenth.
   assert.ok(Math.abs(played.seconds / reference.sample.seconds - 1) < 0.10, `Hear it ran ${played.seconds} s; Python Piper's runs ${reference.sample.seconds} s`);
   // Sound in it, at about the level every line is brought to, and no sample at or over full scale (the
@@ -2439,22 +2447,29 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   // The worker itself: the numbers into the model are Python Piper's for the line; a clip's length is
   // exactly its samples'; faster is the model talking faster (the same line at his own speed is longer);
   // lines asked for together come back in the order asked; and it can be shut down and asked again.
+  //
+  // The model draws each sound's length at random, and asked to talk faster it shortens a line by less than
+  // the speed asked. Python Piper's own sound of this line, forty goes at each speed: 3.08 s at his own speed,
+  // 2.85 s at 1.15 times it and 2.39 s at 1.5 times it, each give or take 0.05 s. So his own speed is told
+  // from 1.5 times it, where one go against another came out between 1.20 and 1.39 times as long (1.29 in
+  // the middle). It used to be told from 1.15 times it, expecting 1.05 to 1.27: those are 1.08 apart in the
+  // middle and anything from 1.01 to 1.14 in one go, so the check failed one run in six.
   const made = await page.evaluate(async text => {
     const joe = await import('./js/joe.js');
     const one = async speed => { const c = await joe.speak(text, speed, { ids: true }); return { seconds: c.seconds, exact: c.seconds === c.samples.length / c.rate && c.rate === 22050, ids: c.ids }; };
-    const own = await one(1), opens = await one(joe.JOE.opens);
+    const own = await one(1), opens = await one(joe.JOE.opens), fast = await one(1.5);
     const order = [];
     await Promise.all(['A furlong out!', 'And down the stretch they come!', 'It is a photo!'].map((t, i) => joe.speak(t, 1.3).then(() => order.push(i))));
     const was = joe.running();
     joe.shutdown();
-    return { own, opens, order, was, after: joe.running() };
+    return { own, opens, fast, order, was, after: joe.running() };
   }, SAMPLE);
   const theirs = reference.lines.find(l => l[0] === SAMPLE).slice(1).map(b => [...Buffer.from(b, 'base64')]);
   assert.deepEqual(made.opens.ids, theirs, 'in the browser, the voice is fed other numbers than Python Piper feeds it');
-  assert.deepEqual([made.own.exact, made.opens.exact, made.order, made.was, made.after], [true, true, [0, 1, 2], true, false]);
+  assert.deepEqual([made.own.exact, made.opens.exact, made.fast.exact, made.order, made.was, made.after], [true, true, true, [0, 1, 2], true, false]);
   assert.ok(Math.abs(made.opens.seconds / reference.sample.seconds - 1) < 0.10, `the line ran ${made.opens.seconds} s`);
-  const slower = made.own.seconds / made.opens.seconds;
-  assert.ok(slower > 1.05 && slower < 1.27, `at his own speed the line is ${slower} times as long as at 1.15 times it`);
+  const slower = made.own.seconds / made.fast.seconds;
+  assert.ok(slower > 1.12 && slower < 1.47, `at his own speed the line is ${slower} times as long as at 1.5 times it (${made.own.seconds} s and ${made.fast.seconds} s)`);
 
   // With no connection: he's still here, and still talks.
   net = 'down';
