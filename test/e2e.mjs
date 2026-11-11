@@ -433,16 +433,18 @@ assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= i
 await page.setViewportSize({ width: 320, height: 568 });
 await page.click('.race-row.next');
 // The past performances of every horse in the race, opened on this small phone: a table wider than its
-// card can be slid sideways to the end of its rows (it used to be cut off at the card's edge).
+// card can be slid sideways to the end of its rows (it used to be cut off at the card's edge). (A table is
+// too wide when it runs into its box's padding on the right, which is narrower on a phone this size.)
 const cutOff = await page.evaluate(() => {
   let wide = 0, stuck = 0;
   for (const head of document.querySelectorAll('.entry-head')) {
     head.click();
     const more = head.closest('.entry').querySelector('.entry-more'), table = more.querySelector('.pps');
-    if (!table || table.getBoundingClientRect().right <= more.getBoundingClientRect().right - 11) continue;
+    const edge = () => more.getBoundingClientRect().right - parseFloat(getComputedStyle(more).paddingRight) + 1;
+    if (!table || table.getBoundingClientRect().right <= edge()) continue;
     wide++;
     more.scrollLeft = 1000;
-    if (table.getBoundingClientRect().right > more.getBoundingClientRect().right - 11) stuck++;
+    if (table.getBoundingClientRect().right > edge()) stuck++;
   }
   return { wide, stuck, sideways: document.documentElement.scrollWidth > innerWidth };
 });
@@ -1332,6 +1334,43 @@ await page.waitForSelector('.races');
     assert.deepEqual([...new Set(tickets.map(t => `${t.label} | ${t.alone}`))], ['torn up | torn up'], `${where}: a losing ticket's right-hand piece should say "torn up" and nothing else`);
     await shop.evaluate(() => window.postTime.nav.go('race', { no: 1, tab: 'bet' }));
     await shop.waitForSelector('.tickets .ticket.lost');
+  }
+
+  // Past performances fit a phone. With every horse opened in all eight races, no table is wider than its
+  // box at 390, at 360 or at 320, so nothing has to be slid sideways to be read. (At 360, 12 tables of 34
+  // were up to 23 px too wide, and the rider under the odds read "Villase".) One horse is given lines with
+  // every column at its widest at once, in the longest class labels there are: its table fits too, by
+  // putting the last of its calls on a second line. The rider is on the comment line.
+  await shop.evaluate(() => {
+    const { game, card } = window.postTime;
+    const race = card().races[7], hs = game.world.horses[race.entries.find(e => game.world.horses[e.hid].pps.length).hid];
+    const widest = (nm, cls, fm) => ({ ...hs.pps[0], dt: '2026-09-26', cond: 'sloppy', f: 8.5, surf: 't', fs: 12, nm, cls, fm, fig: 100, line: [[12, 2.25], [12, 3.25], [11, 4.5], [11, 12.75]], fin: 11, odds: 99.9 });
+    hs.pps = [widest('Odds and Ends Handicap', 'STK', false), widest(null, 'C40', true), widest(null, 'MSW', true), widest('Thumbtack Stakes', 'STK', false)];
+    window.widest = hs.name;
+  });
+  for (const [width, height] of [[320, 568], [360, 740], [390, 844]]) {
+    await shop.setViewportSize({ width, height });
+    const tables = { n: 0, wide: [], labels: [], rider: [] };
+    for (let no = 1; no <= 8; no++) {
+      await shop.evaluate(n => window.postTime.nav.go('race', { no: n }), no);
+      const seen = await shop.evaluate(no => {
+        for (const head of document.querySelectorAll('.entry-head')) head.click();
+        const all = [...document.querySelectorAll('.entry-more')].filter(m => m.querySelector('.pps'));
+        const made = all.find(m => m.closest('.entry').querySelector('.nm').textContent === window.widest);
+        return {
+          n: all.length,
+          wide: all.filter(m => m.scrollWidth > m.clientWidth).map(m => `race ${no}, ${m.closest('.entry').querySelector('.nm').textContent}: ${m.scrollWidth - m.clientWidth} px`),
+          labels: made ? [...made.querySelectorAll('tbody tr:not(.c) td:nth-child(3)')].map(td => td.textContent) : [],
+          rider: made ? [...made.querySelectorAll('tbody tr')].slice(0, 2).map(tr => / · [A-Z][\p{L}'-]+ up( · |$)/u.test(tr.textContent)) : [],
+        };
+      }, no);
+      tables.n += seen.n;
+      for (const k of ['wide', 'labels', 'rider']) tables[k].push(...seen[k]);
+    }
+    assert.ok(tables.n >= 30, `only ${tables.n} tables of past performances to measure`);
+    assert.deepEqual(tables.wide, [], `${width} wide: tables of past performances wider than their boxes`);
+    assert.deepEqual(tables.labels, ['ThumbtackS', 'f-MdSpWt', 'f-Clm40k', 'OddsEndsH'], 'the short names of a stakes and of a claiming race'); // newest line first
+    assert.deepEqual(tables.rider, [false, true], "the rider should be on a line's comment, and not under its odds");
   }
   await ctx5.close();
 }

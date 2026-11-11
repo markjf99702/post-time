@@ -227,17 +227,22 @@ function fillMore(more, race, e, hs) {
         h('tr', {},
           h('td', {}, shortDate(p.dt), h('br'), h('span', { class: 'muted' }, `Lrk ${COND[p.cond] || p.cond}`)),
           h('td', {}, `${distanceShort(p.f * FURLONG)}${p.surf === 't' ? ' ⓣ' : ''}`, h('br'), h('span', { class: 'muted' }, `${p.fs} ran`)),
-          h('td', {}, p.nm ? shortStakes(p.nm) : (p.fm ? 'f-' : '') + CLASSES[p.cls].short),
+          h('td', {}, p.nm ? shortStakes(p.nm) : (p.fm ? 'f-' : '') + shortClass(p.cls)),
           h('td', { class: 'f' }, String(p.fig)),
-          h('td', {}, calls.map(c => [supCall(c), ' ']), h('b', { class: p.fin === 1 ? 'win' : '' }, supCall(fin))),
-          h('td', {}, p.odds.toFixed(1), h('br'), h('span', { class: 'muted' }, JOCKEYS[p.j].name.split(' ')[1])),
+          // The calls are the one cell that may take a second line, between one call and the next, when
+          // the table would otherwise be wider than the card (the cells beside it have two lines already).
+          h('td', { class: 'calls' }, calls.map(c => [h('span', {}, supCall(c)), ' ']), h('b', { class: p.fin === 1 ? 'win' : '' }, supCall(fin))),
+          h('td', {}, p.odds.toFixed(1)),
         ),
-        h('tr', { class: 'c' }, h('td', { colspan: 6 },
+        // The rider is on this line, which wraps, and not under the odds, where a long surname made the
+        // narrowest column the widest and pushed the table off the side of a phone.
+        h('tr', { class: 'c' }, h('td', { colspan: 6 }, h('div', {},
           h('b', {}, p.cm), ' · ',
           p.fr.slice(0, -1).map(fmtTime).join(' '), ' ', h('b', {}, fmtTime(p.fr[p.fr.length - 1])), ' · ',
           p.top.map((x, k) => `${x[0]}${k < 2 && x[1] ? ' ' + marginShort(x[1]) : ''}`).join(', '),
+          ` · ${JOCKEYS[p.j].name.split(' ')[1]} up`,
           p.claimed ? ` · Claimed from ${TRAINERS[p.claimed.from]} for $${p.claimed.price.toLocaleString('en-US')}` : '',
-        )),
+        ))),
       );
     }
     t.append(tb);
@@ -260,8 +265,15 @@ function fillMore(more, race, e, hs) {
 function supCall([pos, margin]) {
   return [String(pos), margin > 0.03 ? h('sup', {}, marginShort(margin)) : null];
 }
+// The Class column's labels, short enough for the table to fit a phone 360 wide: a stakes by four letters
+// of each word of its name, without its "and" ("OddsEndsH", which was "OddsandEndsH"; a name of one word
+// is kept whole), and a claiming price in thousands ("f-Clm40k", which was "f-Clm40000").
 function shortStakes(name) {
-  return name.replace(/ (Stakes|Handicap|Mile|Sprint)$/, '').split(' ').map(w => w.slice(0, 5)).join('') + (/Handicap/.test(name) ? 'H' : 'S');
+  const words = name.replace(/ (Stakes|Handicap|Mile|Sprint)$/, '').split(' ').filter(w => !/^(and|the|of)$/i.test(w));
+  return words.map(w => (words.length > 1 ? w.slice(0, 4) : w)).join('') + (/Handicap/.test(name) ? 'H' : 'S');
+}
+function shortClass(cls) {
+  return CLASSES[cls].short.replace(/000$/, 'k');
 }
 
 // ------------------------------------------------------------------ paddock

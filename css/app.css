@@ -250,6 +250,17 @@ a { color: var(--green-2); }
 .pps th { font: 500 10px/1 var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 4px 3px; border-bottom: 1px solid var(--line); }
 .pps td { padding: 5px 3px 1px; vertical-align: top; white-space: nowrap; }
 .pps tr.c td { padding: 0 3px 6px; color: var(--muted); white-space: normal; border-bottom: 1px solid var(--line); font-size: 12px; }
+/* The table is as wide as its card and no wider. The line of comment under each row wraps at the table's width
+   and has no say in it (its box asks for no width and then takes all there is). If the row above it still
+   doesn't fit, its calls go onto a second line, breaking between one call and the next. */
+.pps tr.c div { width: 0; min-width: 100%; }
+.pps td.calls { white-space: normal; }
+.pps td.calls span, .pps td.calls b { white-space: nowrap; }
+/* On a phone under 400 px wide the table's cells and its box sit a little closer, so every row fits at 360. */
+@media (max-width: 400px) {
+  .entry-more { padding-left: 10px; padding-right: 10px; }
+  .pps th, .pps td, .pps tr.c td { padding-left: 2px; padding-right: 2px; }
+}
 .pps .win { color: var(--win); font-weight: 600; }
 .pps .f { font-weight: 600; }
 .works { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); }
