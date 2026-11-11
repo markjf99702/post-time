@@ -753,7 +753,8 @@ function hearDownloaded(line, opts) {
     if (mine === hearing && !out) playClip(clip);
   }, error => {
     preparing--;
-    if (!joe.running()) downloadedFailed = String((error && error.message) || error); // he couldn't be started
+    // He couldn't be started. (Not when the page itself shut him down while the line was being made.)
+    if (!joe.running() && !(error && error.shutdown)) downloadedFailed = String((error && error.message) || error);
     tell();
     // The browser's voice carries on.
     if (mine === hearing && !out && canSpeak() && !downloadedReads()) caller.speak(line, opts);
@@ -790,6 +791,7 @@ function away() {
   out = true;
   caller.stop();
   quiet();
+  joe.shutdown(); // the downloaded voice's worker holds some hundreds of megabytes: a page out of sight gives them back
   if (ac && ac.state === 'running') { soundHeld = true; quietly(ac.suspend()); }
 }
 function back() {

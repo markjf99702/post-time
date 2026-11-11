@@ -194,7 +194,7 @@ function start() {
   // The worker itself has failed (a browser that can't run it, or one that has run out of memory).
   worker.onerror = event => { if (event.preventDefault) event.preventDefault(); if (worker === mine) shutdown(new Error(event.message || 'the voice stopped')); };
   loading = ask({ type: 'load', cache: JOE.cache, base: base() });
-  loading.catch(() => { if (worker === mine) shutdown(); });
+  loading.catch(error => { if (worker === mine) shutdown(error); });
   return loading;
 }
 
@@ -207,8 +207,9 @@ export async function speak(text, speed = 1, { ids = false } = {}) {
   await ready();
   return ask({ type: 'speak', text, speed, ids });
 }
-// Ends the worker and gives its memory back. Anything still being made is refused.
-export function shutdown(reason = new Error('the voice was shut down')) {
+// Ends the worker and gives its memory back. Anything still being made is refused, with an error whose
+// `shutdown` is true when that was the page's own doing and not the voice failing.
+export function shutdown(reason = Object.assign(new Error('the voice was shut down'), { shutdown: true })) {
   if (worker) worker.terminate();
   worker = null; loading = null;
   for (const w of waiting.values()) w.reject(reason);

@@ -2469,7 +2469,26 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   assert.deepEqual(offline, ['ready', true], 'the downloaded voice does not work offline');
   await ctx.setOffline(false);
   net = 'up';
+
+  // Out of sight (another tab, the phone locked), the page ends his worker, which holds some hundreds of
+  // megabytes while it's up. That's the page's own doing, not his failing: a line being made just then is
+  // dropped, the menu doesn't say he couldn't be started, and the next Hear it starts him again. (He stayed
+  // up for the rest of the visit, and ending him while a line was being made marked him as unable to start.)
   await open();
+  const sight = hidden => page.evaluate(h => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }); document.dispatchEvent(new Event('visibilitychange')); }, hidden);
+  const up = () => page.evaluate(() => import('./js/joe.js').then(joe => joe.running()));
+  await page.evaluate(() => { window.__said.length = 0; window.__played.length = 0; });
+  await page.click('#hearIt');
+  assert.equal(await up(), true);
+  await sight(true);
+  assert.equal(await up(), false, 'out of sight, the downloaded voice is still holding its memory');
+  await page.waitForFunction(() => document.getElementById('voiceNote').textContent !== 'Getting Joe ready', null, { timeout: 15000 });
+  await sight(false);
+  await page.waitForTimeout(300);
+  const hidden = await menu();
+  assert.deepEqual([hidden.reading, hidden.joe, await page.evaluate(() => [window.__played.length, window.__said.filter(u => !u.silent).length])], ['Reading in Joe', 'Joe is on this device (76 MB).', [0, 0]], 'ending the voice while the page was out of sight');
+  await page.click('#hearIt');
+  await page.waitForFunction(() => window.__played.length === 1, null, { timeout: 60000 });
 
   // With another voice chosen he's still on the device, and on the next visit the list says so: "Joe", not
   // a download to make again. Looking for him fetches nothing. (The list said "Joe (a 76 MB download)".)
