@@ -2,7 +2,8 @@
 
 import { h, money, cloth, jdFoot, dotted } from './dom.js';
 import { game, card, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay } from '../game.js';
-import { longDate, clockText } from '../world.js';
+import { longDate, clockText, raceDayOf, meetDays, isClosingDay } from '../world.js';
+import { BIG_STAKES } from '../data.js';
 import { distanceName } from '../track.js';
 
 const SKY = { sunny: '☀️', 'partly cloudy': '⛅', overcast: '☁️', rain: '🌧️', showers: '🌦️' };
@@ -46,9 +47,10 @@ export function renderCard(root, nav) {
   const w = game.world;
   const nxt = nextRace();
   const tot = dayTotals(c);
+  const closing = isClosingDay(w);
   root.append(
     h('section', { class: 'day' },
-      h('div', { class: 'kicker' }, `Race day ${w.day + 1} of the meet`),
+      h('div', { class: 'kicker' }, dayKicker(w)),
       h('h1', { class: 'day-date' }, longDate(c.date)),
       h('div', { class: 'wx' },
         h('span', {}, `${SKY[c.wx.sky] || ''} `, h('b', {}, cap(c.wx.sky)), `, ${c.wx.temp}°`),
@@ -62,7 +64,7 @@ export function renderCard(root, nav) {
       atmLine(() => redraw(nav)),
       // With the last race run, the way on is here as well as under the eight results, where it was about
       // 1,170 px down a phone's 844: a card opened the next morning had nothing on it to press.
-      !nxt ? h('div', { class: 'day-over' }, h('p', { class: 'h2' }, "That's the card."), nextDayButton(nav)) : null,
+      !nxt ? h('div', { class: 'day-over' }, h('p', { class: 'h2' }, closing ? "That's the meet." : "That's the card."), nextDayButton(nav, closing)) : null,
     ),
     h('ol', { class: 'races' }, c.races.map(r => h('li', {}, raceRow(r, nxt, nav)))),
   );
@@ -70,17 +72,32 @@ export function renderCard(root, nav) {
   const foot = h('div', { class: 'card-foot' });
   if (!nxt) {
     foot.append(
-      h('p', { class: 'h2' }, "That's the card."),
-      h('p', { class: 'muted' }, 'Entries for next Saturday are drawn. Some of today\'s horses will be back in two or three weeks.'),
-      nextDayButton(nav),
+      h('p', { class: 'h2' }, closing ? "That's the meet." : "That's the card."),
+      h('p', { class: 'muted' }, closing ? `Meet ${w.meet.no} is over. Its riders, trainers and horses of the meet are on its closing page, with your own meet, and meet ${w.meet.no + 1} opens next Saturday with the same horses.`
+        : 'Entries for next Saturday are drawn. Some of today\'s horses will be back in two or three weeks.'),
+      nextDayButton(nav, closing),
     );
   }
   root.append(foot, jdFoot());
 }
 
-function nextDayButton(nav) {
+// After closing day the way on is the meet's closing page, which opens the next meet.
+function nextDayButton(nav, closing) {
+  if (closing) return h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('meet') }, 'The meet in review ▸');
   return h('button', { class: 'btn brass', type: 'button', onclick: () => { advanceDay(); nav.go('card'); window.scrollTo(0, 0); } }, 'Next race day ▸');
 }
+
+// Over the date: which race day of the meet this is, counting down to the Handicap on closing day.
+// "Race day 5 of 10 · the Larkspur Handicap in five weeks"; on closing day "Larkspur Handicap day · race
+// day 10 of 10". (A meet carried over from before meets ended can be longer than ten: its first.)
+export function dayKicker(w) {
+  const n = raceDayOf(w), of = meetDays(w), left = of - n;
+  if (!left) return `${BIG_STAKES.name} day · race day ${n} of ${of}`;
+  if (left === 1) return `Race day ${n} of ${of} · the ${BIG_STAKES.name} next Saturday`;
+  return `Race day ${n} of ${of} · the ${BIG_STAKES.name} in ${countWord(left)} weeks`;
+}
+const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+const countWord = n => WORDS[n] || String(n);
 
 function raceRow(r, nxt, nav) {
   const isNext = nxt && r.no === nxt.no;

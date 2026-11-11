@@ -2,7 +2,7 @@
 
 import { h, money, cloth, silksCanvas, clear, ago, plural, dotted } from './dom.js';
 import { game, card, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor } from '../game.js';
-import { ownerSilks, ageOf, shortDate, clockText, CLASSES, meetStats } from '../world.js';
+import { ownerSilks, ageOf, shortDate, clockText, CLASSES, meetStats, isHandicap, prepsOf } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
 import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES, CLOTH } from '../data.js';
 import { callText, marginShort, fmtTime, fmtWork } from '../chart.js';
@@ -186,7 +186,9 @@ function entryCard(race, e, i, stats, board) {
   const js = stats.jockeys[e.j], ts = stats.trainers[trainer];
   const figs = hs.pps.slice().reverse().slice(0, 5).map(p => p.fig);
   const best = figs.length ? Math.max(...figs) : null;
-  const chips = angles(race, hs, game.world.day);
+  // In the Handicap, a horse pointed to it says which weekly stakes sent it: "Won the Brass Pull Stakes".
+  const preps = isHandicap(race) ? prepsOf(game.world, e.hid) : [];
+  const chips = [...preps.map(p => [`${p.pos === 1 ? 'Won' : '2nd in'} the ${p.name}`, 'good']), ...angles(race, hs, game.world.day)];
   const fresh = newcomer(hs); // no race on its card: a first-time starter, or one that has raced elsewhere
   const style = runStyle(hs);
   // The horses opened in this race's form stay open when the form is drawn again: on the way back from

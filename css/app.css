@@ -611,12 +611,26 @@ a { color: var(--link); }
   .photo-frame .caption .short { display: inline; }
 }
 .photo-frame .you-note { grid-column: 1 / -1; text-transform: none; letter-spacing: 0; font: italic 400 13px/1.3 var(--body); color: #6b604b; margin-top: 4px; }
+/* Under a weekly stakes' result: the two it sends to the Handicap. */
+.official .pointed { margin: 0; padding: 10px 12px; border-left: 3px solid var(--brass); background: var(--card); border-radius: 0 8px 8px 0; font-size: 15px; }
 .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; padding: 16px; }
 
 /* scrapbook */
 .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; padding: 12px; }
 .book-grid .photo-frame { transform: rotate(-.6deg); }
 .book-grid .photo-frame:nth-child(2n) { transform: rotate(.7deg); }
+/* The scrapbook's earlier meets, each a row that opens its closing page; its photos a meet at a time. */
+.meets { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+.meet-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: 4px 12px; align-items: baseline; text-align: left; width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; box-shadow: var(--shadow); cursor: pointer; font-size: 15px; }
+.meet-row .muted { font-size: 14px; }
+.meet-row .go { color: var(--muted); }
+@media (max-width: 480px) { .meet-row { grid-template-columns: 1fr auto auto; } .meet-row .muted { grid-row: 2; grid-column: 1 / -1; } }
+.meet-photos { margin: 14px 0 0; padding-bottom: 0; font: 600 15px/1 var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+/* A meet's closing page. */
+.meet-when { margin: 4px 0 0; }
+.meet-big { border: 2px solid var(--brass); border-radius: 10px; padding: 12px 14px; background: var(--card); box-shadow: 0 0 0 3px rgba(184,137,45,.25); }
+.meet-big b { display: block; font: 600 26px/1.15 var(--display); margin-top: 4px; }
+.board tr.big td:first-child { box-shadow: inset 4px 0 0 var(--brass); }
 .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; padding: 12px; }
 .stat { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 .stat b { display: block; font: 600 24px/1.1 var(--display); }

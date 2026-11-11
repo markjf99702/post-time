@@ -6,7 +6,7 @@ import { renderCard, upNextInView } from './ui/card.js';
 import { renderRace } from './ui/race.js';
 import { renderWatch, rehearse } from './ui/watch.js';
 import { renderResult, renderCircle } from './ui/results.js';
-import { renderBook, renderHelp } from './ui/book.js';
+import { renderBook, renderHelp, renderMeet } from './ui/book.js';
 import { SAMPLE, pace } from './call.js';
 import * as audio from './audio.js';
 import * as joe from './joe.js';
@@ -33,7 +33,7 @@ const upNow = () => { const r = nextRace(); return `${game.world.seed}:${game.wo
 
 const nav = {
   go(screen, params = {}) {
-    if (waiting && screen === 'book') { closeMenu(); return; }
+    if (waiting && (screen === 'book' || screen === 'meet')) { closeMenu(); return; }
     if (cleanup) { cleanup(); cleanup = null; }
     const from = view.screen;
     if (from === 'card' && screen !== 'card' && !waiting) cardLeft = { y: window.scrollY, up: upNow() };
@@ -87,14 +87,17 @@ window.addEventListener('popstate', e => {
     const here = !waiting && s.day === game.world.day && s.meet === game.world.seed;
     const race = here && s.params && s.params.no ? card().races.find(r => r.no === s.params.no) : null;
     const screen = s.screen === 'watch' ? 'result' : s.screen;
+    // A meet's closing page: one that has closed, or this one once its last race is run.
+    const meet = !waiting && screen === 'meet' && (s.params?.no ? (game.world.meets || []).some(m => m.no === s.params.no) : s.meet === game.world.seed && s.day === game.world.day && !nextRace());
     const ok = waiting ? screen === 'help'
-      : screen === 'book' || screen === 'help' || (screen === 'race' && !!race) || ((screen === 'result' || screen === 'circle') && race?.status === 'official');
+      : screen === 'book' || screen === 'help' || meet || (screen === 'race' && !!race) || ((screen === 'result' || screen === 'circle') && race?.status === 'official');
     nav.go(ok ? screen : 'card', ok ? s.params : {});
     return;
   }
   // Back, onto the card's entry: one screen back from this one.
   above = false;
-  const up = !waiting && UP[view.screen];
+  // (An earlier meet's closing page was opened from the scrapbook, and goes back there.)
+  const up = !waiting && (view.screen === 'meet' && view.params.no ? 'book' : UP[view.screen]);
   nav.go(up || 'card', up ? { no: view.params.no } : {});
 });
 
@@ -119,6 +122,7 @@ function render() {
   else if (screen === 'result') renderResult(app, nav, params);
   else if (screen === 'circle') renderCircle(app, nav, params);
   else if (screen === 'book') renderBook(app, nav);
+  else if (screen === 'meet') renderMeet(app, nav, params);
   else if (screen === 'help') renderHelp(app, nav);
 }
 
@@ -294,12 +298,12 @@ restart.addEventListener('click', e => {
   if (!armed) {
     restart.textContent = 'Tap again: new horses, $200, empty scrapbook';
     armedAt = performance.now();
-    armed = setTimeout(() => { armed = null; restart.textContent = 'Start a new meet'; }, 4000);
+    armed = setTimeout(() => { armed = null; restart.textContent = 'Start over'; }, 4000);
     return;
   }
   if (performance.now() - armedAt < DOUBLE_TAP) return;
   clearTimeout(armed); armed = null;
-  restart.textContent = 'Start a new meet';
+  restart.textContent = 'Start over';
   closeMenu();
   setup();
 });

@@ -1,39 +1,57 @@
 // Your scrapbook of winner's circle photos, your record at the windows, and how to play.
 
 import { h, money, jdFoot } from './dom.js';
-import { game, START_BANK, bestDay, notSaved } from '../game.js';
-import { TIPSTERS } from '../data.js';
-import { longDate, dayDate, dateISO } from '../world.js';
+import { game, START_BANK, notSaved, yourMeet, advanceDay } from '../game.js';
+import { TIPSTERS, JOCKEYS, TRAINERS, BIG_STAKES } from '../data.js';
+import { longDate, dayDate, dateISO, meetRecord, isClosingDay, MEET_DAYS } from '../world.js';
+import { oddsText } from '../handicap.js';
 import { photoCard } from './results.js';
 import { MOVING } from './race.js';
 import { JOE, offered as joeOffered } from '../joe.js';
 
+// The page is this meet's: your record in it, the meets before it (each opens its closing page), and your
+// photos, a meet at a time.
 export function renderBook(root, nav) {
-  const p = game.player;
-  const spent = p.ledger.reduce((s, x) => s + x.spent, 0);
-  const back = p.ledger.reduce((s, x) => s + x.back, 0);
-  const best = p.ledger.reduce((m, x) => Math.max(m, x.best), 0);
-  const cashed = p.ledger.filter(x => x.back > 0).length;
-  // Worked out from the record, so today counts before the next race day is asked for.
-  const top = bestDay();
+  const p = game.player, w = game.world, m = w.meet;
+  const you = yourMeet();
+  const past = (w.meets || []).slice().reverse();
   root.append(
     h('div', { class: 'rhead' },
       h('button', { class: 'back', type: 'button', onclick: () => nav.go('card') }, '‹ The card'),
-      h('div', {}, h('div', { class: 'kicker' }, 'This meet'), h('h1', { class: 'title' }, 'Scrapbook & record')),
+      h('div', {}, h('div', { class: 'kicker' }, `Meet ${m.no}`), h('h1', { class: 'title' }, 'Scrapbook & record')),
     ),
     h('div', { class: 'stats' },
       stat('Bankroll', money(p.bank)),
-      stat('Started with', money(START_BANK + p.atm), p.atm ? `including ${money(p.atm, { cents: false })} from the ATM` : ''),
-      stat('Bet', money(spent)),
-      stat('Back', money(back)),
-      stat('Races cashed', `${cashed} of ${p.ledger.length}`),
-      stat('Biggest ticket', best > 0 ? money(best) : 'None yet'),
-      stat('Best day', top ? money(top.net, { sign: true }) : 'None yet', top ? longDate(dateISO(dayDate(game.world, top.day))).replace(/^\w+, /, '') : ''),
+      stat(m.no > 1 ? 'Started the meet with' : 'Started with', money(you.start + you.atm), you.atm ? `including ${money(you.atm, { cents: false })} from the ATM` : ''),
+      stat('Bet', money(you.bet)),
+      stat('Back', money(you.back)),
+      stat('Races cashed', `${you.cashed} of ${you.races}`),
+      stat('Biggest ticket', you.best > 0 ? money(you.best) : 'None yet'),
+      // Worked out from the record, so today counts before the next race day is asked for.
+      stat('Best day', you.bestDay ? money(you.bestDay.net, { sign: true }) : 'None yet', you.bestDay ? dateOf(you.bestDay.day) : ''),
     ),
   );
+  if (past.length) {
+    root.append(h('h2', { class: 'h2 pad', style: { paddingBottom: 0 } }, 'Earlier meets'));
+    root.append(h('div', { class: 'meets' }, past.map(r => h('button', { class: 'meet-row', type: 'button', onclick: () => nav.go('meet', { no: r.no }) },
+      h('b', {}, `Meet ${r.no}`),
+      h('span', { class: 'muted' }, `${dateOf(r.first)} to ${dateOf(r.last)}`),
+      r.you ? h('span', { class: `money ${r.you.end - r.you.start - r.you.atm >= 0 ? 'pos' : 'neg'}` }, `${money(r.you.end)} (${money(r.you.end - r.you.start - r.you.atm, { sign: true })})`) : null,
+      h('span', { class: 'go', 'aria-hidden': 'true' }, '▸'),
+    ))));
+  }
   root.append(h('h2', { class: 'h2 pad', style: { paddingBottom: 0 } }, "Winner's circle photos"));
   if (!p.book.length) root.append(h('p', { class: 'pad muted' }, "Back a winner and you're in the picture. Your photos collect here."));
-  else root.append(h('div', { class: 'book-grid' }, p.book.slice().reverse().map(r => photoCard(r, true))));
+  else if (!past.length) root.append(h('div', { class: 'book-grid' }, p.book.slice().reverse().map(r => photoCard(r, true))));
+  else {
+    // A meet at a time, the newest first.
+    for (const meet of [{ no: m.no, first: m.first, last: m.last }, ...past]) {
+      const photos = p.book.filter(r => r.day >= meet.first && r.day <= meet.last);
+      if (!photos.length) continue;
+      root.append(h('h3', { class: 'h3 pad meet-photos' }, `Meet ${meet.no}`));
+      root.append(h('div', { class: 'book-grid' }, photos.reverse().map(r => photoCard(r, true))));
+    }
+  }
 
   const rec = game.world.tipsters || {};
   root.append(h('h2', { class: 'h2 pad', style: { paddingBottom: 0 } }, 'The forum standings'));
@@ -46,6 +64,66 @@ export function renderBook(root, nav) {
       h('td', { class: `r money ${r.picks && r.back / r.picks >= 2 ? 'pos' : ''}` }, r.picks ? money(r.back / r.picks) : '–'),
     ))),
   ))));
+}
+
+const dateOf = day => longDate(dateISO(dayDate(game.world, day))).replace(/^\w+, /, '');
+
+// A meet's closing page: the Handicap's winner, the leading rider and trainer, the horse of the meet, the
+// forum's champion, the longest price, the stakes winners, and your own meet. `params.no` is a meet that
+// has closed, from the scrapbook; without it, it's the meet being run, after its last race, and the way
+// on from it opens the next meet.
+export function renderMeet(root, nav, params = {}) {
+  const w = game.world;
+  const live = !params.no || params.no === w.meet.no;
+  const r = live ? { ...meetRecord(w), you: yourMeet() } : (w.meets || []).find(x => x.no === params.no);
+  if (!r) { nav.go('book'); return; }
+  const over = !live || (isClosingDay(w) && w.cards[w.day].races.every(x => x.status === 'official'));
+  const days = r.last - r.first + 1;
+  const award = (label, value, note) => stat(label, value || 'Nobody', value ? note : '');
+  const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  const champ = r.champ && TIPSTERS.find(t => t.id === r.champ.id);
+  root.append(
+    h('div', { class: 'rhead' },
+      h('button', { class: 'back', type: 'button', onclick: () => nav.go(live ? 'card' : 'book') }, live ? '‹ The card' : '‹ Scrapbook'),
+      h('div', {}, h('div', { class: 'kicker' }, `Meet ${r.no}${over ? ' · closing day' : ' so far'}`), h('h1', { class: 'title' }, 'The meet in review')),
+    ),
+    h('p', { class: 'pad meet-when' }, `${plural(days, 'race day')}, ${dateOf(r.first)} to ${dateOf(r.last)}${days !== MEET_DAYS ? ' (the first meet, carried over from before meets had an end)' : ''}. ${plural(r.races, 'race')} run.`),
+    r.handicap ? h('div', { class: 'pad' }, h('div', { class: 'meet-big' }, h('span', { class: 'kicker' }, `The ${BIG_STAKES.name}`), h('b', {}, r.handicap.horse))) : null,
+    h('div', { class: 'stats' },
+      award('Leading rider', r.rider && r.rider.w ? JOCKEYS[r.rider.i]?.name : null, r.rider && `${plural(r.rider.w, 'win')} from ${plural(r.rider.starts, 'ride')}`),
+      award('Leading trainer', r.trainer && r.trainer.w ? TRAINERS[r.trainer.i] : null, r.trainer && `${plural(r.trainer.w, 'win')} from ${plural(r.trainer.starts, 'starter')}`),
+      award('Horse of the meet', r.horse && r.horse.earn ? r.horse.name : null, r.horse && `${plural(r.horse.w, 'win')} from ${plural(r.horse.starts, 'start')}, ${money(r.horse.earn, { cents: false })} won`),
+      award("The forum's champion", champ ? champ.handle : null, r.champ && `${plural(r.champ.wins, 'winner')} from ${plural(r.champ.picks, 'pick')}, ${money(r.champ.back / r.champ.picks)} back for each $2${r.since ? ', over the whole of the forum\'s record' : ''}`),
+      award('The longest price', r.long ? r.long.name : null, r.long && `won at ${oddsText(r.long.odds)}, race ${r.long.no} on race day ${r.long.day - r.first + 1}`),
+    ),
+  );
+  if (r.stakes.length) {
+    root.append(h('div', { class: 'pad' }, h('div', { class: 'board' }, h('h3', {}, 'The stakes winners'), h('table', {},
+      h('thead', {}, h('tr', {}, h('th', {}, 'Race day'), h('th', {}, 'Stakes'), h('th', {}, 'Winner'))),
+      h('tbody', {}, r.stakes.map(s => h('tr', { class: s.name === BIG_STAKES.name ? 'big' : '' }, h('td', { class: 'money' }, String(s.day - r.first + 1)), h('td', {}, s.name), h('td', {}, h('b', {}, s.horse))))),
+    ))));
+  }
+  const y = r.you;
+  if (y) {
+    const net = y.end - y.start - y.atm;
+    root.append(h('h2', { class: 'h2 pad', style: { paddingBottom: 0 } }, 'Your meet'));
+    root.append(h('div', { class: 'stats' },
+      stat('Started with', money(y.start + y.atm), y.atm ? `including ${money(y.atm, { cents: false })} from the ATM` : ''),
+      stat('Bet', money(y.bet)),
+      stat('Back', money(y.back)),
+      stat('Races cashed', `${y.cashed} of ${y.races}`),
+      stat('Biggest ticket', y.best > 0 ? money(y.best) : 'None'),
+      stat('Photos', String(y.photos)),
+      stat(over ? 'Finished with' : 'Bankroll', money(y.end), `${money(net, { sign: true })} on the meet`),
+    ));
+  }
+  if (live && over) {
+    root.append(h('div', { class: 'actions' },
+      h('p', { class: 'muted' }, `Meet ${r.no + 1} opens next Saturday with the same horses, ten race days to its own ${BIG_STAKES.name}. Your bankroll comes with you.`),
+      h('button', { class: 'btn brass', type: 'button', onclick: () => { advanceDay(); nav.go('card'); window.scrollTo(0, 0); } }, `Open meet ${r.no + 1} ▸`),
+    ));
+  }
+  root.append(jdFoot());
 }
 
 function stat(label, value, note) {
@@ -70,8 +148,10 @@ export function renderHelp(root, nav) {
       h('div', {}, h('div', { class: 'kicker' }, 'Larkspur Downs'), h('h1', { class: 'title' }, 'How to play')),
     ),
     h('div', { class: 'help' },
-      h('p', {}, `You start the meet with ${money(START_BANK, { cents: false })}. Every race day has eight races. For each one you can read the form, look at the horses in the paddock, see what the regulars on the forum are betting, buy tickets at the window, and then watch the race from the gate to the wire.`),
+      h('p', {}, `You start your first meet with ${money(START_BANK, { cents: false })}. Every race day has eight races. For each one you can read the form, look at the horses in the paddock, see what the regulars on the forum are betting, buy tickets at the window, and then watch the race from the gate to the wire.`),
       h('p', {}, "The horses are the same from week to week. Everything in a horse's past performances happened in a race that was run the same way as the ones you watch, so reading the form really does help."),
+      h('h3', {}, 'The meet'),
+      h('p', {}, `A meet is ${MEET_DAYS} race days. The last race of every Saturday is a stakes, and the first two home in each are pointed to the ${BIG_STAKES.name}, ${money(BIG_STAKES.purse, { cents: false })}, on closing day: they're entered in it first. After the Handicap the meet closes, with its leading rider and trainer, its horse of the meet, the forum's champion and your own meet, and the next meet opens the Saturday after with the same horses. Your bankroll carries over, and each meet's record is kept in your scrapbook.`),
       h('h3', {}, 'Reading the form'),
       h('dl', {},
         h('dt', {}, 'Speed figure'), h('dd', {}, 'How fast the horse ran, as one number, adjusted for the distance and how fast the track was that day. Higher is better. A horse that runs a 90 is about five lengths better than one that runs an 80 over six furlongs.'),

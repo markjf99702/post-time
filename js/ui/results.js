@@ -3,8 +3,8 @@
 
 import { h, money, cloth, clear } from './dom.js';
 import { game, card, raceKey, horseOf, nextRace, raceLabel, myBets, photoRecord } from '../game.js';
-import { ownerSilks, longDate } from '../world.js';
-import { JOCKEYS, TIPSTERS, TRAINERS, OWNERS } from '../data.js';
+import { ownerSilks, longDate, isHandicap, raceDayOf, meetDays } from '../world.js';
+import { JOCKEYS, TIPSTERS, TRAINERS, OWNERS, BIG_STAKES } from '../data.js';
 import { marginShort, fmtTime, ordinal } from '../chart.js';
 import { drawCircle } from '../draw/circle.js';
 import { distanceName } from '../track.js';
@@ -68,6 +68,13 @@ export function renderResult(root, nav, params) {
     })),
   );
   wrap.append(h('div', { class: 'board' }, h('h3', {}, h('span', {}, 'Order of finish'), h('span', {}, fmtTime(res.time))), table));
+  // A weekly stakes is a prep for the Handicap on closing day: its first two are pointed to it.
+  const w = game.world;
+  if (race.cls === 'STK' && !isHandicap(race) && w.meet && race.day >= w.meet.first && race.day < w.meet.last && res.order.length > 1) {
+    const [one, two] = res.order.slice(0, 2).map(o => horseOf(race.entries[o.k]).name);
+    const left = meetDays(w) - raceDayOf(w, race.day);
+    wrap.append(h('p', { class: 'pointed' }, `${one} and ${two} are pointed to the ${BIG_STAKES.name} on closing day, ${left === 1 ? 'next Saturday' : `race day ${meetDays(w)}`}.`));
+  }
 
   // Payouts.
   const [a, b, c] = res.order.map(o => o.k);

@@ -1222,7 +1222,7 @@ await page.waitForSelector('.races');
   await first.click('#restart', { force: true });
   await first.waitForTimeout(900);
   await first.click('#restart', { force: true });
-  assert.deepEqual(await first.evaluate(() => { const b = document.getElementById('restart'); return [b.textContent, b.disabled]; }), ['Start a new meet', true], 'Start a new meet can be tapped while a meet is being built');
+  assert.deepEqual(await first.evaluate(() => { const b = document.getElementById('restart'); return [b.textContent, b.disabled]; }), ['Start over', true], 'Start a new meet can be tapped while a meet is being built');
   await first.click('#menuBtn');
   await first.evaluate(() => window.finishBuilding());
   await first.waitForSelector('.races', { timeout: 60000 });
@@ -2860,6 +2860,76 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   }
   assert.deepEqual(wrong, [], 'problems in the one-file build, the Artifact copy, the installed site or the dev pages');
   await ctx8.close();
+}
+
+// A meet that ends: the card counts down to the Larkspur Handicap on closing day, the last race of the meet
+// leads to its closing page, and that opens the next meet with the same horses. An earlier meet's page opens
+// from the scrapbook, and the browser's Back goes back there from it.
+{
+  const ctx9 = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
+  const meet = await ctx9.newPage();
+  meet.on('pageerror', e => problems.push(e.message));
+  meet.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
+  await meet.goto(base);
+  await meet.waitForSelector('.races', { timeout: 60000 });
+  assert.equal(await meet.locator('.day .kicker').textContent(), 'Race day 1 of 10 · the Larkspur Handicap in nine weeks');
+  // Race days played through in the page, with a $2 win ticket on the first horse in every race.
+  const play = days => meet.evaluate(async n => {
+    const G = await import('./js/game.js');
+    for (let d = 0; d < n; d++) {
+      for (const race of G.card().races) {
+        if (race.status === 'official') continue;
+        if (G.game.player.bank < 2) G.atm();
+        G.placeBet(race, { type: 'win', sel: [0], amt: 2 });
+        G.goToGate(race);
+      }
+      G.advanceDay();
+    }
+    window.postTime.nav.go('card');
+  }, days);
+  await play(4);
+  assert.equal(await meet.locator('.day .kicker').textContent(), 'Race day 5 of 10 · the Larkspur Handicap in five weeks');
+  await play(4);
+  assert.equal(await meet.locator('.day .kicker').textContent(), 'Race day 9 of 10 · the Larkspur Handicap next Saturday');
+  await play(1);
+  assert.equal(await meet.locator('.day .kicker').textContent(), 'Larkspur Handicap day · race day 10 of 10');
+  // The Handicap's form says which weekly stakes sent each horse pointed to it.
+  await meet.evaluate(() => window.postTime.nav.go('race', { no: 8 }));
+  assert.ok(await meet.locator('.entry .chip', { hasText: /^(Won the|2nd in the) / }).count() >= 4, 'no horse in the Handicap says which stakes sent it');
+  // The day run: "That's the meet", and its closing page.
+  await meet.evaluate(async () => {
+    const G = await import('./js/game.js');
+    for (const race of G.card().races) G.goToGate(race);
+    window.postTime.nav.go('card');
+  });
+  assert.equal(await meet.locator('.day-over .h2').textContent(), "That's the meet.");
+  await meet.click('.day-over .btn');
+  assert.equal(await meet.locator('.rhead .kicker').textContent(), 'Meet 1 · closing day');
+  const awards = await meet.locator('.stats').first().locator('.stat .kicker').allTextContents();
+  assert.deepEqual(awards, ['Leading rider', 'Leading trainer', 'Horse of the meet', "The forum's champion", 'The longest price']);
+  assert.equal(await meet.locator('.board tbody tr').count(), 10, 'ten stakes winners');
+  assert.equal(await meet.locator('.meet-big b').textContent(), await meet.evaluate(() => { const r = window.postTime.card().races[7]; return window.postTime.game.world.horses[r.entries[r.result.order[0].k].hid].name; }));
+  const bank = await meet.evaluate(() => window.postTime.game.player.bank);
+  const horses = await meet.evaluate(() => window.postTime.game.world.horses.length);
+  await meet.click('.actions .btn');
+  assert.equal(await meet.locator('.day .kicker').textContent(), 'Race day 1 of 10 · the Larkspur Handicap in nine weeks');
+  assert.deepEqual(await meet.evaluate(() => [window.postTime.game.world.meet.no, window.postTime.game.player.bank]), [2, bank], 'meet 2 opens with your bankroll');
+  assert.ok(await meet.evaluate(() => window.postTime.game.world.horses.length) - horses < 10, 'meet 2 has a new barn');
+  // The scrapbook is meet 2's, with meet 1 under Earlier meets; its row opens meet 1's page, and Back goes
+  // back to the scrapbook.
+  await meet.evaluate(() => window.postTime.nav.go('book'));
+  assert.equal(await meet.locator('.rhead .kicker').textContent(), 'Meet 2');
+  assert.equal(await meet.locator('.meet-row').count(), 1);
+  await meet.click('.meet-row');
+  assert.equal(await meet.locator('.rhead .kicker').textContent(), 'Meet 1 · closing day');
+  assert.equal(await meet.locator('.actions .btn').count(), 0, 'a meet that has closed offers to open another');
+  await meet.goBack();
+  await meet.waitForFunction(() => document.querySelector('.rhead .kicker')?.textContent === 'Meet 2');
+  // And all of it is still there when the page is opened again.
+  await meet.reload();
+  await meet.waitForSelector('.races');
+  assert.deepEqual(await meet.evaluate(() => [window.postTime.game.world.meet.no, window.postTime.game.world.meets.length, !!window.postTime.game.world.meets[0].you]), [2, 1, true]);
+  await ctx9.close();
 }
 
 await browser.close();
