@@ -893,7 +893,7 @@ test("the Larkspur Handicap's first line names its purse and its distance, and t
   // the distance, said in words, and the horses stand in the gate until it's over, with or without the bugle.
   const [first] = recorded('test-voice', 1);
   const big = { ...first, race: { ...first.race, name: BIG_STAKES.name, f: BIG_STAKES.f, purse: BIG_STAKES.purse, seed: `${first.race.seed}:big` }, close: false };
-  for (const bugle of [0, 3.83]) {
+  for (const bugle of [0, audio.BUGLE_SECONDS]) {
     for (const syllablesASecond of [4.3 / 1.15, 4.3, 4.3 * 1.15]) {
       const r = rig({ syllablesASecond, startAfter: 120 });
       const { live, gate } = replay(r, big, { bugle });
@@ -916,12 +916,32 @@ test("the Larkspur Handicap's first line names its purse and its distance, and t
   assert.ok(live.lines[0].text.endsWith(`for the ${STAKES[2].name}.`));
 });
 
+test('the bugle plays First Call, the call to the post: its 34 notes in the order of the score, in about 4.8 seconds', () => {
+  // It played a fanfare of its own, 20 notes in 3.8 seconds. The score is Wikipedia's (en.wikipedia.org/wiki/First_call):
+  // in 3/8, on the bugle's G, C, E and G, a triplet pick-up, and the low G's run before the last C.
+  const name = { 392: 'g', 523.25: 'c', 659.25: 'e', 783.99: 'G' };
+  const tune = audio.FIRST_CALL.map(([f]) => name[f]).join('');
+  assert.equal(audio.FIRST_CALL.length, 34);
+  assert.equal(tune, 'gce' + 'GGGGG' + 'eeeee' + 'cec' + 'g' + 'gce' + 'GGGGG' + 'Gec' + 'ggggg' + 'c');
+  // Each note starts where the one before ends, but for the eighth's rest after the first low G.
+  const gaps = audio.FIRST_CALL.slice(1).map(([, at], k) => +(at - audio.FIRST_CALL[k][1] - audio.FIRST_CALL[k][2]).toFixed(9)).filter(x => x);
+  assert.deepEqual(gaps, [1]);
+  assert.ok(audio.BUGLE_SECONDS > 4.7 && audio.BUGLE_SECONDS < 4.95, `${audio.BUGLE_SECONDS.toFixed(2)} s`);
+  // Played into a recording of it, every note is there, at its pitch.
+  const made = [];
+  const node = () => ({ connect() {}, gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {} }, frequency: { value: 0, setValueAtTime(v) { this.value = v; }, linearRampToValueAtTime(v) { this.value = v; } }, Q: {}, start() {}, stop() {} });
+  const ctx = { createOscillator: () => { const o = node(); made.push(o); return o; }, createGain: node, createBiquadFilter: node };
+  audio.playFirstCall(ctx, node(), 0);
+  const notes = made.filter(o => o.type === 'sawtooth').map(o => o.frequency.value);
+  assert.deepEqual(notes, audio.FIRST_CALL.map(([f]) => f));
+});
+
 test('with the bugle playing, the caller waits for it and the gates wait for the caller', () => {
   // The caller's first line came 2.6 seconds after the screen opened, over the last 1.2 seconds of the
   // bugle, and a race's name ran into the starting bell. Now: the bugle, three tenths of a second, the
   // line, four tenths more, the bell. A race with a name stands in the gate that much longer.
   const [first] = recorded('test-voice', 1);
-  const BUGLE = 3.83; // seconds: what audio.bugle() returns for its notes
+  const BUGLE = audio.BUGLE_SECONDS; // seconds: what audio.bugle() returns for its notes
   const waits = [];
   for (const { name } of [...STAKES, BIG_STAKES, { name: '' }]) {
     const named = { ...first, race: { ...first.race, name, seed: `${first.race.seed}:${name}` }, close: false };
@@ -941,7 +961,8 @@ test('with the bugle playing, the caller waits for it and the gates wait for the
       if (voice === 'as planned') waits.push(gate);
     }
   }
-  assert.ok(Math.min(...waits) > 5.2 && Math.min(...waits) < 6.3 && Math.max(...waits) > 7 && Math.max(...waits) < 8.2, `from ${Math.min(...waits).toFixed(2)} to ${Math.max(...waits).toFixed(2)} s in the gate`);
+  // (With the 3.83 s fanfare that came before First Call these were 5.2 to 6.3 and 7 to 8.2 seconds.)
+  assert.ok(Math.min(...waits) > BUGLE + 1.35 && Math.min(...waits) < BUGLE + 2.5 && Math.max(...waits) > BUGLE + 3.15 && Math.max(...waits) < BUGLE + 4.4, `from ${Math.min(...waits).toFixed(2)} to ${Math.max(...waits).toFixed(2)} s in the gate`);
   // Without the bugle (the sound off, or the voice): as it was.
   assert.equal(replay(rig(), { ...first, close: false }).gate, 5.2);
 });

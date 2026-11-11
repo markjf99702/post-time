@@ -48,41 +48,75 @@ function noiseBuffer(seconds = 2) {
   return b;
 }
 
-// A brass voice: a sawtooth through a filter that opens as the note starts.
-function brass(freq, t, dur, vol = 0.22) {
-  const o = ac.createOscillator();
+// A brass voice: a sawtooth through a filter that opens as the note starts. `out` is where it goes: the
+// sound's output, or a recording of it (the tests render the bugle into one).
+function brass(freq, t, dur, vol = 0.22, ctx = ac, out = master) {
+  const o = ctx.createOscillator();
   o.type = 'sawtooth';
   o.frequency.setValueAtTime(freq * 0.985, t);
-  o.frequency.linearRampToValueAtTime(freq, t + 0.04);
-  const vib = ac.createOscillator();
-  const vg = ac.createGain();
+  o.frequency.linearRampToValueAtTime(freq, t + 0.03);
+  const vib = ctx.createOscillator();
+  const vg = ctx.createGain();
   vib.frequency.value = 5.5; vg.gain.value = freq * 0.006;
   vib.connect(vg); vg.connect(o.frequency);
-  const f = ac.createBiquadFilter();
+  const f = ctx.createBiquadFilter();
   f.type = 'lowpass';
   f.frequency.setValueAtTime(400, t);
-  f.frequency.linearRampToValueAtTime(2600, t + 0.05);
+  f.frequency.linearRampToValueAtTime(2600, t + Math.min(0.05, dur / 2));
   f.frequency.linearRampToValueAtTime(1700, t + dur);
-  const g = ac.createGain();
+  const g = ctx.createGain();
+  const attack = Math.min(0.025, dur / 3);
   g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(vol, t + 0.03);
-  g.gain.setValueAtTime(vol * 0.85, t + Math.max(0.05, dur - 0.06));
+  g.gain.linearRampToValueAtTime(vol, t + attack);
+  g.gain.setValueAtTime(vol * 0.85, t + Math.max(attack + 0.01, dur - 0.04));
   g.gain.linearRampToValueAtTime(0, t + dur);
-  o.connect(f); f.connect(g); g.connect(master);
+  o.connect(f); f.connect(g); g.connect(out);
   o.start(t); vib.start(t); o.stop(t + dur + 0.05); vib.stop(t + dur + 0.05);
 }
 
-// A bugle fanfare on the bugle's natural notes, played as the horses come out.
+// The call to the post, as a track's bugler plays it: "First Call", the 34 notes of the score on
+// Wikipedia's "First call" page (a LilyPond score in 3/8, a dotted quarter at 96, on the bugle's notes
+// G, C, E and G: en.wikipedia.org/wiki/First_call, as of November 2026). Each note is [pitch, its start
+// and its length, in eighth notes from the first note, and whether it's played short]. The eighths marked
+// staccato in the score are played short, the triplet sixteenths full, and the last C is held for its
+// fermata half as long again. As written it runs 5.2 seconds; it's played at an eighth a little quicker
+// than written, about 4.8 seconds in all, so the gates aren't kept waiting longer than they need.
+const G4 = 392, C5 = 523.25, E5 = 659.25, G5 = 783.99;
+export const FIRST_CALL = (() => {
+  const notes = [];
+  let at = 0;
+  const T = 1 / 3; // a triplet sixteenth, in eighths
+  const add = (f, len, short = false) => { notes.push([f, at, len, short]); at += len; };
+  const triplet = (a, b, c) => { add(a, T); add(b, T); add(c, T); };
+  triplet(G4, C5, E5);                                   // the pick-up
+  add(G5, 1, true); triplet(G5, G5, G5); add(G5, 1, true);
+  add(E5, 1, true); triplet(E5, E5, E5); add(E5, 1, true);
+  add(C5, 1, true); add(E5, 1, true); add(C5, 1, true);
+  add(G4, 1); at += 1; triplet(G4, C5, E5);              // a rest, and the pick-up again
+  add(G5, 1, true); triplet(G5, G5, G5); add(G5, 1, true);
+  add(G5, 1, true); add(E5, 1, true); add(C5, 1, true);
+  add(G4, 1, true); triplet(G4, G4, G4); add(G4, 1, true);
+  add(C5, 3);                                            // a quarter note, held for the fermata
+  return notes;
+})();
+const EIGHTH = 60 / 96 / 3 / 1.085; // seconds: the score's eighth at a dotted quarter of 96, played 8.5% quicker
+// Plays it into `out` on `ctx`, starting at `t`; the seconds it takes.
+export function playFirstCall(ctx, out, t) {
+  for (const [f, at, len, short] of FIRST_CALL) {
+    const dur = len * EIGHTH;
+    brass(f, t + at * EIGHTH, short ? dur * 0.62 : dur * 0.9, f === C5 && len === 3 ? 0.24 : 0.22, ctx, out);
+  }
+  const [, at, len] = FIRST_CALL[FIRST_CALL.length - 1];
+  return (at + len) * EIGHTH;
+}
+// How long it is, from the tap to its last note's end, in seconds.
+export const BUGLE_SECONDS = 0.05 + (FIRST_CALL[FIRST_CALL.length - 1][1] + FIRST_CALL[FIRST_CALL.length - 1][2]) * EIGHTH;
+
+// The bugle, played as the horses come out. The milliseconds it takes, or 0 with the sound off.
 export function bugle() {
   if (!wake()) return 0;
-  const C4 = 261.63, G4 = 392, C5 = 523.25, E5 = 659.25, G5 = 783.99;
-  const n = [
-    [G4, 0.14], [C5, 0.14], [E5, 0.14], [G5, 0.34], [E5, 0.14], [G5, 0.34], [E5, 0.14], [C5, 0.14], [E5, 0.14], [G4, 0.34],
-    [G4, 0.14], [C5, 0.14], [E5, 0.14], [G5, 0.14], [G5, 0.14], [G5, 0.14], [E5, 0.14], [C5, 0.14], [E5, 0.14], [C5, 0.5], [C4 * 2, 0.02],
-  ];
-  let t = ac.currentTime + 0.05;
-  for (const [f, d] of n) { if (d > 0.05) brass(f, t, d * 0.92); t += d; }
-  return (t - ac.currentTime) * 1000;
+  const t = ac.currentTime + 0.05;
+  return (t + playFirstCall(ac, master, t) - ac.currentTime) * 1000;
 }
 
 // The electric bell that rings as the gates open.

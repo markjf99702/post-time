@@ -1061,7 +1061,7 @@ await page.waitForSelector('.races');
 
 // The gate, with the sound and the voice both on: the bugle, then the caller, then the bell. The caller's
 // first words used to be spoken over the bugle's last notes, and a race's name ran into the bell. Now his
-// first line starts when the bugle is over (its notes are 3.78 seconds long), the gates wait for him, and
+// first line starts when the bugle is over (First Call's notes are 4.8 seconds long), the gates wait for him, and
 // "they're off" is said with the bell, in a race with a name as in any other.
 await page.click('#menuBtn');
 await page.check('#optSound');
@@ -1090,8 +1090,9 @@ const gate = await page.evaluate(async () => {
 });
 assert.deepEqual([gate.said, gate.kinds, gate.cancels], [gate.lines, ['pre', 'off'], 0], 'the first two lines read should be the one before the off and the off');
 assert.match(gate.lines[0], / for the Odds and Ends Handicap\.$/);
-assert.ok(gate.first >= 3.78 && gate.first < 3.78 + 0.3 + 1.5, `the caller's first line started ${gate.first.toFixed(2)} s after the bugle did, and the bugle is 3.78 s long`);
-assert.ok(Math.abs(gate.wait - (3.83 + 0.3 + gate.line + 0.4)) < 0.02 && gate.wait > 5.2, `${gate.wait.toFixed(2)} s in the gate for a first line of ${gate.line.toFixed(2)} s`);
+const BUGLE = await page.evaluate(async () => (await import('./js/audio.js')).BUGLE_SECONDS); // First Call, from the tap to its last note's end
+assert.ok(gate.first >= BUGLE - 0.05 && gate.first < BUGLE + 0.3 + 1.5, `the caller's first line started ${gate.first.toFixed(2)} s after the bugle did, and the bugle is ${(BUGLE - 0.05).toFixed(2)} s long`);
+assert.ok(Math.abs(gate.wait - (BUGLE + 0.3 + gate.line + 0.4)) < 0.02 && gate.wait > 5.2, `${gate.wait.toFixed(2)} s in the gate for a first line of ${gate.line.toFixed(2)} s`);
 assert.ok(gate.bell >= gate.wait - 0.05 && gate.bell < gate.wait + 1.5, `the bell rang ${gate.bell.toFixed(2)} s in, and the wait in the gate is ${gate.wait.toFixed(2)} s`);
 assert.ok(gate.over && Math.abs(gate.off) <= 0.2, `the off was said ${gate.off.toFixed(2)} s from the bell${gate.over ? '' : ', with the first line still being read'}`);
 
