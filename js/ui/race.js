@@ -1,8 +1,8 @@
 // A race before it runs: the past performances, the paddock, the forum and the betting window.
 
 import { h, money, stake, cloth, silksCanvas, clear, ago, plural, dotted } from './dom.js';
-import { game, card, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor, toteFor, MULTI, multiStarting, legRaces, multiFor, multiState, cancelMulti, willPaysFor, multiWouldPay, multiNumbers } from '../game.js';
-import { ownerSilks, ageOf, shortDate, clockText, CLASSES, meetStats, isHandicap, prepsOf } from '../world.js';
+import { game, card, silksFor, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor, toteFor, MULTI, multiStarting, legRaces, multiFor, multiState, cancelMulti, willPaysFor, multiWouldPay, multiNumbers } from '../game.js';
+import { ageOf, shortDate, clockText, CLASSES, meetStats, isHandicap, prepsOf } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
 import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES, CLOTH } from '../data.js';
 import { callText, marginShort, fmtTime, fmtWork } from '../chart.js';
@@ -209,8 +209,8 @@ function formPanel(panel, race, betOn) {
 
 function entryCard(race, e, i, stats, board, betOn) {
   const hs = horseOf(e);
-  const { owner, trainer } = ranFor(e); // a horse claimed out of this race ran it for the people who entered it
-  const silks = ownerSilks(owner);
+  const { trainer } = ranFor(e); // a horse claimed out of this race ran it for the people who entered it
+  const silks = silksFor(race)[i]; // an owner's second runner in a cap of its own
   const js = stats.jockeys[e.j], ts = stats.trainers[trainer];
   const figs = hs.pps.slice().reverse().slice(0, 5).map(p => p.fig);
   const best = figs.length ? Math.max(...figs) : null;
@@ -340,11 +340,12 @@ function paddockPanel(panel, race) {
   panel.append(h('p', { class: 'note' }, 'The horses walk the paddock before they go out. How they look can say something about how they feel today.'));
   const grid = h('div', { class: 'paddock' });
   const draws = [];
+  const silks = silksFor(race);
   race.entries.forEach((e, i) => {
     const hs = horseOf(e);
     const c = h('canvas', { 'aria-hidden': 'true' });
     const offset = (i * 0.37) % 1;
-    draws.push({ c, hs, e, offset });
+    draws.push({ c, hs, e, offset, silks: silks[i] });
     grid.append(h('div', { class: 'pdk' },
       c,
       h('div', { class: 'row' }, cloth(e.pp, 'sm'), hs.name),
@@ -372,7 +373,7 @@ function paddockPanel(panel, race) {
       ctx.translate(d.c.width / 2, d.c.height * 0.9);
       ctx.scale(k, -k);
       const nervy = d.e.pdk.kind === 'poor' && /Fractious|edge/.test(d.e.pdk.text);
-      drawHorse(ctx, { phase: (t * (nervy ? 1.3 : 0.9) + d.offset) % 1, gait: 'walk', coat: d.hs.coat, marks: d.hs.marks, number: d.e.pp, silks: ownerSilks(ranFor(d.e).owner), noRider: true });
+      drawHorse(ctx, { phase: (t * (nervy ? 1.3 : 0.9) + d.offset) % 1, gait: 'walk', coat: d.hs.coat, marks: d.hs.marks, number: d.e.pp, silks: d.silks, noRider: true });
     }
     raf = requestAnimationFrame(frame);
   };

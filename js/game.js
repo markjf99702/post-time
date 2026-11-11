@@ -2,7 +2,7 @@
 // localStorage. A race is settled the moment you send the horses to the gate, so closing the page
 // halfway through a race doesn't change what happened.
 
-import { buildWorld, simulateRace, makeOfficial, forumThread, nextDay as worldNextDay, ownerSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats, ensureMeet, isClosingDay } from './world.js';
+import { buildWorld, simulateRace, makeOfficial, forumThread, nextDay as worldNextDay, ownerSilks, fieldSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats, ensureMeet, isClosingDay } from './world.js';
 import { makeTote, board, settle, ticketReturn, cost as betCost, legs, MULTI, firstLeg, multiSettle, multiClose, willPays as multiWillPays, wouldPayMulti } from './tote.js';
 import { reactions } from './forum.js';
 import { oddsText, lineText } from './handicap.js';
@@ -354,11 +354,15 @@ export const ranFor = e => e.ran || horseOf(e);
 
 export function runnersFor(race) {
   const mine = new Set([...myBets(race).flatMap(b => b.sel), ...multiPicks(race).keys()]);
+  const silks = silksFor(race);
   return race.entries.map((e, i) => {
     const h = horseOf(e);
-    return { number: e.pp, coat: h.coat, marks: h.marks, silks: ownerSilks(ranFor(e).owner), name: h.name, mine: mine.has(i), blinkers: h.style > 0.8 };
+    return { number: e.pp, coat: h.coat, marks: h.marks, silks: silks[i], name: h.name, mine: mine.has(i), blinkers: h.style > 0.8 };
   });
 }
+
+// The silks each runner wears in this race: an owner's second and third runner in a cap of their own.
+export const silksFor = race => fieldSilks(race.entries.map(e => ranFor(e).owner));
 
 // A race as it will be run, or was: it comes only from the race's own seed and entries, so it can be
 // worked out before the race goes to the gate. The caller's downloaded voice has the call made by then
@@ -400,11 +404,14 @@ export function photoRecord(race, winIdx, won) {
   const e = race.entries[winIdx];
   const h = horseOf(e);
   const { owner, trainer } = ranFor(e);
+  const worn = silksFor(race)[winIdx];
   return {
     day: race.day, date: race.date, no: race.no, name: race.name, cls: race.cls, claim: race.claim, dist: distanceName(race.distance),
     surface: race.surface, time: race.result.time, horse: { name: h.name, coat: h.coat, marks: h.marks, sex: h.sex },
     owner, number: e.pp, jockey: JOCKEYS[e.j].name, trainer: TRAINERS[trainer], ownerName: OWNERS[owner],
     seed: race.seed, won: round2(won || 0), stakes: race.cls === 'STK',
+    // The cap the winner wore, when it wasn't the owner's own (an owner's second runner in the race).
+    ...(worn.cap !== ownerSilks(owner).cap ? { cap: worn.cap } : {}),
   };
 }
 

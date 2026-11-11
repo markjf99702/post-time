@@ -178,6 +178,10 @@ export function renderCircle(root, nav, params) {
   );
 }
 
+// The silks in a winner's circle photo: the owner's, with the cap the horse wore when it was the owner's
+// second runner in the race (kept with the photo; a photo kept before then has none).
+const wornBy = rec => { const s = ownerSilks(rec.owner); return rec.cap ? { ...s, cap: rec.cap, capTrim: s.body } : s; };
+
 export function photoCard(rec, you) {
   const c = h('canvas', { width: 720, height: 500 });
   // What the photo was worth is everything cashed on the race, which can be more than one ticket.
@@ -198,7 +202,7 @@ export function photoCard(rec, you) {
   );
   requestAnimationFrame(() => {
     const w = c.getBoundingClientRect().width || 360;
-    drawCircle(c, { horse: rec.horse, silks: ownerSilks(rec.owner), number: rec.number, stakes: rec.stakes, you, seed: rec.seed, meet: game.world.seed, width: w, height: w * 25 / 36 });
+    drawCircle(c, { horse: rec.horse, silks: wornBy(rec), number: rec.number, stakes: rec.stakes, you, seed: rec.seed, meet: game.world.seed, width: w, height: w * 25 / 36 });
   });
   return frame;
 }

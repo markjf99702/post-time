@@ -1566,3 +1566,32 @@ test("the announcer: what the winner paid is what the tote pays, said in words, 
   }
   assert.ok(posts >= 2 && posts <= races * 0.6, `post time on ${posts} races of ${races}`);
 });
+
+test("an owner's second runner in a race wears a cap of its own, in the race, the form and the winner's circle photo", () => {
+  buildOn('second-colours', '2026-11-14');
+  let found = null;
+  for (const race of card().races) {
+    const owners = race.entries.map(e => horseOf(e).owner);
+    const k = owners.findIndex((o, i) => owners.indexOf(o) !== i);
+    if (k >= 0) { found = { race, first: owners.indexOf(owners[k]), second: k, owner: owners[k] }; break; }
+  }
+  assert.ok(found, 'no race on this card has two runners for one owner');
+  const { race, first, second, owner } = found;
+  const silks = runnersFor(race).map(r => r.silks), own = ownerSilks(owner);
+  assert.deepEqual(silks[first], own, 'the first of them runs in the owner\'s colours as they are');
+  assert.deepEqual([silks[second].body, silks[second].trim, silks[second].pattern], [own.body, own.trim, own.pattern], 'the second is in another jacket');
+  assert.notEqual(silks[second].cap, own.cap, 'the second wears the same cap as the first');
+  assert.ok(![own.body, own.trim].includes(silks[second].cap), 'its cap is a colour already in the silks');
+  const lum = hex => { const n = parseInt(hex.slice(1), 16); return (0.3 * (n >> 16) + 0.59 * ((n >> 8) & 255) + 0.11 * (n & 255)) / 255; };
+  assert.ok((lum(silks[second].cap) - lum(own.body)) ** 2 >= 0.05, "its cap doesn't stand off the jacket");
+  // Across a whole card nobody else is touched, and no two runners in a race are dressed alike.
+  for (const r of card().races) {
+    const worn = runnersFor(r).map(x => JSON.stringify([x.silks.body, x.silks.trim, x.silks.pattern, x.silks.cap]));
+    assert.equal(new Set(worn).size, worn.length, `race ${r.no} has two runners in the same jacket and cap`);
+    r.entries.forEach((e, i) => { if (r.entries.findIndex(x => horseOf(x).owner === horseOf(e).owner) === i) assert.deepEqual(runnersFor(r)[i].silks, ownerSilks(horseOf(e).owner)); });
+  }
+  // The photograph keeps the cap, and only when it isn't the owner's own (a photo kept before it has none).
+  goToGate(race);
+  assert.equal(photoRecord(race, second, 0).cap, silks[second].cap);
+  assert.equal('cap' in photoRecord(race, first, 0), false);
+});
