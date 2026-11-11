@@ -9,7 +9,7 @@ import { runRace, figureFor, stateAt, runningOrder, ENGINE } from '../js/sim.js'
 import { coursePath, FURLONG, COURSES } from '../js/track.js';
 import { rng } from '../js/rng.js';
 import { createWorld, simulateRace, buildCard, applyResult, nextDay, ageOf } from '../js/world.js';
-import { makeTote, board, settle, ticketReturn, cost, TAKEOUT, wouldPay } from '../js/tote.js';
+import { makeTote, board, settle, ticketReturn, cost, TAKEOUT, wouldPay, legs, MULTI, firstLeg, multiSettle, willPays, wouldPayMulti } from '../js/tote.js';
 import { fmtTime, fmtClock, fmtWork, marginShort, marginText, lengthsText, tripComment } from '../js/chart.js';
 import { timeWords, timeSay, aloud, raceCall } from '../js/call.js';
 import { forumPosts } from '../js/forum.js';
@@ -678,6 +678,59 @@ test('what a ticket would pay at these odds is what it gets when the race goes o
     const fig = wouldPay(tote, 0.3, [], { type: 'win', sel: [a], amt: 2 });
     assert.ok(Math.abs(fig.low - Math.max(2.1, Math.floor((early.odds[a] + 1) * 10 + 1e-9) / 10 * 2)) < 1e-9, `win at 0.3: ${fig.low} against odds of ${early.odds[a]}`);
   }
+});
+
+// The daily double (the last two races of the day) and the Pick 3 (the last three) have pools of their own.
+// A ticket is one $1 bet for each way of putting its horses together; the pool pays the winners' combination,
+// in dimes, never under $1.05 and never more than the whole pool; your own money on a combination lowers what
+// it pays; the will-pays shown before the last race are what's paid; and what the window says a ticket would
+// pay, worked out at the off of its first race, is that payout.
+test('the daily double and the Pick 3 pay like a tote', () => {
+  const ticket = { type: 'p3', sel: [[0, 1], [2], [3, 4, 5]], amt: 2 };
+  assert.equal(legs(ticket).length, 6);
+  assert.equal(cost(ticket), 12);
+  assert.deepEqual(legs(ticket)[1], { pool: 'p3', sel: [0, 2, 4], amt: 2 });
+  const w = createWorld('multi-pools', '2026-09-26');
+  assert.equal(board(makeTote(w.cards[0].races[0], w), 1, [ticket]).pools.p3, undefined, "a Pick 3 went in the race's own pools");
+  let days = 0;
+  for (let d = 0; d < 6; d++) {
+    const races = w.cards[w.day].races;
+    const won = races.map(r => simulateRace(r, w, { record: false }).results[0].h);
+    for (const [type, M] of Object.entries(MULTI)) {
+      const from = firstLeg(type, races.length) - 1;
+      assert.equal(races[from + M.legs - 1], races.at(-1), `the ${type} doesn't end in the last race`);
+      const legRaces = races.slice(from, from + M.legs), totes = legRaces.map(r => makeTote(r, w)), sel = won.slice(from, from + M.legs);
+      const pay = multiSettle(type, totes, sel);
+      const pool = totes[0].size * M.share * (1 - TAKEOUT[type]);
+      assert.ok(pay.pay >= 1.05 && pay.pay <= pool, `${type} paid ${pay.pay} from a pool of ${pool}`);
+      assert.ok(Math.abs(pay.pay * 10 - Math.round(pay.pay * 10)) < 1e-6, `${type} paid ${pay.pay}, not in dimes`);
+      assert.deepEqual(pay.sel, sel);
+      // $500 of your own on the combination that comes in: it pays less, and your ticket gets its share.
+      const mine = { type, sel: sel.map(x => [x]), amt: 500 };
+      const withMine = multiSettle(type, totes, sel, [mine]);
+      assert.ok(withMine.pay < pay.pay, `${type}: $500 on the winners left it paying ${withMine.pay}, from ${pay.pay}`);
+      assert.equal(ticketReturn(mine, { [type]: withMine }), Math.round(500 * withMine.pay * 100) / 100);
+      const beaten = sel.map((x, k) => [k === sel.length - 1 ? (x + 1) % legRaces.at(-1).entries.length : x]);
+      assert.equal(ticketReturn({ type, sel: beaten, amt: 50 }, { [type]: withMine }), 0, 'a ticket beaten in the last race was paid');
+      // The will-pays, with the races before the last run: the one for the last race's winner is what's paid.
+      const wp = willPays(type, totes, sel.slice(0, -1), [mine]);
+      assert.equal(wp.length, legRaces.at(-1).entries.length);
+      assert.equal(wp[sel.at(-1)], withMine.pay);
+      assert.ok(wp.every(x => x >= 1.05));
+      // What the window says, at the off of the first race: a straight ticket has one figure, and a ticket
+      // with more horses runs from its least to its most.
+      const est = wouldPayMulti(totes, 1, [], mine);
+      assert.equal(est.low, est.high);
+      assert.equal(est.low, ticketReturn(mine, { [type]: withMine }));
+      const wide = { type, sel: sel.map((x, k) => (k === 0 ? [x, (x + 1) % legRaces[0].entries.length] : [x])), amt: 1 };
+      const range = wouldPayMulti(totes, 1, [], wide);
+      assert.ok(range.low <= range.high && range.high > 0);
+    }
+    days++;
+    for (const r of races) applyResult(w, r, simulateRace(r, w, { record: false }), board(makeTote(r, w), 1).odds);
+    nextDay(w);
+  }
+  assert.equal(days, 6);
 });
 
 test('no exotic ticket pays more than the whole pool', () => {

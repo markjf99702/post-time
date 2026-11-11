@@ -7,7 +7,7 @@
 // Every race is bet and run the way the game does it. --quick runs them with the coarser time step the
 // history weeks use: several times faster, and close enough for the betting.
 import { createWorld, simulateRace, applyResult, nextDay } from '../js/world.js';
-import { makeTote, board, publicWin, settle, ticketReturn, cost, TAKEOUT } from '../js/tote.js';
+import { makeTote, board, publicWin, settle, ticketReturn, cost, TAKEOUT, MULTI, firstLeg, multiSettle } from '../js/tote.js';
 import { forumPosts, runStyle, favouriteAtTheOff } from '../js/forum.js';
 import { publicRating, angles } from '../js/handicap.js';
 import { TIPSTERS } from '../js/data.js';
@@ -79,14 +79,18 @@ const six = { n: 0, q: 0, h: 0, fin: 0, lastFaster: 0 };
 // How often the horse in front at the first call wins, by surface and trip.
 const early = {};
 const tipsters = {};
+// The daily double and the Pick 3: a straight ticket picked at random (what it gets back per $1, as for the
+// exacta), the favourite in each race, and the biggest payout.
+const multi = Object.fromEntries(Object.keys(MULTI).map(t => [t, { random: [], favs: [], big: 0, overPool: 0 }]));
 const t0 = Date.now();
 
 for (let m = 0; m < MEETS; m++) {
   const world = createWorld(`${SEED}-${m}`, '2026-09-26');
   for (let d = 0; d < DAYS; d++) {
+    const day = []; // each race's tote, winner and favourite at 2 minutes to post, for the multi-race pools
     for (const race of world.cards[world.day].races) {
       const n = race.entries.length;
-      if (n < 2) { short++; continue; } // can't be run; the game redraws it
+      if (n < 2) { short++; day.push(null); continue; } // can't be run; the game redraws it
       const tote = makeTote(race, world);
       const open = board(tote, 0).odds, late = board(tote, 0.9).odds, off = board(tote, 1);
       const forumBoard = board(tote, 0.45); // when the game shows the forum
@@ -147,6 +151,7 @@ for (let m = 0; m < MEETS; m++) {
       big.win = Math.max(big.win, pay.win[a]);
       big.exacta = Math.max(big.exacta, pay.exacta?.pay || 0);
       big.trifecta = Math.max(big.trifecta, pay.trifecta?.pay || 0);
+      day.push({ tote, won: a, fav: argmin(late), n });
       applyResult(world, race, run, off.odds);
       for (const p of posts) {
         if (p.pass || !p.pick.length) continue;
@@ -155,6 +160,20 @@ for (let m = 0; m < MEETS; m++) {
         if (p.pick[0] === a) { t.wins++; t.back += pay.win[a]; }
       }
       races++;
+    }
+    for (const [type, M] of Object.entries(MULTI)) {
+      const legs = day.slice(firstLeg(type, day.length) - 1);
+      if (legs.length !== M.legs || legs.some(x => !x)) continue;
+      const totes = legs.map(x => x.tote), won = legs.map(x => x.won), combos = legs.reduce((s, x) => s * x.n, 1);
+      const pay = multiSettle(type, totes, won, [{ type, sel: won.map(x => [x]), amt: 1 }]).pay;
+      multi[type].random.push(pay / combos);
+      multi[type].big = Math.max(multi[type].big, pay);
+      if (pay > totes[0].size * M.share * (1 - TAKEOUT[type]) + 1) multi[type].overPool++;
+      // (The favourite in each race as the ticket is bought, at 2 minutes to post in its first race: the later
+      // races are still at their opening odds.)
+      const favs = legs.map((x, k) => (k === 0 ? x.fav : argmin(board(x.tote, 0).odds)));
+      const ticket = { type, sel: favs.map(x => [x]), amt: 1 };
+      multi[type].favs.push([1, ticketReturn(ticket, { [type]: multiSettle(type, totes, won, [ticket]) })]);
     }
     nextDay(world);
   }
@@ -205,7 +224,13 @@ WAYS.forEach(([name], k) => { if (tally[k].length) out.push(row(name, tally[k].l
 out.push(row('A straight win ticket picked at random', random.win.length, averaged(random.win)));
 out.push(row('A straight exacta picked at random', random.exacta.length, averaged(random.exacta)));
 out.push(row('A straight trifecta picked at random', random.trifecta.length, averaged(random.trifecta)));
-out.push(`  The track keeps ${Math.round(100 * TAKEOUT.win)}% of win, place and show, ${Math.round(100 * TAKEOUT.exacta)}% of the exacta and ${Math.round(100 * TAKEOUT.trifecta)}% of the trifecta.`);
+const MULTI_NAME = { dd: 'daily double', p3: 'Pick 3' };
+for (const [type, M] of Object.entries(multi)) {
+  if (!M.random.length) continue;
+  out.push(row(`A straight ${MULTI_NAME[type]} picked at random`, M.random.length, averaged(M.random)));
+  out.push(row(`$1 ${MULTI_NAME[type]}, the favourite in each race`, M.favs.length, result(M.favs)));
+}
+out.push(`  The track keeps ${Math.round(100 * TAKEOUT.win)}% of win, place and show, ${Math.round(100 * TAKEOUT.exacta)}% of the exacta and the daily double, and ${Math.round(100 * TAKEOUT.trifecta)}% of the trifecta and the Pick 3.`);
 const ratio = (won, fair) => (fair ? (won / fair).toFixed(2) : '-');
 out.push('', `${'Winners by post'.padEnd(54)}starts     won   x fair share   back per $1`);
 for (const kind of ['sprint', 'route']) {
@@ -231,4 +256,5 @@ out.push('', 'The tote');
 out.push(`  share of the win pool paid back       ${share(winPaid / winBet)}`);
 out.push(`  biggest payouts                       ${dollars(big.win)} to win, ${dollars(big.exacta)} for a $2 exacta, ${dollars(big.trifecta)} for a $1 trifecta`);
 out.push(`  exotics paying more than their pool   ${overPool}`);
+out.push(`  biggest $1 daily double and Pick 3    ${dollars(multi.dd.big)} and ${dollars(multi.p3.big)}, ${multi.dd.overPool + multi.p3.overPool} paying more than their pool`);
 console.log(out.join('\n'));

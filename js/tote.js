@@ -5,12 +5,12 @@
 import { rng, hash } from './rng.js';
 import { publicRating, postEdge, probsFrom, oddsText } from './handicap.js';
 
-export const TAKEOUT = { win: 0.16, place: 0.16, show: 0.16, exacta: 0.2, trifecta: 0.25 };
-export const BASE = { win: 2, place: 2, show: 2, exacta: 2, trifecta: 1 };
+export const TAKEOUT = { win: 0.16, place: 0.16, show: 0.16, exacta: 0.2, trifecta: 0.25, dd: 0.2, p3: 0.25 };
+export const BASE = { win: 2, place: 2, show: 2, exacta: 2, trifecta: 1, dd: 1, p3: 1 };
 // The least a ticket can be bet for, in each pool. Payouts are still quoted for the base above, as tracks
 // quote them, and a smaller ticket is paid its share (ticketReturn): $1 is half a $2 exacta, and 50 cents
 // half a $1 trifecta. (Exactas were $2 and trifectas $1, twice what tracks sell them for.)
-export const MIN = { win: 2, place: 2, show: 2, exacta: 1, trifecta: 0.5 };
+export const MIN = { win: 2, place: 2, show: 2, exacta: 1, trifecta: 0.5, dd: 1, p3: 1 };
 
 const PADDOCK_LATE = 0.08;
 const POOL = { MCL: 70000, MSW: 95000, C10: 65000, C16: 80000, C25: 95000, C40: 110000, ALW: 140000, STK: 260000 };
@@ -59,6 +59,7 @@ export function board(tote, frac, bets = []) {
   const pub = win.reduce((a, b) => a + b, 0);
   const pools = Object.fromEntries(Object.entries(SHARE).map(([k, s]) => [k, pub * s]));
   for (const b of bets) for (const leg of legs(b)) {
+    if (!(leg.pool in pools)) continue; // (a double or Pick 3 has a pool of its own: multiSettle)
     pools[leg.pool] += leg.amt;
     if (leg.pool === 'win') win[leg.sel[0]] += leg.amt;
   }
@@ -84,6 +85,11 @@ export function legs(bet) {
     for (const x of bet.sel) for (const y of bet.sel) if (x !== y) out.push({ pool: 'exacta', sel: [x, y], amt: a });
   } else if (bet.type === 'tribox') {
     for (const x of bet.sel) for (const y of bet.sel) for (const z of bet.sel) if (x !== y && y !== z && x !== z) out.push({ pool: 'trifecta', sel: [x, y, z], amt: a });
+  } else if (MULTI[bet.type]) {
+    // A daily double or Pick 3 names one or more horses in each of its races, and is one bet on every way
+    // of putting them together: 2 and 3 in the first race with 5 in the second is two bets, 2-5 and 3-5.
+    const combos = bet.sel.reduce((all, leg) => all.flatMap(c => leg.map(i => [...c, i])), [[]]);
+    for (const sel of combos) out.push({ pool: bet.type, sel, amt: a });
   }
   return out;
 }
@@ -211,10 +217,72 @@ export function ticketReturn(bet, pay) {
     if (l.pool === 'show' && pay.show[l.sel[0]]) back += units * pay.show[l.sel[0]];
     if (l.pool === 'exacta' && pay.exacta && l.sel[0] === pay.exacta.sel[0] && l.sel[1] === pay.exacta.sel[1]) back += units * pay.exacta.pay;
     if (l.pool === 'trifecta' && pay.trifecta && l.sel.every((x, k) => x === pay.trifecta.sel[k])) back += units * pay.trifecta.pay;
+    if (MULTI[l.pool] && pay[l.pool] && l.sel.every((x, k) => x === pay[l.pool].sel[k])) back += units * pay[l.pool].pay;
   }
   return Math.round(back * 100) / 100;
 }
 
 export const BET_NAMES = {
   win: 'Win', place: 'Place', show: 'Show', wps: 'Across the board', exacta: 'Exacta', exbox: 'Exacta box', trifecta: 'Trifecta', tribox: 'Trifecta box',
+  dd: 'Daily double', p3: 'Pick 3',
 };
+
+// ------------------------------------------------------------------ the daily double and the Pick 3
+
+// Tickets on the winners of races in a row: a daily double on the last two races of the day, and a Pick 3
+// on the last three, ending in the stakes. Each has a pool of its own, which closes when its first race
+// goes off. The public bets it at about half that race's win pool for the double and two fifths for the
+// Pick 3, and the track keeps what it keeps from the exacta and the trifecta.
+export const MULTI = { dd: { legs: 2, share: 0.5 }, p3: { legs: 3, share: 0.4 } };
+// The race a daily double or Pick 3 starts in, on a card of `count` races.
+export const firstLeg = (type, count) => count - MULTI[type].legs + 1;
+
+// The public's chances in each race of a multi-race pool: the first race at its final odds (the pool closes
+// as it goes off), and the later ones at their opening odds, which is all anyone has seen of them by then.
+// `frac` is how far the first race's betting has gone, for saying what a ticket would pay before the off.
+// The money on a combination is the pool times the chances of its winners, with some scatter, as the
+// exacta's is; your own tickets (`bets`) are added in.
+// The later races' chances are flattened (to the power 0.7): money there is spread wider than the opening
+// odds, which are early, rough and from a few bettors, and the errors in them multiply from race to race. As
+// they were, a straight Pick 3 picked at random got back more than it cost (+2.9% over 600 race days), and
+// once flattened it's -25% to -29%, like a trifecta (npm run sim).
+const LATER_LEGS = 0.7;
+function multiPool(type, totes, bets, frac) {
+  const p = totes.map((t, k) => norm(k === 0 ? publicWin(t, frac) : publicWin(t, 0).map(v => v ** LATER_LEGS)));
+  const pub = totes[0].size * MULTI[type].share;
+  const mine = bets.flatMap(legs).filter(l => l.pool === type);
+  return { p, pub, mine, total: pub + mine.reduce((s, l) => s + l.amt, 0), seed: totes[0].seed };
+}
+function multiPayFrom(type, P, sel) {
+  const scatter = Math.exp(((hash(`${P.seed}:${type}:${sel.join('-')}`) % 1000) / 1000 - 0.5) * 0.5);
+  let onCombo = P.pub * sel.reduce((pr, x, k) => pr * P.p[k][x], 1) * scatter;
+  onCombo += P.mine.filter(l => l.sel.every((x, k) => x === sel[k])).reduce((s, l) => s + l.amt, 0);
+  // (A combination with less than one ticket on it counts as one: no ticket pays more than the whole pool.)
+  return { sel: sel.slice(), pay: brk(P.total * (1 - TAKEOUT[type]) / Math.max(onCombo, BASE[type]), BASE[type]) };
+}
+
+// What a $1 daily double or Pick 3 pays when the winners of its races are `sel` (one entry index per race),
+// with your tickets in the pool: { sel, pay }. `totes` are its races' totes, first race first.
+export function multiSettle(type, totes, sel, bets = []) {
+  return multiPayFrom(type, multiPool(type, totes, bets, 1), sel);
+}
+
+// The will-pays: once every race of a double or Pick 3 but its last has been run, with `won` their winners,
+// what $1 would pay with each horse in the last race. They're what's paid, since the pool closed at the
+// first race.
+export function willPays(type, totes, won, bets = []) {
+  const P = multiPool(type, totes, bets, 1);
+  return P.p[P.p.length - 1].map((_, j) => multiPayFrom(type, P, [...won, j]).pay);
+}
+
+// What a double or Pick 3 ticket would bring back if its first race went off now (at `frac`) and the others
+// went as their opening odds say: { low, high } over the combinations it has, as wouldPay does for one race.
+export function wouldPayMulti(totes, frac, bets, bet) {
+  const P = multiPool(bet.type, totes, [...bets, bet], frac);
+  let low = Infinity, high = 0;
+  for (const l of legs(bet)) {
+    const back = l.amt / BASE[bet.type] * multiPayFrom(bet.type, P, l.sel).pay;
+    low = Math.min(low, back); high = Math.max(high, back);
+  }
+  return high > 0 ? { low: Math.round(low * 100) / 100, high: Math.round(high * 100) / 100 } : null;
+}
