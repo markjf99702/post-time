@@ -807,9 +807,13 @@ export function joeTakes(key, jobs) {
   return calling;
 }
 // About how long before he can say a line that has only just been planned, in seconds: the worker
-// started if it isn't up, and one line made.
+// started if it isn't up, and one line made, taken to be 15% slower than they have been. (The worker's
+// start varies by a quarter of a second from one go to the next, and the first line after it is slower
+// to make than the rest. Without the 15%, a line picked up after Skip had its clip 0.2 s before it came
+// up, in the middle of five goes, and once 0.1 s after: it went unsaid.)
+const UNSURE = 1.15;
 export function joeLead() {
-  return Math.min(5, (joe.running() ? 0 : loadSeconds ?? LOAD) + TYPICAL * (makingRate() ?? 0.5) + 0.2);
+  return Math.min(5, ((joe.running() ? 0 : loadSeconds ?? LOAD) + TYPICAL * (makingRate() ?? 0.5)) * UNSURE + 0.2);
 }
 // The race is over, or left: its clips are let go, and the next line said is the browser's again.
 export function endCall() {
