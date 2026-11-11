@@ -8,7 +8,7 @@
 // history weeks use: several times faster, and close enough for the betting.
 import { createWorld, simulateRace, applyResult, nextDay } from '../js/world.js';
 import { makeTote, board, publicWin, settle, ticketReturn, cost, TAKEOUT } from '../js/tote.js';
-import { forumPosts, runStyle } from '../js/forum.js';
+import { forumPosts, runStyle, favouriteAtTheOff } from '../js/forum.js';
 import { publicRating } from '../js/handicap.js';
 import { TIPSTERS } from '../js/data.js';
 import { rng } from '../js/rng.js';
@@ -63,7 +63,8 @@ for (let m = 0; m < MEETS; m++) {
       const tote = makeTote(race, world);
       const open = board(tote, 0).odds, late = board(tote, 0.9).odds, off = board(tote, 1);
       const forumBoard = board(tote, 0.45); // when the game shows the forum
-      const posts = forumPosts(world, race, { odds: forumBoard.odds, text: forumBoard.text });
+      // ChalkEater's pick is the favourite on the final board, as the game settles it at the off.
+      const posts = favouriteAtTheOff(forumPosts(world, race, { odds: forumBoard.odds, text: forumBoard.text }), off.odds);
       const run = simulateRace(race, world, { record: !QUICK });
       const order = run.results.map(r => r.h);
       const [a, b, c] = order;

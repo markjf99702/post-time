@@ -4,7 +4,7 @@
 
 import { buildWorld, simulateRace, applyResult, nextDay as worldNextDay, ownerSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats } from './world.js';
 import { makeTote, board, settle, ticketReturn, cost as betCost, legs } from './tote.js';
-import { forumPosts, reactions, scoreTipsters } from './forum.js';
+import { forumPosts, reactions, scoreTipsters, favouriteAtTheOff } from './forum.js';
 import { oddsText, lineText } from './handicap.js';
 import { liveCall } from './call.js';
 import { JOCKEYS, TRAINERS, OWNERS } from './data.js';
@@ -256,7 +256,8 @@ export function goToGate(race) {
   const final = board(tote, 1, bets);
   const order = run.results.map(r => r.h);
   const pay = settle(tote, order, bets);
-  const forum = forumFor(race);
+  // ChalkEater has whoever is favourite on the final board, whatever it was when he posted.
+  const forum = favouriteAtTheOff(forumFor(race), final.odds);
   applyResult(game.world, race, run, final.odds);
   race.result.pay = pay;
   race.result.odds = final.odds.map(o => +o.toFixed(2));

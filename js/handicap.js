@@ -41,6 +41,8 @@ export function surfaceRecord(h, surface) {
 // ------------------------------------------------------------------ what the form says about a horse
 
 const WET = ['sloppy', 'muddy', 'yielding', 'soft'];
+// The words a trip note uses for trouble: at the start (Stumbled, Broke slowly, Bumped) and in the running.
+export const TROUBLE = /Blocked|Checked|Stumbled|Broke slowly|Bumped/;
 // The two kinds of maiden race (their codes in CLASSES, in world.js).
 const maidenRace = cls => cls === 'MCL' || cls === 'MSW';
 const daysFrom = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5); // between two dates, 2026-10-03
@@ -64,12 +66,24 @@ export function freshBullet(h, race) {
   const fresh = w => w.rank === 1 && (last ? w.dt > last.dt : daysFrom(w.dt, race.date) <= 21);
   return h.works.filter(fresh).sort((a, b) => (a.dt < b.dt ? 1 : a.dt > b.dt ? -1 : 0))[0] || null;
 }
+// The same bullet, if it's from the last three weeks whether or not the horse has raced: what LongshotLou
+// quotes with its date. (A horse back from two months off can have a bullet from six weeks ago.)
+export function recentBullet(h, race) {
+  const w = freshBullet(h, race);
+  return w && daysFrom(w.dt, race.date) <= 21 ? w : null;
+}
 
 // A horse that broke its maiden last time and meets winners today. A maiden claimer's price isn't a class
 // to drop from: by the pars a $20,000 maiden claimer is an easier race than a $10,000 claimer for winners.
 export function firstAgainstWinners(h, race) {
   const last = h.pps[h.pps.length - 1];
   return !!last && maidenRace(last.cls) && !maidenRace(race.cls) && h.pps.every(p => maidenRace(p.cls));
+}
+// The claiming price a horse ran for last time, if that was a race for winners: the price it drops from or
+// steps up from today. Null after a maiden claimer or a race that wasn't a claimer.
+export function lastPrice(h) {
+  const last = h.pps[h.pps.length - 1];
+  return last && last.clm && !maidenRace(last.cls) ? last.clm : null;
 }
 
 // Angles a handicapper would notice, as chips: [text, 'good' or ''], for a horse in a race on race day `day`.
@@ -87,13 +101,13 @@ export function angles(race, h, day = race.day) {
   if (h.pps.length && f < 8 && h.pps.every(p => p.f >= 8)) out.push(['Cutting back to a sprint', '']);
   if (last && last.claimed) out.push(['New barn: claimed last out', 'good']);
   if (firstAgainstWinners(h, race)) out.push(['First time against winners', '']);
-  const priced = last && last.clm && !maidenRace(last.cls);
-  if (priced && race.claim && race.claim < last.clm) out.push([`Drops from $${last.clm / 1000}k`, 'good']);
-  if (priced && race.claim && race.claim > last.clm) out.push([`Up from $${last.clm / 1000}k`, '']);
+  const price = lastPrice(h);
+  if (price && race.claim && race.claim < price) out.push([`Drops from $${price / 1000}k`, 'good']);
+  if (price && race.claim && race.claim > price) out.push([`Up from $${price / 1000}k`, '']);
   if (last && !last.clm && race.claim && last.cls !== 'MCL') out.push(['Drops into a claimer', 'good']);
   if (freshBullet(h, race)) out.push(['Bullet work', 'good']);
   if (last && day - last.d >= 5) out.push([`Back from ${day - last.d} weeks off`, '']);
-  if (last && /Blocked|Checked|Stumbled|Broke slowly|Bumped/.test(last.cm)) out.push(['Troubled trip last time', 'good']);
+  if (last && TROUBLE.test(last.cm)) out.push(['Troubled trip last time', 'good']);
   // On the same surface: mud on the dirt says nothing about soft turf.
   if (WET.includes(race.cond) && h.pps.some(p => WET.includes(p.cond) && p.surf === race.surface[0] && p.fin <= 2)) out.push(['Has run well on a wet track', 'good']);
   return out;
