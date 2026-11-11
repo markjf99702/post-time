@@ -25,6 +25,25 @@ export function numWords(n) {
   return `${ONES[Math.floor(n / 100)]} hundred${n % 100 ? ` and ${numWords(n % 100)}` : ''}`;
 }
 const lengthsWords = n => `${numWords(n)} lengths`;
+// Odds as a caller says them: "65-1" is "sixty-five to one", "9-2" "nine to two", "1-1" "even money".
+export function oddsSay(text) {
+  const [a, b] = String(text).split('-').map(Number);
+  if (!(a > 0) || !(b > 0)) return text;
+  return a === b ? 'even money' : `${numWords(a)} to ${numWords(b)}`;
+}
+// A distance in furlongs as it's said: "six and a half furlongs", "a mile and a sixteenth".
+const MILES = { 8: 'a mile', 8.5: 'a mile and a sixteenth', 9: 'a mile and an eighth', 10: 'a mile and a quarter', 12: 'a mile and a half' };
+export function distanceSay(f) {
+  if (MILES[f]) return MILES[f];
+  const whole = Math.floor(f), half = f - whole >= 0.5;
+  return `${numWords(whole)}${half ? ' and a half' : ''} furlongs`;
+}
+// What the caller knows of a race besides the running of it, from the board at the off and the program:
+// `odds` (each horse's final odds, as numbers) and `oddsText` (as the board shows them), `fav` (the
+// favourite), `riders` (each jockey's surname), `him` ("him" or "her"), and `mine` (the horse with the most
+// of the player's money on it, or null). Without it the call is of the running alone.
+export const LONGSHOT = 15; // odds of 15-1 or more get a word at the wire
+
 const NTH = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh',
   'twelfth', 'thirteenth', 'fourteenth', 'fifteenth', 'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth', 'twentieth'];
 const nth = n => NTH[n] || `number ${numWords(n)}`;
@@ -131,8 +150,8 @@ export function pace(line, toWire) {
 const modelSeconds = (line, toWire) => sayTime(line.say, pace(line, toWire).rate);
 
 // After a photo, the winner's line that goes with the official sign, as a line of the call.
-export function officialLine(text) {
-  return { text, say: aloud(text), kind: 'finish', slot: 'official', late: LATE.placings, rank: 1 };
+export function officialLine(text, say = null) {
+  return { text, say: aloud(say || text), kind: 'finish', slot: 'official', late: LATE.placings, rank: 1 };
 }
 // A line like the ones in a call, for trying a voice out in the menu.
 export const SAMPLE = { text: 'They turn for home! Copper Detour by a length and a half!', kind: 'call', late: LATE.other, rank: 0 };
@@ -279,8 +298,22 @@ const THIRD = [
   [2, (c, g) => `Then ${c}, ${g} away in third.`, c => `Then ${c} in third.`, 'list'], [3, (c, g) => `${up(g)} back to ${c} in third.`, c => `${c} third.`],
   [4, (c, g) => `${c} sits third, ${g} off them.`, c => `${c} sits third.`],
 ];
+// The favourite, or the horse with the player's money on it, where it is when the run through the field
+// hasn't got to it: [id, with how far back, without]. In the stretch it's lengths "to find".
+const SPOT = [
+  [0, (x, k, g) => `${x} is ${k}, ${g} back.`, (x, k) => `${x} is ${k}.`],
+  [1, (x, k, g) => `${x} sits ${k}, ${g} off the lead.`, (x, k) => `${x} sits ${k}.`],
+  [2, (x, k, g) => `${x} is down in ${k}, ${g} back.`, (x, k) => `${x} is down in ${k}.`],
+];
+const FIND = [
+  [0, (x, k, g) => `${x} is ${k}, ${g} to find!`, (x, k) => `${x} is ${k}!`],
+  [1, (x, k, g) => `${x} is ${k}, with ${g} to make up!`, (x, k) => `${x} is back in ${k}!`],
+  [2, (x, k, g) => `${x} has ${g} to find, back in ${k}.`, (x, k) => `${x} is ${k}.`],
+];
+// A rider at work, after a horse making a move: "Ibarra asks him".
+const ASKS = [[0, (r, p) => `${r} asks ${p}`], [1, (r, p) => `${r} is asking ${p}`], [2, r => `${r} is pushing`], [3, (r, p) => `${r} sends ${p} on`]];
 const MOVER = [[0, 'is on the move'], [1, 'is picking them off'], [2, 'starts to roll'], [3, 'is making a run'], [4, 'is moving up'], [5, 'is making up ground']];
-const TROUBLE = [[0, x => `${x} has to check, nowhere to go!`], [1, x => `${x} is stuck behind horses!`], [2, x => `No room for ${x}!`], [3, x => `${x} has to steady!`], [4, x => `${x} is blocked!`]];
+const TROUBLE = [[0, x => `${x} has to check, nowhere to go!`], [1, x => `${x} is stuck behind horses!`], [2, x => `No room for ${x}!`], [3, x => `${x} has to steady!`], [4, x => `${x} is blocked!`], [5, x => `${x} is boxed in!`]];
 const FRAC = [
   [[0, t => `The quarter in ${t}`], [1, t => `${up(t)} for the quarter`], [2, t => `They go the quarter in ${t}`], [3, t => `The opening quarter in ${t}`], [4, t => `The first quarter in ${t}`]],
   [[0, t => `The half in ${t}`], [1, t => `${up(t)} for the half`], [2, t => `They reach the half in ${t}`], [3, t => `The half mile in ${t}`], [4, t => `Half a mile in ${t}`]],
@@ -406,8 +439,9 @@ const up = s => s[0].toUpperCase() + s.slice(1);
 // To plan the rest of a race again from the middle (the speed changed, the race was skipped ahead, the
 // voice turned out slower than thought), `from` is the time on the race's clock to plan from, `wait` the
 // real seconds from then until the voice is free, and `said` the lines given so far, which are kept.
-// `jumped` says the race was skipped ahead to `from`, so nobody saw how it got there.
-export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed = 1, from = null, wait = 0, said = [], bugle = 0, jumped = false } = {}) {
+// `jumped` says the race was skipped ahead to `from`, so nobody saw how it got there. `info` is what the
+// caller knows besides the running (see LONGSHOT above): the favourite, the odds, the riders, your horse.
+export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed = 1, from = null, wait = 0, said = [], bugle = 0, jumped = false, info = null } = {}) {
   const fresh = from === null;
   const R = rng(fresh ? `call:${race.seed}` : `call:${race.seed}:${Math.round(from * 10)}:${speed}`);
   const D = run.distance, t0 = run.t0, fin = run.finalTime, n = names.length;
@@ -415,6 +449,14 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
   const { wall, clock } = raceClock(run, speed);
   const ev = scan(run);
   const nm = i => names[i];
+  // The two horses worth a word of their own: the one with the player's money on it, and the favourite.
+  const I = info && Array.isArray(info.odds) && info.odds.length === n ? info : null;
+  const fav = I && I.fav >= 0 ? I.fav : -1, mine = I && I.mine !== null && I.mine !== undefined ? I.mine : -1;
+  const watched = [mine, fav].filter((i, k, a) => i >= 0 && a.indexOf(i) === k);
+  // A horse as the caller names it when it's worth saying which it is: "the favourite, Photo Op,".
+  const known = i => (i === fav ? `the favourite, ${nm(i)},` : nm(i));
+  const tidy = text => up(text.replace(/,([!.?])/g, '$1').replace(/,,/g, ','));
+  const rider = i => (I && I.riders ? I.riders[i] : null), him = i => (I && I.him ? I.him[i] : 'him');
   const ord = t => stateAt(run, t0 + t, []).map((s, i) => ({ i, p: s.p, o: s.o, v: s.v })).sort((a, b) => b.p - a.p);
   const headlines = speed >= 4, brief = speed >= 2;
 
@@ -428,6 +470,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     texts: new Set(), used: new Map(), last: new Map(), off: false,
     nameAt: new Map(), // when each horse was last named, in any line
     ledAt: new Map(), tired: new Set(), // when each was last called the leader, and the ones called for tiring
+    spotted: new Set(), spotAt: new Map(), spotPass: null, // the watched horses given their place: in the stretch, when, and the run it was in
   };
   // The horses a line names. (A name can be part of another: the longer is looked for first, and taken out.)
   const byLength = names.map((x, i) => [x, i]).sort((x, y) => y[0].length - x[0].length);
@@ -460,6 +503,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     if (l.slot === 'drive') { S.drive = l.drive; S.driveAt.set(l.drive, l.t); if (l.drive === 'third') S.thirdAt = l.t; if (l.drive === 'fly') S.flown.add(l.who); if (l.moved) S.upped.add(l.second); if (l.forSecond !== undefined) S.came.add(l.forSecond); }
     if (l.slot === 'trouble') S.troubled.add(l.who);
     if (l.slot === 'mover') { S.movers.add(l.who); S.moverAt = l.t; }
+    if (l.spot !== undefined) { S.spotAt.set(l.spot, l.t); if (l.t >= ev.tS) S.spotted.add(l.spot); else S.spotPass = S.passAt; }
     if (l.slot === 'fill') { S.fill = l.fill; if (l.fill === 'third') S.thirdAt = l.t; }
   }
   const lines = [];
@@ -658,7 +702,9 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     if (!z) return null;
     const off = z.o - RAIL;
     const where = off >= OUTSIDE ? `, ${numWords(Math.round(off) + 1)} wide` : off < INSIDE ? ` ${pick('inner', INNER)[1]}` : '';
-    return [form(`${nm(z.i)} ${pick('mover', MOVER)[1]}${where}.`, { who: z.i, ...(where ? { sides: [{ i: z.i, side: off >= OUTSIDE ? 'wide' : 'inside' }] } : null) })];
+    // Between horses, his rider can be named at work: "Copper Harbor is on the move, Ibarra asks him."
+    const asks = !where && rider(z.i) && R.chance(0.6) ? `, ${pick('asks', ASKS)[1](rider(z.i), him(z.i))}` : '';
+    return [form(`${nm(z.i)} ${pick('mover', MOVER)[1]}${where}${asks}.`, { who: z.i, ...(where ? { sides: [{ i: z.i, side: off >= OUTSIDE ? 'wide' : 'inside' }] } : null) })];
   }
 
   // A horse that was called the leader in the last twenty seconds and has stopped: third or worse by now and
@@ -680,7 +726,28 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     if (S.troubled.size >= 2) return null;
     const e = run.events.find(x => x.type === 'checked' && x.t <= t0 + t && t0 + t - x.t < 1.2 && !S.troubled.has(x.h));
     if (!e || o.findIndex(x => x.i === e.h) >= near) return null;
-    return [form(pick('trouble', TROUBLE)[1](nm(e.h)), { who: e.h })];
+    return [form(tidy(pick('trouble', TROUBLE)[1](known(e.h))), { who: e.h })];
+  }
+
+  // The favourite, or your horse, where the run through the field hasn't got to it and won't with its next
+  // line: fourth or worse, and not named since the run began, once the run is past the first three. One of
+  // them a run, the one given its place longer ago first. Before the stretch it's how far back; in the
+  // stretch (once each, from the furlong pole) how much it has to find.
+  function spotForms(o, stretch = false) {
+    if (!stretch && (S.spotPass === S.passAt || S.pass.size < 4)) return null;
+    const order = stretch ? watched : watched.slice().sort((x, y) => (S.spotAt.get(x) ?? -99) - (S.spotAt.get(y) ?? -99));
+    const z = order.map(i => o.find(x => x.i === i)).find(x => {
+      const k = o.indexOf(x);
+      if (k < 3) return false;
+      if (stretch) return !S.spotted.has(x.i) && (S.nameAt.get(x.i) ?? -99) < ev.tE - 0.5;
+      const rest = o.filter(y => !S.pass.has(y.i));
+      return !S.pass.has(x.i) && !rest.slice(0, 2).includes(x);
+    });
+    if (!z) return null;
+    const k = o.indexOf(z), off = gapOf(o[0], z), place = nth(k + 1);
+    const w = pick(stretch ? 'find' : 'spot', stretch ? FIND : SPOT);
+    const claims = { spot: z.i, spotK: k + 1, spotOff: off, named: [z.i] };
+    return [form(tidy(w[1](known(z.i), place, gapWords(off))), claims), form(tidy(w[2](known(z.i), place)), claims)];
   }
 
   function fracForms(f) {
@@ -825,8 +892,13 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
       const w = pick('flying', FLYING)[1];
       const sides = where ? { sides: [{ i: flyer.i, side: off >= OUTSIDE ? 'outside' : 'inside' }] } : null;
       // Where it's running is part of the line when it's on the rail or out wide, in every wording of it.
-      news.push(['fly', where ? [form(`${nm(flyer.i)} ${w}${where}!`, { who: flyer.i, ...sides, ...flyLate })] : [form(`${nm(flyer.i)} ${w}!`, { who: flyer.i, ...flyLate })]]);
+      const asks = rider(flyer.i) ? `${nm(flyer.i)} ${w}, ${pick('asks', ASKS)[1](rider(flyer.i), him(flyer.i))}!` : null;
+      news.push(['fly', where ? [form(`${nm(flyer.i)} ${w}${where}!`, { who: flyer.i, ...sides, ...flyLate })]
+        : [...(asks && R.chance(0.5) ? [form(asks, { who: flyer.i, ...flyLate })] : []), form(`${nm(flyer.i)} ${w}!`, { who: flyer.i, ...flyLate })]]);
     } else if (flyer) news.push(['fly', [form(pick('runon', RUNON)[1](nm(flyer.i), nth(o.indexOf(flyer) + 1)), { who: flyer.i, from: o.indexOf(flyer) + 1, ...flyLate })]]);
+    // The favourite or your horse, out of the first three, with what it has to find: once, from the furlong pole.
+    const spot = t >= ev.tE - 0.5 ? spotForms(o, true) : null;
+    if (spot) news.push(['spot', spot.map(f => ({ ...f, ...others }))]);
     const sure = sureOf(o, t);
     const closing = g >= PAIR && g < 3 && b.v > a.v + 0.2 && gAgo - g > 0.08;
     const front = []; // the leader drawing off or home free: said after any news of the horses behind, which won't keep
@@ -965,8 +1037,14 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     picking = [];
     const opener = `${pick('pre', PRE)[1]}${race.name ? ` for the ${race.name}` : ''}`;
     const big = race.name === BIG_STAKES.name && BIG_DISTANCE[race.f];
-    const pre = lineAt(big ? form(`${opener}, ${dollars(race.purse)} at ${big}.`, null, `${opener}, ${dollarWords(race.purse)} at ${big}.`)
+    let pre = lineAt(big ? form(`${opener}, ${dollars(race.purse)} at ${big}.`, null, `${opener}, ${dollarWords(race.purse)} at ${big}.`)
       : form(`${opener}.`), 0, 'pre', 'pre');
+    // A race with no name has its distance and its surface said, when the voice has the time: "They're in
+    // the gate, six and a half furlongs on the dirt."
+    if (I && !race.name && race.f && race.surface) {
+      const far = lineAt(form(`${opener}, ${distanceSay(race.f)} on the ${race.surface}.`), 0, 'pre', 'pre');
+      if (far.d <= 4.4) pre = far;
+    }
     // (Its line is long enough that a voice a little slower than planned would still be on it at the off:
     // it's given that much more room.)
     const before = big ? pre.d * 1.15 + 0.4 : bugle ? pre.d + 0.4 : Math.min(5, Math.max(race.name ? 3.4 : 2.6, pre.d + 0.4));
@@ -1031,6 +1109,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
       else if (again && (stale || !headlines || !S.first || part !== S.passWhere)) { slot = 'run'; forms = S.first || t > 8 ? headForms(o, seg) : firstForms(o); }
       else if (headlines) { if (w - lastEnd() >= 3) { slot = 'fill'; forms = fillForms(o, t, true); } } // only the leader again, after a long quiet
       else if ((forms = moverForms(o, t))) slot = 'mover';
+      else if ((forms = spotForms(o))) slot = 'spot';
       else if (rest.length) { slot = 'more'; forms = moreForms(o, rest); }
       else if (w - lastEnd() >= 1.2) { slot = 'fill'; forms = fillForms(o, t); } // after a pause
     }
@@ -1088,7 +1167,17 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
   // In a photo the caller doesn't know who won until the picture is read, so no line with a time on it
   // says: the two are named in an order picked by a coin toss, and the winner's line is handed back on
   // its own, for when the official sign goes up.
-  const official = photo ? choose(OFFICIAL)[1](nm(first.h), finishWords(second.toPrev)) : null;
+  // The winner's line says it's the favourite, or gives the price of one at 15-1 or more: "At 65-1, Copper
+  // Harbor wins it by a length!" (the price in words for the voice). [what's shown, what's said]
+  const price = I && first && I.odds[first.h] >= LONGSHOT ? I.oddsText[first.h] : null;
+  const crown = text => {
+    text = tidy(text);
+    if (!price) return [text, text];
+    const rest = text.replace(/^And /, '');
+    const tail = rest.startsWith(nm(first.h)) ? rest : rest[0].toLowerCase() + rest.slice(1);
+    return [`At ${price}, ${tail}`, `At ${oddsSay(price)}, ${tail}`];
+  };
+  const [official, officialSay] = photo ? crown(choose(OFFICIAL)[1](known(first.h), finishWords(second.toPrev))) : [null, null];
   if (!lines.some(l => l.wire)) {
     let wire, rest;
     if (photo) {
@@ -1105,8 +1194,8 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
       const late = !!second && ord(fin - 1)[0].i !== first.h;
       const list = !second ? null : late ? GETS_UP : m > 6 ? ROMP : m > 2.5 && first.finishSpeed >= second.finishSpeed ? AWAY
         : m < 1 && second.finishSpeed > first.finishSpeed ? HOLDS : WINS;
-      const text = list ? choose(list)[1](nm(first.h), finishWords(m)) : `${nm(first.h)} wins it all alone!`;
-      wire = form(text, { wire: true, ...(late ? { up: true } : null), ...(list === AWAY ? { away: true } : null), ...(list === HOLDS ? { holds: true } : null) });
+      const [text, said] = crown(list ? choose(list)[1](known(first.h), finishWords(m)) : `${known(first.h)} wins it all alone!`);
+      wire = form(text, { wire: true, ...(late ? { up: true } : null), ...(list === AWAY ? { away: true } : null), ...(list === HOLDS ? { holds: true } : null), ...(price ? { price } : null), ...(first.h === fav ? { favourite: true } : null) }, said);
       const placed = second ? (third ? choose(PLACED)[1](nm(second.h), nm(third.h)) : `${nm(second.h)} second.`) : '';
       const tail = time => `${placed ? `${placed} ` : ''}The time, ${time}.`;
       rest = form(tail(timeWords(fin)), { placings: true }, tail(timeSay(fin)));
@@ -1116,7 +1205,7 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     // Second, third and the time follow the winner's line directly.
     give(lineAt(rest, clock(w + 0.35), 'placings', 'finish'));
   }
-  return { lines, photo, official, dur, gate };
+  return { lines, photo, official, officialSay, dur, gate };
 }
 
 // The call while a race is being watched: the plan made at the gate, the line that's up, and planning
@@ -1129,13 +1218,13 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
 // of a race starts no sooner than that. And timetable() is the plan as that voice needs it: for each line,
 // the real seconds from the screen opening until it comes up (at the speed the race is being watched at
 // now), how long it has before the next line does, and whether that next line is the call at the wire.
-export function liveCall(race, run, names, { lineSeconds, factor = () => 1, bugle = 0, lead = () => 0 } = {}) {
+export function liveCall(race, run, names, { lineSeconds, factor = () => 1, bugle = 0, lead = () => 0, info = null } = {}) {
   let speed = 1;
   let madeFor = factor();
   let upLine = null, upAt = 0;  // the line that's up, and when it came up
   let seen = -Infinity;         // the race's clock, the last time anyone asked
-  const first = raceCall(race, run, names, { lineSeconds, bugle });
-  const live = { lines: first.lines, photo: first.photo, official: first.official, dur: first.dur, gate: first.gate, plans: 1 };
+  const first = raceCall(race, run, names, { lineSeconds, bugle, info });
+  const live = { lines: first.lines, photo: first.photo, official: first.official, officialSay: first.officialSay, dur: first.dur, gate: first.gate, plans: 1 };
   // Plans the rest of the race again from `clock`. The line being said is let finish (by the estimate),
   // unless `wait` says how long the voice needs, as after a cancel.
   function again(clock, now, wait = null, jumped = false) {
@@ -1143,7 +1232,7 @@ export function liveCall(race, run, names, { lineSeconds, factor = () => 1, bugl
     if (said.some(l => l.wire)) return; // the call at the wire has been made: what's left follows it
     madeFor = factor();
     const left = Math.max(wait ?? (upLine ? Math.max(0, upLine.d - (now - upAt)) : 0), lead());
-    live.lines = raceCall(race, run, names, { lineSeconds, speed, from: clock, wait: left, said, jumped }).lines;
+    live.lines = raceCall(race, run, names, { lineSeconds, speed, from: clock, wait: left, said, jumped, info }).lines;
     live.plans++;
   }
   live.timetable = () => {

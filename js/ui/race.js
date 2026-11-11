@@ -111,6 +111,7 @@ export function renderRace(root, nav, params) {
   function buySlip() {
     const bet = slip();
     if (!bet || !placeBet(race, bet).ok) { refreshBar(); return; }
+    callAgain(race);
     audio.ticket();
     clearSlip(race);
     // To the gate takes this button's place: a second tap meant for Buy mustn't start the race.
@@ -412,6 +413,11 @@ function unbought(race) {
 // A second tap sooner than this after a first is a double tap, not a second answer.
 const DOUBLE_TAP = 700; // ms
 
+// A ticket bought or cancelled changes what the call says (the horse with your money on it, and the final
+// odds), so the downloaded voice's lines for it are made again: only the ones that changed.
+let again = null;
+function callAgain(race) { clearTimeout(again); again = setTimeout(() => rehearse(race), 400); }
+
 // A pick in words. On the slip: "$10 to win on #3 Early Ticket", "$2 exacta box 3, 5, 7". In the bar,
 // by name ("#3 Early Ticket to win"), and in a sentence after "You picked" ("#3 to win").
 const TO = { win: 'to win', place: 'to place', show: 'to show', wps: 'across the board' };
@@ -518,6 +524,7 @@ function betPanel(panel, race, { changed, picked, open: isNext }) {
       onclick: () => {
         const res = placeBet(race, bet);
         if (!res.ok) { msg.textContent = res.why; return; }
+        callAgain(race);
         audio.ticket();
         clearSlip(race);
         justBought(race);
@@ -623,7 +630,7 @@ function ticketList(race, open, changed) {
         ticketLine(b, sel),
         h('div', { class: 'small' }, `LRK R${race.no} · ${sel.map(n => horseOf(race.entries.find(e => e.pp === n)).name).join(' / ')} · COST ${money(b.cost)}`),
       ),
-      back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : back === 0 ? h('span', { class: 'small torn' }, 'torn up') : open ? h('button', { type: 'button', onclick: () => { cancelBet(race, i); changed(); } }, 'Cancel') : null,
+      back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : back === 0 ? h('span', { class: 'small torn' }, 'torn up') : open ? h('button', { type: 'button', onclick: () => { cancelBet(race, i); callAgain(race); changed(); } }, 'Cancel') : null,
     ));
   });
   return wrap;

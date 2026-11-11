@@ -10,7 +10,7 @@ globalThis.localStorage = {
   removeItem: k => { store.delete(k); },
 };
 globalThis.window = new EventTarget();
-const { game, newMeet, load, save, notSaved, card, toteFor, placeBet, goToGate, mtpState, currentBoard, advanceDay, callFor, horseOf, runnersFor, photoRecord, forumFor, bestDay } = await import('../js/game.js');
+const { game, newMeet, load, save, notSaved, card, toteFor, placeBet, goToGate, mtpState, currentBoard, advanceDay, callFor, callInfo, horseOf, runnersFor, photoRecord, forumFor, bestDay } = await import('../js/game.js');
 const { stateAt, RAIL } = await import('../js/sim.js');
 const { LENGTH, FURLONG, segmentAt } = await import('../js/track.js');
 const { raceCall, raceClock } = await import('../js/call.js');
@@ -69,8 +69,9 @@ function playLongMeet(days = 60) {
         // at the finish, and how far behind the winner.
         notes: race.entries.map(e => { const p = horseOf(e).pps.at(-1); return { cm: p.cm, first: p.line[0][0], str: p.line[2][0], fin: p.fin, bl: p.bl }; }),
         forum: { ...posted, ...forumAfter(race, run) },
+        price: !!call.lines.find(l => l.wire && l.price),
         ...callAgainstRace(race, run, call, names),
-        fast: races.length % 4 ? null : [2, 4].map(speed => ({ speed, ...at, ...callAgainstRace(race, run, raceCall(race, run, names, { speed }), names, speed) })),
+        fast: races.length % 4 ? null : [2, 4].map(speed => ({ speed, ...at, ...callAgainstRace(race, run, raceCall(race, run, names, { speed, info: callInfo(race) }), names, speed) })),
         skip: afterSkip(race, run, names),
         skipFast: [2, 4].map(speed => afterSkip(race, run, names, speed)),
       });
@@ -167,6 +168,9 @@ const NTH = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'sevent
 const CHART_SAYS = { nk: 'a neck', '½': 'a half length', '¾': 'three quarters of a length', 1: 'a length', '1¼': 'a length and a quarter', '1½': 'a length and a half', '1¾': 'a length and three quarters' };
 const lengthsSaid = n => `${n < 21 ? SAY[n] : `${['', '', 'twenty', 'thirty', 'forty', 'fifty'][Math.floor(n / 10)]}${n % 10 ? `-${SAY[n % 10]}` : ''}`} lengths`;
 function callAgainstRace(race, run, call, names, speed = 1) {
+  const info = callInfo(race);
+  // A gap as the caller words it in the running (gapWords in js/call.js).
+  const gapSaid = l => (l < 0.2 ? 'a head' : l < 0.4 ? 'a neck' : l < 0.8 ? 'a half length' : l < 1.3 ? 'a length' : l < 1.8 ? 'a length and a half' : lengthsSaid(Math.max(2, Math.round(l))));
   const wrong = {}, said = {};
   const bad = (kind, l, why = '') => (wrong[kind] || (wrong[kind] = [])).push(`${l.text}${why && ` (${why})`}`);
   const count = kind => { said[kind] = (said[kind] || 0) + 1; };
@@ -377,6 +381,18 @@ function callAgainstRace(race, run, call, names, speed = 1) {
         : /bump|come together/.test(x) && run.results.filter(z => z.bumped).every(z => x.includes(names[z.h]));
       if (!ok) bad('break', l, 'not what happened at the start');
     }
+    // What the caller knows besides the running: the favourite is the favourite on the final board, a price is
+    // the winner's and is 15-1 or more, and a horse given its place (the favourite, or the one with the
+    // player's money on it) is where it's said to be, as far back as it's said to be.
+    for (const [, who] of x.matchAll(/[Tt]he favourite, ([^,]+),/g)) { count('favourite'); if (who !== names[info.fav]) bad('favourite', l, `the favourite is ${names[info.fav]}`); }
+    if (l.price !== undefined) { count('price'); if (!l.wire || l.price !== info.oddsText[w.h] || !(info.odds[w.h] >= 15) || !x.startsWith(`At ${l.price}, `) || !/^At [a-z -]+ to [a-z -]+, /.test(l.say)) bad('price', l, `${names[w.h]} was ${info.oddsText[w.h]}`); }
+    if (l.wire && !call.photo && (info.odds[w.h] >= 15) !== (l.price !== undefined)) bad('price', l, `a winner at ${info.oddsText[w.h]}`);
+    if (l.spot !== undefined) {
+      count('spot');
+      const k2 = o.findIndex(z => z.i === l.spot), back = gap(o[0].i, l.spot);
+      if (k2 + 1 !== l.spotK || k2 < 3 || Math.abs(back - l.spotOff) > 1e-6 || !x.includes(names[l.spot]) || !x.includes(NTH[k2 + 1]) || (l.spot !== info.fav && l.spot !== info.mine)
+        || ((/ (back|off the lead|to find|to make up)[.!,]/.test(x)) && !x.includes(gapSaid(back)))) bad('spot', l, `${NTH[k2 + 1]}, ${back.toFixed(1)} lengths back`);
+    }
     if (/whisker/.test(x) || /\b(1?\d|20) lengths?\b/.test(x)) bad('words', l);
     // The fractions: the quarter is fast or slow for the distance, and the three quarters is called in a route.
     if (l.kind === 'frac') {
@@ -402,7 +418,9 @@ function callAgainstRace(race, run, call, names, speed = 1) {
       count('finish');
       const ledLate = front(stateAt(run, run.t0 + run.finalTime - 1)) === w.h;
       if (l.up) count('gets up');
-      if (/gets up|is up in time|gets there/.test(x) !== !!l.up || !!l.up === ledLate || !(x.startsWith(names[w.h]) || x.startsWith(`And ${names[w.h]}`))) bad('finish', l, ledLate ? 'led a second out' : 'did not lead a second out');
+      // (The winner's name opens the line, after the price of a long shot or "the favourite".)
+      const named = x.replace(/^At \d+-\d+, /, '').replace(/^And /, '').replace(/^[Tt]he favourite, /, '');
+      if (/gets up|is up in time|gets there/.test(x) !== !!l.up || !!l.up === ledLate || !named.startsWith(names[w.h])) bad('finish', l, ledLate ? 'led a second out' : 'did not lead a second out');
       if (s) {
         const chart = marginShort(s.toPrev);
         const whole = Math.round(s.toPrev);
@@ -1125,7 +1143,7 @@ test("in a photo finish the caller doesn't say who won until the official sign",
   const photos = races.filter(r => r.photo);
   assert.ok(photos.length > 20, `only ${photos.length} photo finishes in ${races.length} races`);
   let winnerFirst = 0;
-  const won = /\bwins?\b|\bwon\b|winner|gets up|gets there|is up in time|gets the nod|got there|goes to|takes it by|holds|lasts|hangs on|romp|draws off|pulls clear|^It's .+, by /;
+  const won = /\bwins?\b|\bwon\b|winner|gets up|gets there|is up in time|gets the nod|got there|goes to|takes it by|holds|lasts|hangs on|romp|draws off|pulls clear|(^|, )[Ii]t's .+, by /;
   for (const r of photos) {
     const where = `race day ${r.day}, race ${r.no}: ${r.lines.slice(-2).join(' / ')}`;
     const [wire, placings] = r.lines.slice(-2);
@@ -1153,7 +1171,7 @@ test('watched at 2x the call is its shorter lines, and at 4x only the headlines,
   // at 2x each line is in its shortest wording, and at 4x there's the off, the leader on each part of the
   // track, lead changes, the turn for home, a furlong out and the winner.
   const fast = playLongMeet().flatMap(r => r.fast || []);
-  for (const kind of ['leader', 'pair', 'crowded', 'long', 'twice', 'change', 'passed', 'recovered', 'sure', 'closing', 'place', 'mover', 'flying', 'running on', 'for second', 'tiring', 'then', 'repeated', 'near', 'places', 'where', 'trouble', 'break', 'poles', 'fraction', 'stretch', 'finish', 'words']) assert.deepEqual(told(fast, kind), [], kind);
+  for (const kind of ['leader', 'pair', 'crowded', 'long', 'twice', 'change', 'passed', 'recovered', 'sure', 'closing', 'place', 'mover', 'flying', 'running on', 'for second', 'tiring', 'then', 'repeated', 'near', 'places', 'where', 'trouble', 'break', 'poles', 'fraction', 'stretch', 'finish', 'words', 'favourite', 'price', 'spot']) assert.deepEqual(told(fast, kind), [], kind);
   const [twice, four] = [2, 4].map(speed => fast.filter(r => r.speed === speed));
   assert.equal(twice.length, 120);
   for (const r of fast) {

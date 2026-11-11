@@ -23,7 +23,7 @@ import * as audio from '../audio.js';
 const joePlan = (race, run, opts) => callFor(race, run, { lineSeconds: planSeconds(climb), ...opts });
 // What that plan asks of him: each line as he's given it, with its speed, its time and the room it has.
 // (`since` is the race's clock, when the plan has been made again in the middle of the race.)
-const joeJobs = (call, run, since) => jobsFor(call, run.finalTime, climb, call.official ? officialLine(call.official).say : null, since);
+const joeJobs = (call, run, since) => jobsFor(call, run.finalTime, climb, call.official ? officialLine(call.official, call.officialSay).say : null, since);
 // The race that's up next, while its form is being read: the call is planned and its lines begin to be
 // made. Nothing of the result is shown, kept or settled by it.
 export function rehearse(race) {
@@ -485,7 +485,7 @@ export function renderWatch(el, nav, params) {
           signUp = true;
           if (!gone) drawOrder(T); // the pair in the photo, in the order they finished
           // Only now does the caller say who won it (unless the race has been left meanwhile).
-          if (call.official && !gone) showLine(officialLine(call.official), now.textContent);
+          if (call.official && !gone) showLine(officialLine(call.official, call.officialSay), now.textContent);
           done();
         };
         // The sign waits for the caller's last line (second, third and the time) to be over, by the time

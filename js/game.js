@@ -375,7 +375,26 @@ export function photoRecord(race, winIdx, won) {
 // The race call, planned at the gate (see liveCall in call.js for what `opts` may say about the voice).
 export function callFor(race, run, opts) {
   const names = race.entries.map(e => horseOf(e).name);
-  return liveCall(race, run, names, opts);
+  return liveCall(race, run, names, { info: callInfo(race), ...opts });
+}
+// What the caller knows of a race besides its running (raceCall in call.js): the board at the off, the
+// riders, and the horse with your money on it. The final odds are the board the race is settled with,
+// your tickets and all (makeOfficial in world.js), so they're known before it's run, and a call made while
+// the form is read says what the board will say at the off, as long as no ticket is bought after it.
+export function callInfo(race) {
+  const done = race.status === 'official' && race.result && Array.isArray(race.result.odds);
+  const bets = myBets(race);
+  const final = done ? { odds: race.result.odds, text: race.result.oddsText || race.result.odds.map(oddsText) } : board(toteFor(race), 1, bets);
+  const odds = final.odds;
+  const most = new Map();
+  for (const b of bets) for (const i of b.sel) most.set(i, (most.get(i) || 0) + (b.amt || 0));
+  let mine = null;
+  for (const [i, amt] of most) if (mine === null || amt > most.get(mine) || (amt === most.get(mine) && i < mine)) mine = i;
+  return {
+    odds, oddsText: final.text, fav: odds.indexOf(Math.min(...odds)), mine,
+    riders: race.entries.map(e => (JOCKEYS[e.j] ? JOCKEYS[e.j].name.replace(/^[A-Z]\.\s*/, '') : '')),
+    him: race.entries.map(e => (['f', 'm'].includes(horseOf(e).sex) ? 'her' : 'him')),
+  };
 }
 
 export function atm() {
