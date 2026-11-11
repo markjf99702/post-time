@@ -55,5 +55,5 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `js/audio.js`: the bugle, the starting bell, the crowd and the cash window, all synthesised, and the browser's voice reading the call: which voice it uses, the pace each kind of device really gives it, how long it takes over a line, and the queue that lets a line finish before the next is said.
 - `fonts/`: Oswald and IBM Plex Sans Condensed (SIL Open Font License), served from here so nothing loads from elsewhere.
 - `sw.js`: keeps a copy for playing offline. On a connection that isn't answering, a page opens from that copy after four seconds. `FILES` in it is a fingerprint of the files it keeps: change one and `npm test` says what to set it to, so a release never leaves the copy half old.
-- `test/sim.test.mjs`, `test/game.test.mjs`, `test/audio.test.mjs`, `test/e2e.mjs`: the tests. `test/voices.fixture.json` is the lists of voices that fourteen browsers have, for checking which one gets picked.
+- `test/sim.test.mjs`, `test/game.test.mjs`, `test/audio.test.mjs`, `test/e2e.mjs`: the tests. `test/voices.fixture.json` is the lists of voices that seventeen browsers have, for checking which one gets picked.
 - `dev/`: pages that draw the horses, a race, the photo finish and the winner's circle on their own, for tuning by eye.

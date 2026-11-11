@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-// What getVoices() returns in fourteen browsers (see the file's own note on where the lists come from).
+// What getVoices() returns in seventeen browsers (see the file's own note on where the lists come from).
 const fixture = JSON.parse(readFileSync(new URL('./voices.fixture.json', import.meta.url), 'utf8'));
 const lists = Object.fromEntries(Object.entries(fixture.lists).map(([k, v]) => [k, v.map(([name, lang, local]) => ({ name, lang, localService: !!local }))]));
 const IPHONE = lists['Safari, iPhone (iOS 17-18)'];
@@ -76,8 +76,9 @@ test('the race call is read aloud with the sound off, and not with the voice off
 });
 
 // The voices nobody wants calling a race: Apple's novelty voices (Bells, Zarvox, Whisper), the robotic
-// ones kept for screen readers (Fred, and the Eloquence set: Eddy, Flo, Grandma), and eSpeak.
-const NEVER = /^(Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Good News|Jester|Organ|Superstar|Trinoids|Whisper|Wobble|Zarvox|Fred|Junior|Kathy|Ralph|Eddy|Flo|Grandma|Grandpa|Jacques|Reed|Rocko|Sandy|Shelley)( \(|$)|^eSpeak/i;
+// ones kept for screen readers (Fred, and the Eloquence set: Eddy, Flo, Grandma), eSpeak, and the three
+// children's voices (Apple's Joelle, Edge's Ana and Maisie).
+const NEVER = /^(Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Good News|Jester|Organ|Superstar|Trinoids|Whisper|Wobble|Zarvox|Fred|Junior|Kathy|Ralph|Eddy|Flo|Grandma|Grandpa|Jacques|Reed|Rocko|Sandy|Shelley|Joelle)( \(|$)|^eSpeak|^Microsoft (Ana|Maisie) /i;
 
 test('the voice picked is the best in the list, and never a novelty one', () => {
   // The first voice whose name matched Male, David, Alex, Daniel or Fred was used: Fred on every iPhone
@@ -90,7 +91,14 @@ test('the voice picked is the best in the list, and never a novelty one', () => 
     'Chrome, Mac (nothing downloaded)': ['Google US English', 'Samantha'],
     'Chrome, Mac (Ava Premium, Zoe Enhanced and Alex downloaded)': ['Ava (Premium)', 'Ava (Premium)'],
     'Chrome, Windows 10/11': ['Google US English', 'Microsoft David - English (United States)'],
-    'Edge, Windows': [/Online \(Natural\) - English \(United States\)$/, 'Microsoft David - English (United States)'],
+    // Edge's thirteen American natural voices grade alike, and the first in the browser's list used to win:
+    // Emma in one order, the child's voice Ana when the list is alphabetical. Now it's Guy in any order.
+    'Edge, Windows': ['Microsoft Guy Online (Natural) - English (United States)', 'Microsoft David - English (United States)'],
+    'Edge, Windows (the natural voices in alphabetical order)': ['Microsoft Guy Online (Natural) - English (United States)', 'Microsoft David - English (United States)'],
+    // Joelle is a child's voice, and came before Samantha by name.
+    'Firefox, Mac (Joelle downloaded)': ['Samantha', 'Samantha'],
+    // With Samantha gone the British Daniel used to come ahead of the American Aaron and Nicky.
+    'Safari, iPhone (Samantha gone)': ['Aaron', 'Aaron'],
     'Firefox, Windows': ['Microsoft David Desktop - English (United States)', 'Microsoft David Desktop - English (United States)'],
     'Chrome, Android (list in alphabetical order)': ['English United States', 'English United States'],
     'Chrome, Android (United States first)': ['English United States', 'English United States'],
@@ -115,6 +123,23 @@ test('the voice picked is the best in the list, and never a novelty one', () => 
     assert.equal(offered[0] || null, picks[0], `${where}: the best voice isn't first in the menu`);
     assert.equal(offered.length, voices.filter(v => /^en/i.test(v.lang) && !NEVER.test(v.name)).length, `${where}: an English voice isn't offered`);
   }
+});
+
+test("of voices that grade alike the same one is picked whatever order the browser lists them in, and never a child's", () => {
+  const edge = lists['Edge, Windows'], natural = v => / Online \(Natural\) - English \(United States\)$/.test(v.name);
+  const guy = 'Microsoft Guy Online (Natural) - English (United States)';
+  for (const order of [edge, edge.slice().reverse(), edge.slice().sort((a, b) => (a.name < b.name ? -1 : 1))]) {
+    assert.equal(pickVoice(order, { online: true }).name, guy);
+    // The seven put first, in their order, then the rest by name.
+    assert.deepEqual(offeredVoices(order).filter(natural).map(v => v.name.split(' ')[1].replace('Multilingual', '')),
+      ['Guy', 'Christopher', 'Eric', 'Roger', 'Steffan', 'Andrew', 'Brian', 'Aria', 'Ava', 'Emma', 'Jenny', 'Michelle']);
+  }
+  for (const where of ['Edge, Windows', 'Firefox, Mac (Joelle downloaded)']) assert.deepEqual(offeredVoices(lists[where]).filter(v => /Ana |Maisie |^Joelle/.test(v.name)).map(v => v.name), [], where);
+  // A save that names one of them gets the best here, as with a novelty voice.
+  assert.equal(pickVoice(edge, { saved: 'Microsoft Ana Online (Natural) - English (United States)' }).name, guy);
+  // Among the ordinary voices an American one comes before the next kind up in another English.
+  const names = offeredVoices(lists['Safari, iPhone (Samantha gone)']).map(v => v.name);
+  assert.ok(names.indexOf('Aaron') === 0 && names.indexOf('Nicky') === 1 && names.indexOf('Daniel') === 2, names.slice(0, 5).join(', '));
 });
 
 test("on a Chromebook the fourth of its own voices is used, with the fifth next, and not the first", () => {

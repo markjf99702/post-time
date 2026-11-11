@@ -216,9 +216,17 @@ export function cash() {
 // offered, by the name before any bracket.
 const NEVER = new Set(['albert', 'bad news', 'bahh', 'bells', 'boing', 'bubbles', 'cellos', 'good news', 'jester', 'organ',
   'superstar', 'trinoids', 'whisper', 'wobble', 'zarvox', 'fred', 'junior', 'kathy', 'ralph',
-  'eddy', 'flo', 'grandma', 'grandpa', 'jacques', 'reed', 'rocko', 'sandy', 'shelley']);
+  'eddy', 'flo', 'grandma', 'grandpa', 'jacques', 'reed', 'rocko', 'sandy', 'shelley', 'joelle']);
+// Nor is a child's voice: Readium Speech's list of English voices (json/en.json) marks three as children's,
+// Apple's Joelle (above) and these two of Edge's. Ana was "Best here" in Edge whenever its list came in
+// alphabetical order.
+const CHILD = /^Microsoft (Ana|Maisie)\b/i;
 // Apple's standard voices, the ones a Mac or an iPhone has before anything is downloaded.
-const APPLE = /^(Samantha|Ava|Zoe|Allison|Evan|Nathan|Tom|Joelle|Karen|Daniel|Moira|Tessa|Rishi|Serena|Kate|Jamie|Oliver|Matilda|Lee)$/;
+const APPLE = /^(Samantha|Ava|Zoe|Allison|Evan|Nathan|Tom|Karen|Daniel|Moira|Tessa|Rishi|Serena|Kate|Jamie|Oliver|Matilda|Lee)$/;
+// Edge's American natural voices all grade the same, and so "Best here" was whichever the browser happened
+// to list first. These come first among them, in this order, and the rest follow by name. Nobody here has
+// heard any of them: the order is a guess at who suits a race call, made from the names.
+const EDGE_FIRST = ['guy', 'christopher', 'eric', 'roger', 'steffan', 'andrew', 'brian'];
 
 // A voice's language the way the standard writes it. Android gives "en_US", and Firefox there "eng-US-f000".
 const langOf = v => String(v.lang || '').replace(/_/g, '-').toLowerCase().replace(/^eng(?=-|$)/, 'en');
@@ -237,11 +245,13 @@ export function langFor(v) {
 // Chromebook's own voices that were picked by ear, the natural voices in Edge and on a Chromebook, the ones
 // downloaded in a Mac's or an iPhone's settings (Premium, Siri, Enhanced), Alex, Chrome's Google voices,
 // then what each system starts with. American English ahead of other English, since the track is
-// American, and of two alike the one that works offline.
+// American, and of two alike the one that works offline. Among the ordinary voices an American one comes
+// ahead of the next kind up in another English (on an iPhone with Samantha gone, Aaron before the British
+// Daniel).
 function grade(v, online) {
   const lang = langOf(v), name = String(v.name || '');
   if (!/^en(-|$)/.test(lang)) return -1;
-  if (NEVER.has(name.replace(/\s*\(.*$/, '').trim().toLowerCase()) || /^espeak/i.test(name)) return -1;
+  if (NEVER.has(name.replace(/\s*\(.*$/, '').trim().toLowerCase()) || CHILD.test(name) || /^espeak/i.test(name)) return -1;
   if (needsNet(v) && !online) return -1;
   let g = 20;
   // A Chromebook's own eight voices: the fourth and fifth were the pick of them by ear (the first is its
@@ -256,15 +266,22 @@ function grade(v, online) {
   else if (APPLE.test(name)) g = 60;
   else if (/^Microsoft (David|Mark|Zira)\b/.test(name)) g = 55;
   else if (/^Chrome OS |\(compact\)|^(Aaron|Nicky)$/i.test(name)) g = 50;
-  if (/^en-us(-|$)/.test(lang)) g += 8;
+  if (/^en-us(-|$)/.test(lang)) g += g <= 60 ? 12 : 8;
   if (!needsNet(v)) g += 1;
   return g;
+}
+// Of two voices that grade the same, which comes first: a fixed order, not the browser's, so the same
+// device always gets the same voice. Edge's natural voices by the list above, then by name.
+function first(a, b) {
+  const edge = v => { const m = /^Microsoft ([A-Za-z]+?)(Multilingual)? Online \(Natural\)/.exec(v.name || ''), k = m ? EDGE_FIRST.indexOf(m[1].toLowerCase()) : -1; return k < 0 ? EDGE_FIRST.length : k; };
+  const x = String(a.name || ''), y = String(b.name || '');
+  return edge(a) - edge(b) || (x < y ? -1 : x > y ? 1 : 0);
 }
 
 // The voices worth offering from a browser's list, best first.
 export function offeredVoices(voices) {
-  return Array.from(voices || [], (v, i) => ({ v, i, g: grade(v, true) }))
-    .filter(x => x.g >= 0).sort((a, b) => b.g - a.g || a.i - b.i).map(x => x.v);
+  return Array.from(voices || [], v => ({ v, g: grade(v, true) }))
+    .filter(x => x.g >= 0).sort((a, b) => b.g - a.g || first(a.v, b.v)).map(x => x.v);
 }
 
 // The voice to use: the one saved in the menu if it's in the list and can be used now, otherwise the
@@ -278,7 +295,7 @@ export function pickVoice(voices, { saved = null, online = true } = {}) {
   let best = null, top = -1;
   for (const v of list) {
     const g = grade(v, online);
-    if (g > top) { best = v; top = g; }
+    if (g > top || (g === top && g >= 0 && first(v, best) < 0)) { best = v; top = g; }
   }
   return best;
 }
