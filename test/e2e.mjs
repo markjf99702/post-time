@@ -236,6 +236,34 @@ assert.deepEqual(smallPrint.conditions, [
   'Three-year-olds and up that have never won.',
 ]);
 
+// Bet on 4, at the foot of a horse opened in the form of the race that's up: the Bet tab, with the horse picked
+// and named in the bar.
+await page.click('.tabs button:nth-child(1)');
+const fourth = page.locator('.entry').nth(3);
+if (await fourth.locator('.entry-more').isHidden()) await fourth.locator('.entry-head').click();
+const four = await page.evaluate(() => { const { game, nextRace } = window.postTime, e = nextRace().entries[3]; return { pp: e.pp, name: game.world.horses[e.hid].name }; });
+assert.equal(await fourth.locator('.bet-on .btn').textContent(), `Bet on ${four.pp} ▸`);
+await fourth.locator('.bet-on .btn').click();
+assert.deepEqual(await page.evaluate(() => ({
+  tab: document.querySelector('.tabs [aria-selected="true"]').textContent,
+  picked: [...document.querySelectorAll('.pick-row button[aria-pressed="true"]')].map(b => b.textContent),
+  bar: document.querySelector('.post-bar .info').textContent,
+})), { tab: 'Bet', picked: [String(four.pp)], bar: `#${four.pp} ${four.name} to win, $2: not bought yet` }, "Bet on in the form didn't put the horse on the slip");
+await page.locator('.pick-row button[aria-pressed="true"]').click(); // and off it again
+await page.click('.tabs button:nth-child(1)');
+await fourth.locator('.entry-head').click();
+// A race that isn't up has no Bet on.
+const later = await page.evaluate(async () => {
+  const { nav, nextRace } = window.postTime;
+  nav.go('race', { no: nextRace().no + 1 });
+  document.querySelector('.entry-head').click();
+  const n = document.querySelectorAll('.bet-on').length;
+  document.querySelector('.entry-head').click();
+  nav.go('race', { no: nextRace().no });
+  return n;
+});
+assert.equal(later, 0, 'a race that is not up yet offers Bet on');
+
 // The forum has posts with picks.
 await page.click('.tabs button:nth-child(3)');
 assert.ok(await page.locator('.post').count() >= 3, 'regulars post on the forum');

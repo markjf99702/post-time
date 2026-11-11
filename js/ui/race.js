@@ -79,7 +79,7 @@ export function renderRace(root, nav, params) {
     if (stopPanel) { stopPanel(); stopPanel = null; }
     drawTabs();
     clear(panel);
-    if (which === 'form') formPanel(panel, race);
+    if (which === 'form') formPanel(panel, race, isNext ? betOn : null);
     if (which === 'paddock') stopPanel = paddockPanel(panel, race);
     if (which === 'forum') forumPanel(panel, race);
     if (which === 'bet') betPanel(panel, race, { changed: () => show('bet'), picked: refreshBar, open: isNext });
@@ -155,6 +155,12 @@ export function renderRace(root, nav, params) {
     measureBar();
   }
 
+  // Bet on 3, in a horse opened in the form of the race that's up: the Bet tab, with the horse on the slip.
+  function betOn(i) {
+    pickOn(race, i);
+    tap('bet');
+  }
+
   // Minutes to post tick down, and the odds move with them.
   let lastMtp = null;
   function tick() {
@@ -188,14 +194,14 @@ export function conditions(race) {
 
 // ------------------------------------------------------------------ form
 
-function formPanel(panel, race) {
+function formPanel(panel, race, betOn) {
   const stats = meetStats(game.world);
   const board = currentBoard(race);
   panel.append(h('p', { class: 'note' }, 'Tap a horse for its past performances. Figures are speed figures: higher is faster, adjusted for distance and going.'));
-  race.entries.forEach((e, i) => panel.append(entryCard(race, e, i, stats, board)));
+  race.entries.forEach((e, i) => panel.append(entryCard(race, e, i, stats, board, betOn)));
 }
 
-function entryCard(race, e, i, stats, board) {
+function entryCard(race, e, i, stats, board, betOn) {
   const hs = horseOf(e);
   const { owner, trainer } = ranFor(e); // a horse claimed out of this race ran it for the people who entered it
   const silks = ownerSilks(owner);
@@ -211,7 +217,7 @@ function entryCard(race, e, i, stats, board) {
   // another tab, and from another screen.
   const opened = openedIn(race);
   const more = h('div', { class: 'entry-more', hidden: !opened.has(e.hid) });
-  if (!more.hidden) fillMore(more, race, e, hs);
+  if (!more.hidden) fillMore(more, race, e, hs, betOn && (() => betOn(i)));
   const head = h('button', { class: 'entry-head', type: 'button', 'aria-expanded': String(!more.hidden) },
     cloth(e.pp, 'lg'),
     silksCanvas(silks, 30),
@@ -224,7 +230,7 @@ function entryCard(race, e, i, stats, board) {
     more.hidden = !open;
     head.setAttribute('aria-expanded', String(open));
     if (open) opened.add(e.hid); else opened.delete(e.hid);
-    if (open && !more.firstChild) fillMore(more, race, e, hs);
+    if (open && !more.firstChild) fillMore(more, race, e, hs, betOn && (() => betOn(i)));
   });
   return h('article', { class: 'entry' },
     head,
@@ -241,7 +247,10 @@ function styleName(s) {
   return { E: 'Needs the lead', 'E/P': 'Close to the pace', P: 'Stalker', S: 'Closer' }[s];
 }
 
-function fillMore(more, race, e, hs) {
+// `bet` is there for a race that's up for betting: the horse's past performances end with a button that puts
+// it on the betting slip. (The form couldn't hand the window a horse: it was read about on one tab and found
+// by its number among numbers on another.)
+function fillMore(more, race, e, hs, bet) {
   const age = ageOf(game.world, hs);
   const sireLink = name => IN_BLOODLINES.has(name)
     ? h('a', { href: `https://junkdrawer.works/bloodlines/#${encodeURIComponent(name)}`, target: '_blank', rel: 'noopener' }, name)
@@ -302,6 +311,7 @@ function fillMore(more, race, e, hs) {
       w.rank === 1 ? h('b', {}, `${w.rank}/${w.of}`) : `${w.rank}/${w.of}`,
     ])));
   }
+  if (bet) more.append(h('div', { class: 'bet-on' }, h('button', { class: 'btn ghost', type: 'button', onclick: bet, 'aria-label': `Bet on ${e.pp} ${hs.name}` }, `Bet on ${e.pp} ▸`)));
 }
 
 function supCall([pos, margin]) {
@@ -420,6 +430,13 @@ const slipFor = race => {
   return state.get(k);
 };
 function clearSlip(race) { slipFor(race).picks = [[], [], []]; }
+// A horse put on the slip from the form, in the kind of bet the slip is on: the horse for a win, place or show
+// bet, the first for an exacta or trifecta (and out of second and third), one more in a box.
+function pickOn(race, i) {
+  const st = slipFor(race);
+  if (st.type.endsWith('box')) { if (!st.picks[0].includes(i)) st.picks[0] = [...st.picks[0], i]; return; }
+  st.picks = st.picks.map((row, r) => (r === 0 ? [i] : row.filter(x => x !== i)));
+}
 // The ticket the slip would buy, if it's whole and there's the money for it.
 function unbought(race) {
   const bet = currentBet(slipFor(race), race.entries.length);
