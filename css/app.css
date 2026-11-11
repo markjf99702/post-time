@@ -564,6 +564,10 @@ a { color: var(--link); }
   .call { font-size: 15px; }
   .w-tix { grid-column: 1 / -1; grid-row: 7; }
   .w-ctl { padding: 6px 10px; }
+  /* The buttons keep their old height here, 34 px: they're on two rows in this column, and 6 px more for each
+     came out of the call's box, where a line of four lines then ran 6 px past the bottom. */
+  .w-ctl button { padding: 9px 12px; }
+  .w-ctl .btn { padding: 0 16px; height: 34px; }
   .w-ctl .hint { display: none; }
 }
 

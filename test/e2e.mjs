@@ -1483,8 +1483,11 @@ await page.waitForSelector('.races');
   // and no line spills out of the call's box. (The running order had whatever room the call left it: over
   // one call the call's top edge moved on 23 of 27 lines, and at 667 wide the running order was cut on two.)
   // A laptop or a Chromebook has the same two columns, with a wider column at the desktop's type sizes.
+  // (On the phone the buttons are 34 px tall, not the 40 they are everywhere else: they take two rows of that
+  // column, and at 40 a line of the call four lines long ran 6 px out of the bottom of its box.)
   for (const [width, height] of [[844, 390], [667, 375], [1366, 657]]) {
     await watch(width, height);
+    assert.deepEqual(await win.evaluate(() => [...new Set([...document.querySelectorAll('.w-ctl button')].filter(b => !b.hidden).map(b => Math.round(b.getBoundingClientRect().height)))]), [height < 520 ? 34 : 40], `${width} by ${height}: the race screen's buttons`);
     const col = await win.evaluate(async () => {
       const w = window.__watch, out = { field: w.run.n, lines: w.call.lines.length, top: new Set(), tall: new Set(), spill: 0, cut: 0, off: 0 };
       const frames = async n => { for (let i = 0; i < n; i++) await new Promise(r => requestAnimationFrame(r)); };
