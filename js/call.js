@@ -777,7 +777,9 @@ export function raceCall(race, run, names, { lineSeconds = modelSeconds, speed =
     return !!b && gapOf(a, b) >= 3 && o.slice(1).every(x => a.p - x.p - (x.v - a.v) * secs >= 1.5 * LENGTH);
   }
   // Whether a horse has had its head in front at any time in the last `secs` seconds.
-  const ledLately = (i, t, secs) => { for (let k = Math.max(0, Math.round((t - secs) * 10)); k <= Math.round(t * 10) && k < ev.front.length; k++) if (ev.front[k] === i) return true; return false; };
+  // (From the tenth of a second at or before the start of the time, not the nearest: a horse whose head
+  // was in front until 37.46 s was let "run on from fourth" at 57.45, the window starting at 37.5.)
+  const ledLately = (i, t, secs) => { for (let k = Math.max(0, Math.floor((t - secs) * 10)); k <= Math.ceil(t * 10) && k < ev.front.length; k++) if (ev.front[k] === i) return true; return false; };
 
   // The stretch: a line of two to eight words about the horses deciding it, chosen by what the race shows
   // and never the same kind twice running. First what's happening (a horse stopped, one flying from
