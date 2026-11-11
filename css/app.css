@@ -129,11 +129,18 @@ a { color: var(--link); }
 .bank:empty { visibility: hidden; } /* while a meet is being built; it keeps its place */
 .menu-btn { background: none; border: 0; padding: 6px; margin-right: -6px; cursor: pointer; color: #f3ecd8; }
 .menu-btn svg { width: 26px; height: 26px; display: block; }
+/* The menu is never taller than the screen under the header: on a phone on its side it scrolls inside its own
+   box (it ran 76 px off the bottom there with the call ticked, and Start a new meet couldn't be reached), and
+   it keeps clear of a notch on the right. */
 .menu {
-  position: fixed; z-index: 30; right: 10px; top: calc(60px + env(safe-area-inset-top));
+  position: fixed; z-index: 30; right: max(10px, env(safe-area-inset-right)); top: calc(60px + env(safe-area-inset-top));
   background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.25);
   display: flex; flex-direction: column; min-width: 240px; padding: 6px;
+  max-height: calc(100vh - 70px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height: calc(100dvh - 70px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto; overscroll-behavior: contain;
 }
+.menu > * { flex: none; } /* a row keeps its height when the menu is short: the menu scrolls */
 .menu button, .menu .toggle {
   background: none; border: 0; text-align: left; padding: 11px 12px; border-radius: 6px; cursor: pointer; font-size: 16px;
   display: flex; align-items: center; gap: 10px;

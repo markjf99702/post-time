@@ -741,6 +741,28 @@ const reading = () => page.locator('#voiceNote').textContent();
 assert.equal(await reading(), 'Reading in Google US English');
 assert.deepEqual(await page.evaluate(() => { const row = document.getElementById('voiceRow').getBoundingClientRect(), note = document.getElementById('voiceNote').getBoundingClientRect(); return [note.width > 0 && note.left >= row.left && note.right <= row.right + 0.5, document.getElementById('voiceNone').hidden]; }), [true, true], "the line that says which voice is reading isn't inside the menu, or the no-voice line shows");
 assert.ok(offered.includes('Samantha') && !offered.some(o => /^(Fred|Zarvox|Bells|Eddy)/.test(o)), `the voices offered: ${offered.join(', ')}`);
+// On a phone on its side the menu, with the voice row open, is taller than the screen has room for under
+// the header. It ends on the screen and scrolls in its own box, so every row can be brought into view, down
+// to Start a new meet when it says on two lines what a second tap does. (It ran off the bottom, and scrolling
+// the page didn't move it: Start a new meet couldn't be reached.)
+await page.setViewportSize({ width: 844, height: 390 });
+const sideMenu = await page.evaluate(() => {
+  const menu = document.getElementById('menu'), restart = document.getElementById('restart'), was = restart.textContent;
+  restart.textContent = 'Tap again: new horses, $200, empty scrapbook';
+  const bottom = Math.round(menu.getBoundingClientRect().bottom), hidden = [];
+  for (const row of menu.querySelectorAll('button, .toggle, select')) {
+    if (!row.getClientRects().length) continue;
+    row.scrollIntoView({ block: 'nearest' });
+    const r = row.getBoundingClientRect(), box = menu.getBoundingClientRect();
+    if (r.top < box.top - 0.5 || r.bottom > Math.min(box.bottom, innerHeight) + 0.5) hidden.push(row.textContent.trim().slice(0, 24) || row.id);
+  }
+  restart.textContent = was;
+  menu.scrollTop = 0;
+  return { bottom, hidden };
+});
+assert.ok(sideMenu.bottom <= 390, `on a phone on its side the menu runs to ${sideMenu.bottom} px on a 390 px screen`);
+assert.deepEqual(sideMenu.hidden, [], "rows of the menu can't be reached on a phone on its side");
+await page.setViewportSize({ width: 390, height: 844 });
 // Hear it, and what was said for it: one line, however soon after the last (a tap while it's still talking
 // starts it again, a quarter of a second after the cancel).
 const hearIt = async () => {
