@@ -13,6 +13,17 @@ import { makeTote, board, settle } from './tote.js';
 
 export const HISTORY_DAYS = 10;
 export const BARN = 210;
+// From the second meet on, the barn is bigger and a horse sits out two Saturdays between races. In the first
+// meet a horse could run again after one Saturday off: about two starts in three came two weeks after the
+// horse's last, the busiest horses ran five times in a meet's first nine race days, and the meet's leading
+// stakes horse won about three of its ten stakes. So when the second meet opens, eighty horses ship in at
+// once, most of them three and four, and a horse runs every three weeks at the most. The first meet, which
+// every save has been playing, runs as it always did until it closes.
+export const BARN_LATER = 290;
+const later = world => !!world.meet && world.meet.no >= 2;
+export const barnFor = world => (later(world) ? BARN_LATER : BARN);
+// How many weeks after its last race a horse can run again.
+export const restFor = world => (later(world) ? 3 : 2);
 export const CARD_SIZE = 8;
 // A meet is ten race days, and the Larkspur Handicap is the last race of the last one, closing day.
 export const MEET_DAYS = 10;
@@ -197,6 +208,7 @@ export function nextDay(world) {
     (world.meets || (world.meets = [])).push(meetRecord(world));
     world.meet = newMeetOn(world.meet.no + 1, world.day + 1);
     world.meet.tips = structuredClone(world.tipsters || {});
+    shipIn(world, world.day + 1);
   }
   // Earlier race days are kept from the first race day of the meet before this one.
   const before = world.meets?.length ? world.meets[world.meets.length - 1].first : -Infinity;
@@ -425,11 +437,24 @@ function endOfDay(world, day) {
   // be counted from the meet's first race day, so after a New Year they arrived a year older than drawn,
   // and no three-year-old ever came again. Horses already in a barn keep the age they've been shown at.)
   const active = world.horses.filter(h => !h.retired).length;
-  for (let i = active; i < BARN; i++) {
+  for (let i = active; i < barnFor(world); i++) {
     const age = R.weighted([[3, 70], [4, 20], [5, 10]]);
     const h = newHorse(world, R, { age: short ? 3 : age, id: world.horses.length, day: day + 1 });
     world.horses.push(h);
     addWork(world, h, day + 1, R); addWork(world, h, day + 1, R);
+  }
+}
+
+// A new meet opens with the barn made up to its size (barnFor): from the second meet on, that's eighty more
+// horses than the first meet had, shipped in on its first race day. They're drawn from a stream of their own,
+// so nothing else drawn that day changes.
+function shipIn(world, day) {
+  const R = rng(`open:${world.seed}:${world.meet.no}`);
+  const active = world.horses.filter(h => !h.retired).length;
+  for (let i = active; i < barnFor(world); i++) {
+    const h = newHorse(world, R, { age: R.weighted([[3, 50], [4, 30], [5, 20]]), id: world.horses.length, day });
+    world.horses.push(h);
+    addWork(world, h, day, R); addWork(world, h, day, R);
   }
 }
 
@@ -541,11 +566,12 @@ function aptitude(h, race) {
 // `busy` has the ids of horses already entered in another race that day.
 function fillRaces(world, races, R, day, busy = new Set()) {
   const free = h => !h.retired && !busy.has(h.id);
-  const pool = world.horses.filter(h => free(h) && (h.last === null || h.last <= day - 2));
+  const rest = restFor(world);
+  const pool = world.horses.filter(h => free(h) && (h.last === null || h.last <= day - rest));
   const est = new Map(pool.map(h => [h, trainerEstimate(h, R)]));
-  // Horses that ran last week, called on only when a race can't be filled any other way.
+  // Horses that ran too lately to be rested, called on only when a race can't be filled any other way.
   let tired = null;
-  const tiredPool = () => tired || (tired = world.horses.filter(h => free(h) && h.last !== null && h.last > day - 2 && h.last < day)
+  const tiredPool = () => tired || (tired = world.horses.filter(h => free(h) && h.last !== null && h.last > day - rest && h.last < day)
     .map(h => { est.set(h, trainerEstimate(h, R)); return h; }));
   const used = new Set();
   const order = races.slice().sort((a, b) => b.par - a.par);
@@ -554,7 +580,7 @@ function fillRaces(world, races, R, day, busy = new Set()) {
   // a field of nine to eleven.
   const pointed = races.some(isHandicap) ? pointedTo(world).filter(free) : [];
   for (const h of pointed) if (!est.has(h)) est.set(h, trainerEstimate(h, R));
-  // `open` is how far the race has been opened up: 0 as written, 1 to any horse that's had a week off,
+  // `open` is how far the race has been opened up: 0 as written, 1 to any horse rested enough to run (restFor),
   // 2 to any horse at all.
   const fill = (race, open = 0) => {
     const target = isHandicap(race) ? R.int(9, 11) : race.cls === 'STK' ? R.int(7, 10) : R.int(7, 11);
@@ -584,7 +610,7 @@ function fillRaces(world, races, R, day, busy = new Set()) {
   order.forEach(race => fill(race));
   // A race short of horses is opened up a step at a time until it has five: to colts and geldings, then
   // (a maiden race; late in a long meet most of the maidens have won) to winners as a $10,000 claimer,
-  // then to any horse that's had a week off, then to any horse at all. Still none runs twice in a day.
+  // then to any horse rested enough to run, then to any horse at all. Still none runs twice in a day.
   const toWinners = race => { race.cls = 'C10'; race.par = CLASSES.C10.par; race.claim = CLASSES.C10.claim; race.purse = CLASSES.C10.purse; };
   for (const race of order) {
     let open = 0;

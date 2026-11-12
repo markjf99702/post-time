@@ -3425,10 +3425,13 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   assert.equal(await meet.locator('.meet-big b').textContent(), await meet.evaluate(() => { const r = window.postTime.card().races[7]; return window.postTime.game.world.horses[r.entries[r.result.order[0].k].hid].name; }));
   const bank = await meet.evaluate(() => window.postTime.game.player.bank);
   const horses = await meet.evaluate(() => window.postTime.game.world.horses.length);
+  assert.match(await meet.locator('.actions p.muted').textContent(), /^Meet 2 opens next Saturday with the same horses and eighty new ones, .* From then on a horse sits out two Saturdays between races\./);
   await meet.click('.actions .btn');
   assert.equal(await meet.locator('.day .kicker').textContent(), 'Race day 1 of 10 · the Larkspur Handicap in nine weeks');
   assert.deepEqual(await meet.evaluate(() => [window.postTime.game.world.meet.no, window.postTime.game.player.bank]), [2, bank], 'meet 2 opens with your bankroll');
-  assert.ok(await meet.evaluate(() => window.postTime.game.world.horses.length) - horses < 10, 'meet 2 has a new barn');
+  // The same horses, and eighty more shipped in for the second meet: a barn of 290.
+  const barn2 = await meet.evaluate(() => { const hs = window.postTime.game.world.horses; return { added: hs.length, active: hs.filter(h => !h.retired).length }; });
+  assert.ok(barn2.added - horses >= 80 && barn2.added - horses < 90 && barn2.active === 290, `meet 2 opened with ${barn2.added - horses} horses added and a barn of ${barn2.active}`);
   // The scrapbook is meet 2's, with meet 1 under Earlier meets; its row opens meet 1's page, and Back goes
   // back to the scrapbook.
   await meet.evaluate(() => window.postTime.nav.go('book'));

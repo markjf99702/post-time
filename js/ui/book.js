@@ -184,7 +184,9 @@ export function renderMeet(root, nav, params = {}) {
   }
   if (live && over) {
     root.append(h('div', { class: 'actions' },
-      h('p', { class: 'muted' }, `Meet ${r.no + 1} opens next Saturday with the same horses, ten race days to its own ${BIG_STAKES.name}. Your bankroll comes with you.`),
+      h('p', { class: 'muted' }, r.no === 1
+        ? `Meet 2 opens next Saturday with the same horses and eighty new ones, ten race days to its own ${BIG_STAKES.name}. From then on a horse sits out two Saturdays between races. Your bankroll comes with you.`
+        : `Meet ${r.no + 1} opens next Saturday with the same horses, ten race days to its own ${BIG_STAKES.name}. Your bankroll comes with you.`),
       h('button', { class: 'btn brass', type: 'button', onclick: () => { advanceDay(); nav.go('card'); window.scrollTo(0, 0); } }, `Open meet ${r.no + 1} ▸`),
     ));
   }
@@ -295,7 +297,7 @@ export function renderHelp(root, nav, params = {}) {
         h('li', {}, 'Tap To the gate, and watch them run.'),
       ),
       part('meet', 'The meet'),
-      h('p', {}, `A meet is ${MEET_DAYS} race days. The last race of every Saturday is a stakes, and the first two home in each are pointed to the ${BIG_STAKES.name}, ${money(BIG_STAKES.purse, { cents: false })}, on closing day: they're entered in it first. After the Handicap the meet closes, with its leading rider and trainer, its horse of the meet, the forum's champion and your own meet, and the next meet opens the Saturday after with the same horses. Your bankroll carries over, and each meet's record is kept in your scrapbook.`),
+      h('p', {}, `A meet is ${MEET_DAYS} race days. The last race of every Saturday is a stakes, and the first two home in each are pointed to the ${BIG_STAKES.name}, ${money(BIG_STAKES.purse, { cents: false })}, on closing day: they're entered in it first. After the Handicap the meet closes, with its leading rider and trainer, its horse of the meet, the forum's champion and your own meet, and the next meet opens the Saturday after with the same horses. When the second meet opens, eighty more horses ship in, and from then on a horse sits out two Saturdays between races (in the first meet, one). Your bankroll carries over, and each meet's record is kept in your scrapbook.`),
       part('form', 'Reading the form'),
       h('dl', {},
         h('dt', {}, 'An entry'), h('dd', {}, 'Its number and silks, its name, and its odds on the board now (once the race is run, the odds it went off at). Under them the rider and the trainer, each with a record in brackets: (12-60) is 12 wins from 60 starts here, counted from ten weeks before your first meet. Then the weight it carries, and ML, its morning line.'),

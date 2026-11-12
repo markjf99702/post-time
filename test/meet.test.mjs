@@ -82,6 +82,34 @@ test('the next meet opens with the same horses, and the last one goes down in th
   assert.equal(line.since, false);
 });
 
+// A horse could run again after one Saturday off: two starts in three came two weeks after the last, and the
+// busiest horses ran five times in nine race days. From the second meet on the barn is 290 and a horse sits
+// out two Saturdays; the first meet runs as it did.
+test('when the second meet opens eighty horses ship in, and from then on a horse sits out two Saturdays between races', () => {
+  const world = W.createWorld('meet-rest', '2026-09-26');
+  const active = () => world.horses.filter(h => !h.retired).length;
+  const gaps = { 1: [], 2: [] }, barn = {};
+  let before = 0;
+  runDays(world, 20, c => {
+    const m = world.meet.no;
+    if (world.day === world.meet.first) barn[m] = active();
+    if (world.day === 9) before = world.horses.length;
+    if (world.day === 10) {
+      const came = world.horses.slice(before);
+      assert.ok(came.length >= 80, `${came.length} horses shipped in for the second meet`);
+      for (const h of came) assert.ok(W.ageOf(world, h) >= 3 && W.ageOf(world, h) <= 5 && !h.pps.length, `${h.name}, ${W.ageOf(world, h)}`);
+    }
+    for (const race of c.races) {
+      if (W.isHandicap(race)) continue; // (the horses pointed to it run whenever they last ran)
+      for (const e of race.entries) { const h = world.horses[e.hid]; if (h.last !== null) gaps[m].push(c.day - h.last); }
+    }
+  });
+  assert.deepEqual(barn, { 1: W.BARN, 2: W.BARN_LATER });
+  assert.equal(active(), W.BARN_LATER, 'the barn stays at its size');
+  assert.ok(gaps[1].filter(g => g === 2).length > gaps[1].length / 3, 'the first meet runs as it did: horses back after one Saturday off');
+  assert.equal(Math.min(...gaps[2]), 3, 'a horse ran in the second meet after only one Saturday off');
+});
+
 test("the first two home in each weekly stakes are entered in the Handicap first, whether or not they ran last week", () => {
   const world = W.createWorld('meet-preps', '2026-09-26');
   runDays(world, 9);
