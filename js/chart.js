@@ -32,19 +32,33 @@ export function lengthsText(l) {
   return `${lengthsShort(l)} length${quarters(l) > 1 ? 's' : ''}`;
 }
 
-// Positions at each call, and lengths behind the horse in front (for the leader: lengths in front).
+// Positions at each call, and lengths behind the leader (for the leader: lengths in front of the second);
+// at the finish, lengths behind the winner (for the winner: in front of the second). That's the Racing
+// Form's reading: "the smaller figure is the margin behind the leader" (DRF, How To Use DRF: Past
+// Performances). It used to be the lengths behind the horse directly in front, so a horse last of eleven,
+// a neck behind the tenth and fifteen lengths behind the winner, printed as 11 with "nk" beside it.
 export function runningLine(run, k) {
   const line = run.calls.map(c => {
     if (!c) return null;
     const idx = c.findIndex(x => x.h === k);
     const pos = idx + 1;
-    const margin = idx === 0 ? (c[1] ? c[1].behind : 0) : c[idx].behind - c[idx - 1].behind;
+    const margin = idx === 0 ? (c[1] ? c[1].behind : 0) : c[idx].behind;
     return [pos, +margin.toFixed(2)];
   });
   const r = run.results.find(x => x.h === k);
-  const fin = r.pos === 1 ? (run.results[1] ? run.results[1].toPrev : 0) : r.toPrev;
+  const fin = r.pos === 1 ? (run.results[1] ? run.results[1].toPrev : 0) : r.behind;
   line.push([r.pos, +fin.toFixed(2)]);
   return line;
+}
+// A past performance's running line as the form prints it. A line made the Racing Form's way says so
+// (`lead`); one saved before that has the lengths to the horse in front at each call, which would be
+// misread now, so its calls show the position alone. Its finish can still be printed the new way: every
+// line keeps the lengths it was beaten by the winner (`bl`).
+export function formLine(p) {
+  if (p.lead) return p.line;
+  const calls = p.line.slice(0, -1).map(c => (c ? [c[0], 0] : c));
+  const fin = p.line[p.line.length - 1];
+  return [...calls, fin[0] !== 1 && Number.isFinite(p.bl) ? [fin[0], p.bl] : fin];
 }
 
 export function callText([pos, margin]) {

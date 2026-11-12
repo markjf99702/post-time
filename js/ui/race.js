@@ -5,7 +5,7 @@ import { game, card, silksFor, isStarred, toggleStar, cashedOn, formBefore, race
 import { ageOf, shortDate, clockText, CLASSES, meetStats, isHandicap, prepsOf } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
 import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES, CLOTH } from '../data.js';
-import { callText, marginShort, fmtTime, fmtWork } from '../chart.js';
+import { formLine, marginShort, fmtTime, fmtWork } from '../chart.js';
 import { runStyle } from '../forum.js';
 import { BET_NAMES, cost as betCost, MIN, wouldPay } from '../tote.js';
 import { drawHorse } from '../draw/horse.js';
@@ -200,12 +200,14 @@ export function conditions(race) {
 
 // ------------------------------------------------------------------ form
 
+// What the small figures in a running line are, said over the entries and in How to play.
+const SMALL = 'In a running line the small figures are lengths behind the leader, and at the finish behind the winner.';
 function formPanel(panel, race, betOn, nav) {
   const stats = meetStats(game.world);
   const board = currentBoard(race);
   panel.append(h('p', { class: 'note' }, race.status === 'official'
-    ? 'The form as it stood before the race: the figures, running styles and records leave this race out. Tap a horse for its past performances, with its line from this race marked.'
-    : 'Tap a horse for its past performances. Figures are speed figures: higher is faster, adjusted for distance and going.'));
+    ? `The form as it stood before the race: the figures, running styles and records leave this race out. Tap a horse for its past performances, with its line from this race marked. ${SMALL}`
+    : `Tap a horse for its past performances. Figures are speed figures: higher is faster, adjusted for distance and going. ${SMALL}`));
   race.entries.forEach((e, i) => panel.append(entryCard(race, e, i, stats, board, betOn, nav)));
 }
 
@@ -303,8 +305,9 @@ function fillMore(more, race, e, hs, bet, today = null, nav = null) {
     );
     const tb = h('tbody');
     for (const p of [...(today ? [today] : []), ...hs.pps.slice().reverse()]) {
-      const calls = p.line.slice(0, -1).filter(Boolean);
-      const fin = p.line[p.line.length - 1];
+      const line = formLine(p);
+      const calls = line.slice(0, -1).filter(Boolean);
+      const fin = line[line.length - 1];
       const mark = p === today;
       tb.append(
         h('tr', { class: mark ? 'today' : null },

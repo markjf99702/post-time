@@ -718,9 +718,11 @@ export function applyResult(world, race, run, odds) {
     const pp = {
       d: race.day, dt: race.date, no: race.no, f: race.f, surf: race.surface[0], cond: race.cond, cls: race.cls, clm: race.claim,
       nm: race.name, fm: race.fm, fs, pp: e.pp, j: e.j, wt: e.wt, odds: +odds[k].toFixed(2), fin: r.pos, bl: +r.behind.toFixed(2),
-      line: runningLine(run, k), fig, t: +r.time.toFixed(2), fr, cm: tripComment(run, k, fs), top: names,
+      line: runningLine(run, k), lead: 1, fig, t: +r.time.toFixed(2), fr, cm: tripComment(run, k, fs), top: names,
       tr: h.trainer, // who trained it that day, for the trainers' records
     };
+    // (`lead`: the line's margins are the Racing Form's, behind the leader at each call. A line saved before
+    // has none, and js/chart.js formLine prints its calls without them.)
     // Claimed out of the race by another trainer. It ran for the people who entered it, so the race keeps
     // who they were: the silks it ran in, and the trainer and owner in the winner's circle, are theirs.
     if (race.claim && R.chance(0.08)) {

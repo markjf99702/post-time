@@ -10,7 +10,7 @@ import { coursePath, FURLONG, COURSES } from '../js/track.js';
 import { rng } from '../js/rng.js';
 import { createWorld, simulateRace, buildCard, applyResult, nextDay, ageOf } from '../js/world.js';
 import { makeTote, board, settle, ticketReturn, cost, TAKEOUT, wouldPay, legs, MULTI, firstLeg, multiSettle, willPays, wouldPayMulti } from '../js/tote.js';
-import { fmtTime, fmtClock, fmtWork, marginShort, marginText, lengthsText, tripComment } from '../js/chart.js';
+import { fmtTime, fmtClock, fmtWork, marginShort, marginText, lengthsText, tripComment, runningLine, formLine } from '../js/chart.js';
 import { timeWords, timeSay, aloud, raceCall } from '../js/call.js';
 import { forumPosts } from '../js/forum.js';
 import { angles, newcomer, freshBullet, oddsText, oddsValue, morningLine } from '../js/handicap.js';
@@ -227,6 +227,34 @@ test('the world builds a full card with past performances that happened', () => 
     assert.equal(new Set(ids).size, ids.length);
   }
   assert.ok(JSON.stringify(w).length < 900_000, 'the save stays small');
+});
+
+// The small figures in a running line were the lengths to the horse directly in front, so a horse last of
+// eleven, a neck behind the tenth, printed as 11 with "nk" beside it. They're the Racing Form's now: behind
+// the leader at each call, behind the winner at the finish. A line saved before shows its calls without them.
+test("a running line's margins are behind the leader at the calls and behind the winner at the finish", () => {
+  const w = createWorld('margins', '2026-09-26');
+  const r = w.cards[0].races[0];
+  const run = simulateRace(r, w, { record: true });
+  let behind = 0;
+  for (let k = 0; k < r.entries.length; k++) {
+    const line = runningLine(run, k), res = run.results.find(x => x.h === k);
+    run.calls.forEach((c, n) => {
+      if (!c) return;
+      const at = c.findIndex(x => x.h === k);
+      assert.equal(line[n][0], at + 1);
+      assert.equal(line[n][1], +(at === 0 ? c[1].behind : c[at].behind).toFixed(2), `horse ${k} at call ${n + 1}`);
+    });
+    assert.deepEqual(line.at(-1), [res.pos, +(res.pos === 1 ? run.results[1].toPrev : res.behind).toFixed(2)]);
+    if (res.pos === r.entries.length) behind = line.at(-1)[1];
+  }
+  assert.ok(behind > run.results.at(-1).toPrev + 0.5, 'the last horse is printed beaten by no more than the horse in front of it');
+  // Every line in a new meet is made this way, and the form prints it as it is.
+  for (const h of w.horses) for (const p of h.pps) { assert.equal(p.lead, 1); assert.deepEqual(formLine(p), p.line); }
+  // A line saved before: the position alone at the calls, and the finish behind the winner from what it kept.
+  const old = { line: [[3, 1.5], null, [4, 0.25], [6, 0.06]], fin: 6, bl: 7.4 };
+  assert.deepEqual(formLine(old), [[3, 0], null, [4, 0], [6, 7.4]]);
+  assert.deepEqual(formLine({ line: [[1, 2], [1, 1], [1, 0.5], [1, 0.75]], fin: 1, bl: 0 }), [[1, 0], [1, 0], [1, 0], [1, 0.75]], "a winner's margin is what it won by either way");
 });
 
 // A stakes was weighted from 116 with a floor of 112: in one meet 83 of 168 stakes starters carried 112, and
