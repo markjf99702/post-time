@@ -852,8 +852,16 @@ test("a regular's losing line is what the trip note says happened to his horse",
   const wide = lost.filter(a => /Parked/.test(a.text));
   assert.deepEqual(wide.filter(a => !a.note.includes(`${a.text.match(/Parked (\d) wide/)[1]} wide`)).map(a => a.where), []);
   assert.ok(wide.length > 5);
-  // And a horse with trouble in its note isn't said to have done nothing.
-  assert.deepEqual(lost.filter(a => /Never fired|Nothing\. Tossing/.test(a.text) && /Checked|Blocked|Stumbled|Broke slowly|Bumped|Dueled|Late gain/.test(a.note)).map(a => a.where), []);
+  // And a horse with trouble in its note isn't said to have done nothing, in any regular's words for it.
+  const nothing = new RegExp([
+    'Figure said yes', 'Back to the sheets', "won't be on my sheet", 'Beaten favorite', 'The crowd was wrong', 'Favorites, man',
+    "didn't shape up", "My horse wasn't", 'picked the wrong horse', "ran like it wasn't", 'only gets you so far', 'Wrong family',
+    "that's why it was", 'Never fired', 'One hit pays for ten', 'still fool me', 'warm-up closer', 'that was expensive',
+    "grey's day", 'grey never fired', 'betting a name', 'No grey, no luck',
+  ].join('|'));
+  const idle = lost.filter(a => nothing.test(a.text));
+  assert.ok(idle.length > 20, `the regulars said a horse did nothing ${idle.length} times`);
+  assert.deepEqual(idle.filter(a => /Checked|Blocked|Stumbled|Broke slowly|Bumped|Dueled|Late gain/.test(a.note)).map(a => a.where), []);
 });
 
 // After a race each regular had one winning line, and all seven drew their losing lines from one pool of 15:
