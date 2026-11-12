@@ -3577,6 +3577,23 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   await kb.keyboard.press('Enter');
   at = await active();
   assert.deepEqual([at.tag, /^Results, race 1: .+ · Post Time$/.test(at.title)], ['H1', true], `Results from the race left the keyboard on ${at.tag} ${at.text} (${at.title})`);
+  // Hit areas, on a phone: 10 px over and under the back link's words is the back link, and the middle of the
+  // gap between two picks is a pick.
+  await kb.setViewportSize({ width: 390, height: 844 });
+  // (Race 1 has been run: race 2 is up.)
+  await kb.evaluate(() => window.postTime.nav.go('race', { no: 2, tab: 'bet' }));
+  const hits = await kb.evaluate(() => {
+    const hit = (x, y) => document.elementFromPoint(x, y)?.closest('button');
+    window.scrollTo(0, 0);
+    const back = document.querySelector('.rhead .back'), r = back.getBoundingClientRect();
+    const over = hit(r.left + 8, r.top - 8) === back, under = hit(r.left + 8, r.bottom + 9) === back;
+    const [a, b] = document.querySelectorAll('.picks-grid button');
+    a.scrollIntoView({ block: 'center' });
+    const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+    return { over, under, tall: Math.round(r.height), gap: !!hit((ra.right + rb.left) / 2, ra.top + 20)?.closest('.picks-grid') };
+  });
+  assert.deepEqual(hits, { over: true, under: true, tall: 21, gap: true }, 'the back link or the picks take a tap only where they are drawn');
+  await kb.setViewportSize({ width: 1280, height: 800 });
   await ctx11.close();
 }
 
