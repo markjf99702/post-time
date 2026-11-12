@@ -101,6 +101,8 @@ a { color: var(--link); }
 /* One focus ring for the whole game: the ink's colour, and white on the dark surfaces (the header, the tote
    board and the race). Where a ring outside its box would be cut off, it's drawn just inside. */
 :focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+/* A screen's heading takes the keyboard when the screen opens, so Tab goes on from there: it isn't a control. */
+h1[tabindex="-1"]:focus { outline: none; }
 .top :focus-visible, .tote :focus-visible, .watch :focus-visible { outline-color: #fff; }
 .entry-head:focus-visible, .tabs button:focus-visible { outline-offset: -3px; }
 .noscript { padding: 20px; }

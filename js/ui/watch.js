@@ -547,12 +547,17 @@ export function renderWatch(el, nav, params) {
     if (call.photo) stage.append(h('div', { class: 'w-flash' }, 'PHOTO'));
     else showBoard();
     const done = () => {
+      // The keyboard on Skip or Pause, which go now, or on the race screen itself goes to Results, which takes
+      // their place. (Skip was hidden with the focus on it, and Results came up without a word.)
+      const was = document.activeElement;
+      const move = !gone && (was === skipBtn || was === pauseBtn || was === el || was === document.body);
       doneBtn.hidden = false;
       skipBtn.hidden = true;
       // (Pause keeps its room, so Results takes Skip's place rather than moving up into Pause's.)
       pauseBtn.style.visibility = 'hidden';
       official = true;
       showHint();
+      if (move) doneBtn.focus({ preventScroll: true });
       // The cash window rings for any ticket that paid: a place or show ticket on a horse that didn't
       // win is cashed too. (It used to ring only when the winner was backed.)
       if (result.back > 0) audio.cash();

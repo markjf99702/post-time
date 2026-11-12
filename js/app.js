@@ -39,10 +39,12 @@ const nav = {
     if (cleanup) { cleanup(); cleanup = null; }
     const from = view.screen;
     if (from === 'card' && screen !== 'card' && !waiting) cardLeft = { y: window.scrollY, up: upNow() };
+    const left = view;
     view = { screen, params };
     remember(screen, params);
     closeMenu();
     render();
+    follow(left);
     fadeIn(screen === 'watch' ? watchEl : app, from !== screen || screen === 'watch');
     // (The scrapbook, back from a photo, puts itself back where it was.)
     if (screen !== 'watch' && !params.back) window.scrollTo(0, 0);
@@ -140,6 +142,32 @@ function render() {
   else if (screen === 'help') renderHelp(app, nav, params);
 }
 
+// The browser's tab, its history and a screen reader name the screen ("Race 4: Claiming $25,000 · Post Time"),
+// and the keyboard starts on it: at its heading, so Tab goes on from the top of the new screen, or on the card
+// at the race just left. (The focus was left on nothing, so a screen reader said nothing when the screen
+// changed and Tab started again from the top of the page, and every tab read "Post Time".) Not when the page
+// opens: the browser starts the keyboard where it always does. The race screen takes the focus itself.
+let opened = false;
+function follow(left) {
+  const { screen, params } = view;
+  const h1 = screen === 'watch' ? null : app.querySelector('h1');
+  const name = h1 ? h1.textContent.trim() : '';
+  const race = screen === 'watch' ? watchEl.querySelector('.w-top .fr')?.textContent : '';
+  const title = waiting && screen === 'card' ? '' : {
+    card: name && `The card, ${name}`, race: `Race ${params.no}: ${name}`, result: `Results, race ${params.no}: ${name}`,
+    circle: `${name}, race ${params.no}`, watch: `Race ${params.no}: ${race}`,
+  }[screen] ?? name;
+  document.title = title ? `${title} · Post Time` : 'Post Time';
+  if (!opened) { opened = true; return; }
+  if (screen === 'watch') return;
+  const back = screen === 'card' && left.params?.no && !left.params.day && ['race', 'result', 'circle', 'watch'].includes(left.screen)
+    ? app.querySelector(`.race-row[data-no="${left.params.no}"]`) : null;
+  const to = back || h1;
+  if (!to) return;
+  if (to === h1) h1.tabIndex = -1;
+  to.focus({ preventScroll: true });
+}
+
 // A new screen fades in, a short one, rather than cutting from cream to the race's black and back. (Not a
 // screen drawn again where it is.) Reduce Motion turns it off, with the stylesheet's other movement.
 function fadeIn(el, now) {
@@ -184,6 +212,10 @@ function countBank(from, to) {
 // ------------------------------------------------------------------ menu and settings
 
 function closeMenu() { menu.hidden = true; menuBtn.setAttribute('aria-expanded', 'false'); }
+// Escape shuts the menu and gives the keyboard back to the Menu button (it was left on nothing inside a shut
+// menu), and tabbing out of the menu shuts it (it stayed open over the card with the keyboard behind it).
+function shutMenu() { const inside = menu.contains(document.activeElement); closeMenu(); if (inside) menuBtn.focus(); }
+menu.addEventListener('focusout', e => { if (!menu.hidden && e.relatedTarget && !menu.contains(e.relatedTarget) && e.relatedTarget !== menuBtn) closeMenu(); });
 menuBtn.addEventListener('click', e => {
   e.stopPropagation();
   menu.hidden = !menu.hidden;
@@ -192,7 +224,7 @@ menuBtn.addEventListener('click', e => {
   if (!menu.hidden) { audio.refreshVoices(); showVoices(); drive.prepare(); }
 });
 document.addEventListener('click', e => { if (!menu.hidden && !menu.contains(e.target)) closeMenu(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !menu.hidden) { shutMenu(); if (document.activeElement === document.body) menuBtn.focus(); } });
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => nav.go(b.dataset.go)));
 const optSound = document.getElementById('optSound');
 const optVoice = document.getElementById('optVoice');

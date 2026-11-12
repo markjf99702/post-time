@@ -185,7 +185,7 @@ function raceRow(r, nxt, nav) {
     );
   }
   return h('button', {
-    class: `race-row${done ? ' done' : ''}${isNext ? ' next' : ''}${big ? ' big' : ''}`, type: 'button',
+    class: `race-row${done ? ' done' : ''}${isNext ? ' next' : ''}${big ? ' big' : ''}`, type: 'button', data: { no: r.no },
     onclick: () => nav.go(done ? 'result' : 'race', { no: r.no }),
   },
   h('div', { class: 'no' }, h('small', {}, 'Race'), String(r.no)),

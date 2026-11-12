@@ -2665,13 +2665,14 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   page.on('pageerror', e => problems.push(e.message));
   await page.goto(base);
   await page.waitForFunction(() => navigator.serviceWorker?.controller, null, { timeout: 15000 });
-  const title = await page.title();
+  // (The page's title names the screen once the game has drawn it, so only its end is the page's own.)
+  const title = /Post Time$/;
 
   // Works offline once it has been opened.
   net = 'down';
   await ctx.setOffline(true);
   await page.reload();
-  assert.equal(await page.title(), title, 'the page did not open offline');
+  assert.match(await page.title(), title, 'the page did not open offline');
   await ctx.setOffline(false);
 
   // On a connection that's up but not answering, it opens from the copy too, after the worker's few seconds' wait for
@@ -2681,7 +2682,7 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   await page.reload({ timeout: 10000 }).catch(() => {});
   const took = Date.now() - t0;
   assert.ok(took < 8000, `the page took ${took} ms to open on a stalled connection`);
-  assert.equal(await page.title(), title, 'the page did not open on a stalled connection');
+  assert.match(await page.title(), title, 'the page did not open on a stalled connection');
   net = 'up';
   for (const [req, res] of held.splice(0)) serve(req, res);
 
@@ -3469,8 +3470,10 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
 
 // Played from the keyboard. Each choice in the betting slip and each tab used to draw its part of the page again
 // and leave the keyboard on nothing, so the next Tab started from the top again: a $2 exacta took 70 presses of
-// Tab where 31 would do. Now the keyboard stays on what was pressed, and the tabs are one stop, with the arrow
-// keys between them.
+// Tab where 31 would do. Now the keyboard stays on what was pressed; the tabs are one stop, with the arrow keys
+// between them; a new screen has its name in the browser's tab and the keyboard on its heading (on the card, on
+// the race just left); Escape gives the keyboard back to the Menu button; and at the finish of a race Results
+// takes the keyboard from Skip.
 {
   const ctx11 = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const kb = await ctx11.newPage();
@@ -3493,14 +3496,19 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
     }
     assert.fail(`Tab never reached ${k}`);
   };
-  await kb.evaluate(() => window.postTime.nav.go('race', { no: 1 }));
+  assert.match(await kb.title(), /^The card, \w+day, \w+ \d+, \d{4} · Post Time$/);
+  await kb.focus('.race-row[data-no="1"]');
+  await kb.keyboard.press('Enter');
+  let at = await active();
+  assert.equal(at.tag, 'H1', `a race opened from the card leaves the keyboard on ${at.tag} ${at.text}`);
+  assert.match(at.title, /^Race 1: .+ · Post Time$/);
   // The tabs: one stop, and the arrow keys between them.
-  await kb.focus('[data-k="tab:form"]');
+  await kb.keyboard.press('Tab');
+  assert.equal((await active()).k, 'tab:form', 'Tab from the heading goes to the open tab');
   await kb.keyboard.press('ArrowLeft');
   assert.equal((await active()).k, 'tab:bet', 'ArrowLeft on the first tab goes round to the last');
   await kb.keyboard.press('Home');
   assert.equal((await active()).k, 'tab:form');
-  let at;
   for (const k of ['paddock', 'forum', 'bet']) {
     await kb.keyboard.press('ArrowRight');
     at = await active();
@@ -3538,6 +3546,37 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   await kb.focus('.bet-on button');
   await kb.keyboard.press('Enter');
   assert.equal((await active()).k, 'pick:0:2', 'Bet on 3 left the keyboard off the horse in the slip');
+  // The back link: the card, with the keyboard on the race just left.
+  await kb.focus('.rhead .back');
+  await kb.keyboard.press('Enter');
+  at = await active();
+  assert.deepEqual([at.no, at.cls.includes('race-row')], ['1', true], `back on the card the keyboard is on ${at.tag} ${at.text}`);
+  assert.match(at.title, /^The card, \w+day, \w+ \d+, \d{4} · Post Time$/);
+  // Escape gives the keyboard back to the Menu button; tabbing out of the menu shuts it.
+  await kb.focus('#menuBtn');
+  await kb.keyboard.press('Enter');
+  await kb.keyboard.press('Tab');
+  assert.ok(await kb.evaluate(() => document.getElementById('menu').contains(document.activeElement)), 'Tab from the Menu button goes into the menu');
+  await kb.keyboard.press('Escape');
+  assert.deepEqual([await kb.locator('#menu').isHidden(), (await active()).tag, await kb.evaluate(() => document.activeElement.id)], [true, 'BUTTON', 'menuBtn'], 'Escape left the keyboard in a shut menu');
+  await kb.keyboard.press('Enter');
+  await kb.focus('#restart');
+  await kb.keyboard.press('Tab');
+  assert.ok(await kb.locator('#menu').isHidden(), 'tabbing out of the menu left it open over the card');
+  // How to play from the menu: its heading has the keyboard, and the title says where it is.
+  await kb.evaluate(() => window.postTime.nav.go('help'));
+  assert.deepEqual([(await active()).tag, await kb.title()], ['H1', 'How to play · Post Time']);
+  // At the finish Results takes the keyboard from Skip.
+  await kb.evaluate(() => window.postTime.nav.go('watch', { no: 1 }));
+  await kb.waitForSelector('.watch:not([hidden]) .skip');
+  assert.match(await kb.title(), /^Race 1: .+ · Post Time$/);
+  await kb.focus('.watch .skip');
+  await kb.evaluate(() => window.__watch.setT(window.__watch.endT - 0.05));
+  await kb.waitForSelector('.watch .w-ctl .btn.brass:not([hidden])', { timeout: 15000 });
+  assert.equal((await active()).text, 'Results ▸', 'at the finish the keyboard was left on the hidden Skip');
+  await kb.keyboard.press('Enter');
+  at = await active();
+  assert.deepEqual([at.tag, /^Results, race 1: .+ · Post Time$/.test(at.title)], ['H1', true], `Results from the race left the keyboard on ${at.tag} ${at.text} (${at.title})`);
   await ctx11.close();
 }
 
