@@ -83,6 +83,64 @@ try {
     await ctx.close();
   }
 
+  // ---------------------------------------------------------------- the scrapbook
+  {
+    const { ctx, page } = await freshMeet();
+    // Forty photos, as a long meet of cashing winners leaves, and nine trips to the ATM.
+    await runDay(page, [1, 2, 3, 4, 5, 6, 7, 8]);
+    const made = await page.evaluate(() => {
+      const { game, save } = window.postTime;
+      const eight = game.player.book.slice();
+      for (let k = 1; k < 5; k++) for (const rec of eight) game.player.book.push({ ...rec, day: rec.day - k, date: `2026-0${9 - k}-1${k}` });
+      game.player.book.sort((a, b) => a.day - b.day || a.no - b.no);
+      game.player.atm = 900; game.player.bank += 900;
+      save();
+      return game.player.book.length;
+    });
+    assert.equal(made, 40);
+    await page.evaluate(() => window.postTime.nav.go('book'));
+    await page.waitForTimeout(300);
+    const sheet = await page.evaluate(() => {
+      const tiles = [...document.querySelectorAll('.sheet .contact')];
+      const stats = Object.fromEntries([...document.querySelectorAll('.stat')].map(x => [x.querySelector('.kicker').textContent, [x.querySelector('b').textContent, x.querySelector('.muted')?.textContent || '']]));
+      const standings = [...document.querySelectorAll('h2')].find(x => x.textContent === 'The forum standings');
+      const photos = [...document.querySelectorAll('h2')].find(x => x.textContent === "Winner's circle photos");
+      return {
+        tiles: tiles.length, drawn: tiles.filter(t => t.querySelector('canvas').dataset.drawn).length,
+        across: new Set(tiles.slice(0, 6).map(t => t.offsetTop)).size,
+        first: tiles[0].textContent, height: document.documentElement.scrollHeight,
+        standingsFirst: !!(standings.compareDocumentPosition(photos) & Node.DOCUMENT_POSITION_FOLLOWING),
+        putIn: stats['Put in'],
+      };
+    });
+    assert.equal(sheet.tiles, 40);
+    // Two across on a phone, newest first, drawn only as they come near the screen.
+    assert.equal(sheet.across, 3, 'six photos are not two across on a phone');
+    assert.match(sheet.first, /Race 8$/, 'the newest photo is not first');
+    assert.ok(sheet.drawn > 0 && sheet.drawn <= 16, `${sheet.drawn} of 40 photos drawn as the scrapbook opened`);
+    assert.ok(sheet.height < 6000, `the scrapbook is ${sheet.height} px tall with 40 photos`);
+    assert.ok(sheet.standingsFirst, 'the forum standings are under the photos');
+    assert.deepEqual(sheet.putIn, ['$1,100.00', '$200 to start, $900 from the ATM']);
+    // A tap on a photo opens it full size with its caption, and Back comes back to the same place on the sheet.
+    await page.evaluate(() => window.scrollTo(0, 1500));
+    const tile = page.locator('.sheet .contact').nth(20);
+    const name = await tile.locator('.nm').textContent();
+    await tile.click();
+    await page.waitForSelector('.photo-frame .caption');
+    assert.equal(await page.locator('.photo-frame .caption .horse').textContent(), name);
+    assert.match(await page.locator('.photo-frame .you-note').textContent(), /^That's you on the right/);
+    // (The tile that was opened is on the screen again.)
+    const inView = () => page.evaluate(() => { const r = document.querySelectorAll('.sheet .contact')[20].getBoundingClientRect(); return window.scrollY > 500 && r.top >= 0 && r.bottom <= innerHeight; });
+    await page.goBack();
+    await page.waitForSelector('.sheet');
+    assert.ok(await inView(), 'Back from a photo did not come back to the same place on the sheet');
+    await page.locator('.sheet .contact').nth(20).click();
+    await page.click('.rhead .back');
+    await page.waitForSelector('.sheet');
+    assert.ok(await inView(), '‹ Scrapbook did not come back to the same place on the sheet');
+    await ctx.close();
+  }
+
   assert.deepEqual(problems, [], 'errors on the page');
   console.log('around: all checks passed');
 } finally {

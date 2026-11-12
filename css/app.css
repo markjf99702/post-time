@@ -746,9 +746,15 @@ a { color: var(--link); }
 .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; padding: 16px; }
 
 /* scrapbook */
-.book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; padding: 12px; }
-.book-grid .photo-frame { transform: rotate(-.6deg); }
-.book-grid .photo-frame:nth-child(2n) { transform: rotate(.7deg); }
+/* The photos as a contact sheet: two across on a phone, more on a wider screen, each small print with its horse
+   and its date under it. */
+.sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; padding: 12px; }
+.contact { display: flex; flex-direction: column; gap: 2px; background: #fbf8ef; color: #2a2419; border: 0; border-radius: 3px; padding: 6px 6px 8px; text-align: left; cursor: pointer; box-shadow: 0 3px 12px rgba(0,0,0,.16), 0 0 0 1px rgba(0,0,0,.05); transform: rotate(-.6deg); }
+.contact:nth-child(2n) { transform: rotate(.7deg); }
+.contact.big { box-shadow: 0 3px 12px rgba(0,0,0,.16), 0 0 0 3px var(--brass); }
+.contact canvas { width: 100%; display: block; aspect-ratio: 36 / 25; background: #e4dccb; margin-bottom: 4px; }
+.contact .nm { font: 500 14px/1.2 var(--display); letter-spacing: .04em; text-transform: uppercase; color: #1d3a2e; overflow-wrap: anywhere; }
+.contact .when { font: 500 11px/1.2 var(--display); letter-spacing: .06em; text-transform: uppercase; color: #6b604b; }
 /* The scrapbook's earlier meets, each a row that opens its closing page; its photos a meet at a time. */
 .meets { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
 .meet-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: 4px 12px; align-items: baseline; text-align: left; width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; box-shadow: var(--shadow); cursor: pointer; font-size: 15px; }

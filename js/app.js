@@ -6,7 +6,7 @@ import { renderCard, upNextInView } from './ui/card.js';
 import { renderRace } from './ui/race.js';
 import { renderWatch, rehearse } from './ui/watch.js';
 import { renderResult, renderCircle } from './ui/results.js';
-import { renderBook, renderHelp, renderMeet } from './ui/book.js';
+import { renderBook, renderHelp, renderMeet, renderPhoto } from './ui/book.js';
 import { SAMPLE, pace } from './call.js';
 import * as audio from './audio.js';
 import * as joe from './joe.js';
@@ -35,7 +35,7 @@ const upNow = () => { const r = nextRace(); return `${game.world.seed}:${game.wo
 
 const nav = {
   go(screen, params = {}) {
-    if (waiting && (screen === 'book' || screen === 'meet')) { closeMenu(); return; }
+    if (waiting && (screen === 'book' || screen === 'meet' || screen === 'photo')) { closeMenu(); return; }
     if (cleanup) { cleanup(); cleanup = null; }
     const from = view.screen;
     if (from === 'card' && screen !== 'card' && !waiting) cardLeft = { y: window.scrollY, up: upNow() };
@@ -43,7 +43,8 @@ const nav = {
     remember(screen, params);
     closeMenu();
     render();
-    if (screen !== 'watch') window.scrollTo(0, 0);
+    // (The scrapbook, back from a photo, puts itself back where it was.)
+    if (screen !== 'watch' && !params.back) window.scrollTo(0, 0);
     drive.idle();
     if (screen === 'card' && !waiting) {
       // (Out of money, the ATM under the date is the thing to see: the top.)
@@ -66,7 +67,7 @@ const nav = {
 // circle, and from a race that's running, since it was settled when it went to the gate. On the card it
 // leaves, as it always has. The history holds the card's entry and at most one more above it, replaced
 // as you go from screen to screen.
-const UP = { watch: 'result', circle: 'result' };
+const UP = { watch: 'result', circle: 'result', photo: 'book' };
 let above = false; // the history has an entry above the card's
 let ours = 0;      // steps back the game took itself, on its way to the card
 const entry = (screen, params) => ({ postTime: 1, screen, params, day: game.world?.day, meet: game.world?.seed });
@@ -92,8 +93,9 @@ window.addEventListener('popstate', e => {
     const screen = s.screen === 'watch' ? 'result' : s.screen;
     // A meet's closing page: one that has closed, or this one once its last race is run.
     const meet = !waiting && screen === 'meet' && (s.params?.no ? (game.world.meets || []).some(m => m.no === s.params.no) : s.meet === game.world.seed && s.day === game.world.day && !nextRace());
+    const photo = !waiting && screen === 'photo' && game.player.book.some(r => r.day === s.params?.day && r.no === s.params?.no);
     const ok = waiting ? screen === 'help'
-      : screen === 'book' || screen === 'help' || meet || (screen === 'race' && !!race) || ((screen === 'result' || screen === 'circle') && race?.status === 'official');
+      : screen === 'book' || screen === 'help' || meet || photo || (screen === 'race' && !!race) || ((screen === 'result' || screen === 'circle') && race?.status === 'official');
     nav.go(ok ? screen : 'card', ok ? s.params : {});
     return;
   }
@@ -101,7 +103,7 @@ window.addEventListener('popstate', e => {
   above = false;
   // (An earlier meet's closing page was opened from the scrapbook, and goes back there.)
   const up = !waiting && (view.screen === 'meet' && view.params.no ? 'book' : UP[view.screen]);
-  nav.go(up || 'card', up ? { no: view.params.no } : {});
+  nav.go(up || 'card', up === 'book' ? { back: view.screen === 'photo' } : up ? { no: view.params.no } : {});
 });
 
 // A reload keeps the history entry it happened on, which may be a screen's. The game opens on the card,
@@ -124,7 +126,8 @@ function render() {
   else if (screen === 'race') cleanup = renderRace(app, nav, params);
   else if (screen === 'result') renderResult(app, nav, params);
   else if (screen === 'circle') renderCircle(app, nav, params);
-  else if (screen === 'book') renderBook(app, nav);
+  else if (screen === 'book') renderBook(app, nav, params);
+  else if (screen === 'photo') renderPhoto(app, nav, params);
   else if (screen === 'meet') renderMeet(app, nav, params);
   else if (screen === 'help') renderHelp(app, nav);
 }

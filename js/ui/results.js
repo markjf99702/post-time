@@ -200,11 +200,13 @@ export function photoCard(rec, you) {
       you && rec.won ? h('span', { class: 'you-note' }, `That's you on the right, holding ${cashed > 1 ? 'tickets' : 'a ticket'} that paid ${money(rec.won)}.`) : null,
     ),
   );
-  requestAnimationFrame(() => {
-    const w = c.getBoundingClientRect().width || 360;
-    drawCircle(c, { horse: rec.horse, silks: wornBy(rec), number: rec.number, stakes: rec.stakes, you, seed: rec.seed, meet: game.world.seed, width: w, height: w * 25 / 36 });
-  });
+  requestAnimationFrame(() => drawPhoto(c, rec, you, c.getBoundingClientRect().width || 360));
   return frame;
+}
+
+// A winner's circle photo drawn on `c`, `w` px wide: in the photo card, and small on the scrapbook's contact sheet.
+export function drawPhoto(c, rec, you, w) {
+  drawCircle(c, { horse: rec.horse, silks: wornBy(rec), number: rec.number, stakes: rec.stakes, you, seed: rec.seed, meet: game.world.seed, width: w, height: w * 25 / 36 });
 }
 
 // The kind of race, under the horse's name. A maiden claimer has its price, as it has on the card.

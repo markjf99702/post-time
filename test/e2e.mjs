@@ -2322,10 +2322,18 @@ await page.waitForSelector('.races');
   });
   assert.deepEqual(lastRace.card, ["That's the card.", true, 2], 'a finished card should have Next race day on the screen when it opens, and under the results too');
   await shop.evaluate(() => window.postTime.nav.go('book'));
-  const record = await shop.evaluate(() => ({
-    stats: Object.fromEntries([...document.querySelectorAll('.stat')].map(x => [x.querySelector('.kicker').textContent, x.querySelector('b').textContent])),
-    photos: Object.fromEntries([...document.querySelectorAll('.photo-frame')].map(f => [f.textContent.match(/Race (\d)/)[1], f.querySelector('.you-note').textContent.replace(/ that paid.*/, '')])),
-  }));
+  const record = await shop.evaluate(() => {
+    const stats = Object.fromEntries([...document.querySelectorAll('.stat')].map(x => [x.querySelector('.kicker').textContent, x.querySelector('b').textContent]));
+    // (Each photo opens full size, with its caption, from the scrapbook's contact sheet.)
+    const { game, nav } = window.postTime, photos = {};
+    for (const rec of game.player.book) {
+      nav.go('photo', { day: rec.day, no: rec.no });
+      const f = document.querySelector('.photo-frame');
+      photos[f.textContent.match(/Race (\d)/)[1]] = f.querySelector('.you-note').textContent.replace(/ that paid.*/, '');
+    }
+    nav.go('book');
+    return { stats, photos };
+  });
   assert.equal(lastRace.saved, null, 'the best day was saved before the next race day, and this checked nothing');
   assert.deepEqual({ 'Biggest ticket': record.stats['Biggest ticket'], 'Best day': record.stats['Best day'] }, lastRace.want, "the record's biggest ticket or best day");
   assert.deepEqual([record.photos[3], record.photos[4]], ["That's you on the right, holding tickets", "That's you on the right, holding a ticket"], 'a photo for two cashed tickets should say "tickets"');

@@ -5,15 +5,20 @@ import { game, START_BANK, notSaved, yourMeet, advanceDay } from '../game.js';
 import { TIPSTERS, JOCKEYS, TRAINERS, BIG_STAKES } from '../data.js';
 import { longDate, dayDate, dateISO, meetRecord, isClosingDay, MEET_DAYS } from '../world.js';
 import { oddsText } from '../handicap.js';
-import { photoCard } from './results.js';
-import { MOVING } from './race.js';
+import { photoCard, drawPhoto } from './results.js';
+import { MOVING, shortDay } from './race.js';
 import { JOE, offered as joeOffered } from '../joe.js';
 import { offered as copyOffered } from '../copy.js';
 import { drive } from '../drive.js';
 
-// The page is this meet's: your record in it, the meets before it (each opens its closing page), and your
-// photos, a meet at a time.
-export function renderBook(root, nav) {
+// The page is this meet's: your record in it, the forum's standings, the meets before it (each opens its
+// closing page), and your photos as a contact sheet, a meet at a time, the newest first. Each photo is drawn
+// small, as it comes into view, and opens full size with its caption. (Every photo used to be drawn full
+// size as the page opened, one to a row on a phone: by race day 31 a bettor who cashes three winners a day
+// has 97, and the page froze for about two seconds on a slow phone, 40,000 px tall with the standings under
+// all of it.) Back from a photo comes back to the same place on the sheet (`params.back`).
+let sheetY = 0;
+export function renderBook(root, nav, params = {}) {
   const p = game.player, w = game.world, m = w.meet;
   const you = yourMeet();
   const past = (w.meets || []).slice().reverse();
@@ -24,7 +29,7 @@ export function renderBook(root, nav) {
     ),
     h('div', { class: 'stats' },
       stat('Bankroll', money(p.bank)),
-      stat(m.no > 1 ? 'Started the meet with' : 'Started with', money(you.start + you.atm), you.atm ? `including ${money(you.atm, { cents: false })} from the ATM` : ''),
+      putIn(m.no, you),
       stat('Bet', money(you.bet)),
       stat('Back', money(you.back)),
       stat('Races cashed', `${you.cashed} of ${you.races}`),
@@ -33,6 +38,7 @@ export function renderBook(root, nav) {
       stat('Best day', you.bestDay ? money(you.bestDay.net, { sign: true }) : 'None yet', you.bestDay ? dateOf(you.bestDay.day) : ''),
     ),
   );
+  standings(root);
   if (past.length) {
     root.append(h('h2', { class: 'h2 pad', style: { paddingBottom: 0 } }, 'Earlier meets'));
     root.append(h('div', { class: 'meets' }, past.map(r => h('button', { class: 'meet-row', type: 'button', onclick: () => nav.go('meet', { no: r.no }) },
@@ -43,18 +49,64 @@ export function renderBook(root, nav) {
     ))));
   }
   root.append(h('h2', { class: 'h2 pad', style: { paddingBottom: 0 } }, "Winner's circle photos"));
+  const open = rec => { sheetY = window.scrollY; nav.go('photo', { day: rec.day, no: rec.no }); };
+  watchSheets();
   if (!p.book.length) root.append(h('p', { class: 'pad muted' }, "Back a winner and you're in the picture. Your photos collect here."));
-  else if (!past.length) root.append(h('div', { class: 'book-grid' }, p.book.slice().reverse().map(r => photoCard(r, true))));
+  else if (!past.length) root.append(sheet(p.book.slice().reverse(), open));
   else {
     // A meet at a time, the newest first.
     for (const meet of [{ no: m.no, first: m.first, last: m.last }, ...past]) {
       const photos = p.book.filter(r => r.day >= meet.first && r.day <= meet.last);
       if (!photos.length) continue;
       root.append(h('h3', { class: 'h3 pad meet-photos' }, `Meet ${meet.no}`));
-      root.append(h('div', { class: 'book-grid' }, photos.reverse().map(r => photoCard(r, true))));
+      root.append(sheet(photos.reverse(), open));
     }
   }
+  if (params.back) window.scrollTo(0, sheetY);
+}
 
+// The contact sheet: each photo small, with its horse and its date, drawn once it comes near the screen.
+// (One watcher for the page's sheets, made again each time the page is drawn.)
+let drawing = null;
+function watchSheets() {
+  if (drawing) drawing.disconnect();
+  drawing = typeof IntersectionObserver === 'function' ? new IntersectionObserver(seen => {
+    for (const x of seen) if (x.isIntersecting) { drawing.unobserve(x.target); x.target.draw(); }
+  }, { rootMargin: '400px 0px' }) : null;
+}
+function sheet(photos, open) {
+  return h('div', { class: 'sheet' }, photos.map(rec => {
+    const c = h('canvas', { 'aria-hidden': 'true' });
+    c.draw = () => { drawPhoto(c, rec, true, c.getBoundingClientRect().width || 170); c.dataset.drawn = '1'; };
+    if (drawing) drawing.observe(c); else requestAnimationFrame(c.draw);
+    return h('button', { class: `contact${rec.name === BIG_STAKES.name ? ' big' : ''}`, type: 'button', onclick: () => open(rec) },
+      c, h('span', { class: 'nm' }, rec.horse.name), h('span', { class: 'when' }, `${shortDay(rec.date)} · Race ${rec.no}`));
+  }));
+}
+
+// A photo full size, with its caption, from the contact sheet.
+export function renderPhoto(root, nav, params = {}) {
+  const rec = game.player.book.find(r => r.day === params.day && r.no === params.no);
+  if (!rec) { nav.go('book'); return; }
+  root.append(
+    h('div', { class: 'rhead' },
+      h('button', { class: 'back', type: 'button', onclick: () => nav.go('book', { back: true }) }, '‹ Scrapbook'),
+      h('div', {}, h('div', { class: 'kicker' }, `${shortDay(rec.date)} · Race ${rec.no}`), h('h1', { class: 'title' }, rec.horse.name)),
+    ),
+    h('div', { class: 'pad' }, photoCard(rec, true)),
+  );
+}
+
+// What you put into the meet: the first meet's $200 and the trips to the ATM ("Put in", "$200 to start, $1,800
+// from the ATM"); a later meet started with the bankroll the last one left you.
+function putIn(no, you) {
+  const atm = you.atm ? `${money(you.atm, { cents: false })} from the ATM` : '';
+  if (no > 1) return stat('Started the meet with', money(you.start + you.atm), [`${money(you.start)} carried over`, atm].filter(Boolean).join(', '));
+  return stat('Put in', money(you.start + you.atm), [`${money(you.start, { cents: false })} to start`, atm].filter(Boolean).join(', '));
+}
+
+// The forum's standings: each regular's winners and what $2 on each of his picks has paid back, best first.
+function standings(root) {
   const rec = game.world.tipsters || {};
   root.append(h('h2', { class: 'h2 pad', style: { paddingBottom: 0 } }, 'The forum standings'));
   const rows = TIPSTERS.map(t => ({ t, r: rec[t.id] || { picks: 0, wins: 0, back: 0 } })).sort((a, b) => (b.r.back / Math.max(1, b.r.picks)) - (a.r.back / Math.max(1, a.r.picks)));
@@ -110,7 +162,7 @@ export function renderMeet(root, nav, params = {}) {
     const net = y.end - y.start - y.atm;
     root.append(h('h2', { class: 'h2 pad', style: { paddingBottom: 0 } }, 'Your meet'));
     root.append(h('div', { class: 'stats' },
-      stat('Started with', money(y.start + y.atm), y.atm ? `including ${money(y.atm, { cents: false })} from the ATM` : ''),
+      putIn(r.no, y),
       stat('Bet', money(y.bet)),
       stat('Back', money(y.back)),
       stat('Races cashed', `${y.cashed} of ${y.races}`),
