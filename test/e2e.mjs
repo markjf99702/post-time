@@ -207,6 +207,76 @@ const held = await page.evaluate(async () => {
 });
 assert.deepEqual([held.wire, held.marker], [true, true], 'the camera left the wire before the third horse was home, or a horse of yours out of the picture has no marker at its edge');
 
+// More of a show. Each part is drawn with it and without it (or at two moments), and the picture must differ:
+// the crowd at the rail moves as the leaders go by (it stood still); a horse in the gate tosses its head now
+// and then (nothing moved there); a galloping horse kicks up dust on a fast track and spray on a wet one, and
+// on a wet one mud builds up on the horses and the silks; the late races have a warm light over the ground
+// (only the sky changed); and across the turf course there's a crowd in view (there was none).
+const show = await page.evaluate(async () => {
+  const { simulateRace, ownerSilks } = await import('./js/world.js');
+  const { RaceScene } = await import('./js/draw/scene.js');
+  const w = window.sameSeed, races = w.cards[0].races;
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:fixed;left:0;top:0;width:390px;height:300px';
+  document.body.append(c);
+  const ctx = c.getContext('2d');
+  const sceneOf = (race, over = {}) => {
+    race = Object.assign(Object.create(Object.getPrototypeOf(race)), race, over);
+    const run = simulateRace(race, w, { record: true });
+    const runners = race.entries.map(e => { const h = w.horses[e.hid]; return { number: e.pp, coat: h.coat, marks: h.marks, silks: ownerSilks(h.owner), name: h.name }; });
+    return { scene: new RaceScene(c, { race, run, runners, wx: w.cards[0].wx }), run };
+  };
+  const pixels = () => ctx.getImageData(0, 0, c.width, c.height).data;
+  const differ = (a, b) => { let n = 0; for (let i = 0; i < a.length; i += 4) if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > 12) n++; return n / (a.length / 4); };
+  const stretch = run => run.t0 + run.results[0].time - 3;
+  const out = {};
+  // The crowd: the near ground and the rail crowd alone, drawn at two moments a tenth of a second apart.
+  {
+    const { scene, run } = sceneOf(races[1]);
+    scene.draw(stretch(run));
+    const near = t => { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height); ctx.restore(); scene.drawNear(t); return pixels(); };
+    const a = near(stretch(run)), b = near(stretch(run) + 0.1);
+    out.crowd = differ(a, b);
+  }
+  // A head tossed in the gate: the same moment of the race, two moments of the wait.
+  {
+    const { scene } = sceneOf(races[1]);
+    let most = 0, last = null;
+    for (let g = -6; g < 0; g += 0.25) { scene.lastT = null; scene.draw(0, g); const p = pixels(); if (last) most = Math.max(most, differ(last, p)); last = p; }
+    out.toss = most;
+  }
+  // What's kicked up, on a fast track and on this muddy one, and the mud on the horses.
+  for (const [name, over, part] of [['dust', { cond: 'fast' }, 'drawKickedUp'], ['spray', {}, 'drawKickedUp'], ['mud', {}, 'drawMud']]) {
+    const { scene, run } = sceneOf(races[1], over);
+    scene.draw(stretch(run)); const a = pixels();
+    const was = scene[part]; scene[part] = () => {};
+    scene.lastT = null; scene.draw(stretch(run)); const b = pixels();
+    scene[part] = was;
+    out[name] = differ(a, b);
+  }
+  // The light of the last race, and of the first.
+  for (const [name, race] of [['late', races[7]], ['early', races[0]]]) {
+    const { scene, run } = sceneOf(race);
+    scene.draw(stretch(run)); const a = pixels();
+    scene.drawLight = () => {};
+    scene.lastT = null; scene.draw(stretch(run)); const b = pixels();
+    out[name] = differ(a, b);
+  }
+  // The crowd across the turf course.
+  {
+    const { scene, run } = sceneOf(races.find(r => r.surface === 'turf'));
+    scene.draw(stretch(run)); const a = pixels();
+    scene.stands = [];
+    scene.lastT = null; scene.draw(stretch(run)); const b = pixels();
+    out.turf = differ(a, b);
+  }
+  c.remove();
+  for (const k in out) out[k] = +out[k].toFixed(4);
+  return out;
+});
+const quiet = Object.entries({ crowd: 0.001, toss: 0.0005, dust: 0.001, spray: 0.0005, mud: 0.0002, late: 0.1, turf: 0.02 }).filter(([k, least]) => !(show[k] >= least)).map(([k]) => `${k} ${show[k]}`);
+assert.deepEqual([quiet, show.early], [[], 0], `parts of the show that don't show (share of the picture they change): ${JSON.stringify(show)}`);
+
 // A look at a later race shows its opening odds, and doesn't start its clock.
 await page.locator('.race-row').nth(2).click();
 await page.click('.tabs button:nth-child(4)');

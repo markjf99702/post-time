@@ -194,6 +194,8 @@ export function drawHorse(ctx, o) {
   const c = COATS[o.coat] || COATS.bay;
   const gait = o.gait || 'gallop';
   const P = pose(o.phase, gait);
+  // A toss of the head (in the gate): up and back, and down again.
+  if (o.toss) { P.neck += 0.4 * o.toss; P.headDrop -= 0.35 * o.toss; }
   ctx.save();
   if (o.flip) ctx.scale(-1, 1);
   ctx.translate(0, P.bob);

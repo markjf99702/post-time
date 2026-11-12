@@ -236,7 +236,7 @@ export function renderWatch(el, nav, params) {
       rung = true;
       if (game.player.settings.sound) { audio.bell(); audio.startRace(); }
     }
-    scene.draw(Math.max(0, T));
+    scene.draw(Math.max(0, T), Math.min(0, T));
     scene.drawMap(mapC.getContext('2d'), mapC.width, mapC.height, Math.max(0, T));
 
     skipLabel();

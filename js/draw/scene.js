@@ -6,7 +6,7 @@
 
 import { drawHorse, NOSE } from './horse.js';
 import { stateAt, RAIL } from '../sim.js';
-import { poles, headingAt, mapPoint, COURSES, STRAIGHT, FINISH_FROM_TOP, LENGTH } from '../track.js';
+import { poles, headingAt, mapPoint, coursePath, COURSES, STRAIGHT, FINISH_FROM_TOP, LENGTH } from '../track.js';
 import { CLOTH } from '../data.js';
 import { rng } from '../rng.js';
 
@@ -87,6 +87,10 @@ export class RaceScene {
     this.infield.sort((a, b) => b.z - a.z);
     this.clouds = [...Array(7)].map(() => ({ az: R.range(0, Math.PI * 2), el: R.range(0.06, 0.22), w: R.range(0.12, 0.3), h: R.range(0.02, 0.05) }));
     this.crowdSeed = R.int(0, 1e6);
+    // Where the stands are along the race: down the stretch to the wire and a little past it, and, in a race
+    // that starts in the stretch, the first time past them too.
+    const path = this.race.path || coursePath(this.race.surface, D);
+    this.stands = [[D - FINISH_FROM_TOP - 30, D + 60], ...path.filter(sg => sg.name === 'stretch' && sg.end < D - 1).map(sg => [sg.start - 30, sg.end + 30])];
   }
 
   setFocus(i) { this.focus = i; }
@@ -135,9 +139,12 @@ export class RaceScene {
     return { x, span };
   }
 
-  draw(t) {
+  // `gate` is the race's clock while the horses wait in the gate (below 0), for the odd toss of a head there.
+  draw(t, gate = 0) {
     const { ctx, W, H, dpr } = this;
+    this.gate = gate;
     const st = stateAt(this.run, Math.max(0, t), this.states);
+    this.leadP = Math.max(...st.map(s => s.p));
     const tg = this.target(t, st);
     // Smooth the camera relative to the leader, so it doesn't trail behind a moving field.
     let ref = -Infinity;
@@ -174,6 +181,7 @@ export class RaceScene {
     this.drawTrack(t);
     this.drawRunners(t, st);
     this.drawNear(t);
+    this.drawLight();
     if (this.wx.sky === 'rain' || this.wx.sky === 'showers') this.drawRain(t);
   }
 
@@ -649,11 +657,14 @@ export class RaceScene {
       const x = this.hx(h.p, h.z), y = this.py(0, h.z);
       const k = this.f / h.z;
       if (x < -3 * k || x > W + 3 * k) continue;
-      ctx.fillStyle = `rgba(20,15,10,${0.22 * this.sky.dim})`;
+      // The sun lower for the late races: the shadows are longer, off to the right (less so under cloud).
+      const long = this.sky.warm * (this.sky.dim === 1 ? 1 : 0.3);
+      ctx.fillStyle = `rgba(20,15,10,${(0.22 - 0.05 * long) * this.sky.dim})`;
       ctx.beginPath();
-      ctx.ellipse(x + 0.6 * k, y, 1.3 * k, 0.22 * k, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + (0.6 + 1.5 * long) * k, y, (1.3 + 1.3 * long) * k, 0.22 * k, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+    if (t > 0) for (const h of order) this.drawKickedUp(h, t);
     let zPrev = Infinity;
     const marked = [], away = [];
     for (const h of order) {
@@ -684,7 +695,8 @@ export class RaceScene {
       ctx.scale(k, -k);
       const gait = h.v < 1 ? 'stand' : h.v < 5 ? 'walk' : 'gallop';
       const urge = this.urgeFor(h, st);
-      drawHorse(ctx, { phase: h.phase, gait, coat: r.coat, marks: r.marks, silks: r.silks, number: r.number, urge, blinkers: r.blinkers });
+      drawHorse(ctx, { phase: h.phase, gait, coat: r.coat, marks: r.marks, silks: r.silks, number: r.number, urge, blinkers: r.blinkers, toss: t <= 0 ? this.tossOf(h.i) : 0 });
+      if (this.wet && t > 0) this.drawMud(h);
       ctx.restore();
       if (r.mine || this.focus === h.i) marked.push({ x, y: this.py(3.4, h.z), k, r, follow: this.focus === h.i });
     }
@@ -767,6 +779,77 @@ export class RaceScene {
 
   drawDustBehind() {}
 
+  get wet() { return !this.turf && ['sloppy', 'muddy'].includes(this.race.cond); }
+
+  // In the gate a horse tosses its head now and then: each at its own pace, for half a second or so.
+  tossOf(i) {
+    const a = hash(i * 7.31 + 1), b = hash(i * 3.17 + 2);
+    const u = ((-this.gate) * (0.22 + 0.2 * a) + b) % 1;
+    return u > 0 && u < 0.14 ? Math.sin(Math.PI * u / 0.14) : 0;
+  }
+
+  // What a galloping horse kicks up behind it, under the horses: on a fast dirt track a plume of dust that
+  // drifts and thins; on a wet one, spray and flung mud, lower and darker; on the turf, nothing more than the
+  // clods.
+  drawKickedUp(h, t) {
+    if (this.turf || h.v < 8) return;
+    const { ctx, W } = this;
+    const x = this.hx(h.p, h.z), y = this.py(0, h.z), k = this.f / h.z;
+    if (x < -8 * k || x > W + 3 * k) return;
+    const wet = this.wet;
+    const n = wet ? 7 : 6;
+    for (let j = 0; j < n; j++) {
+      const age = (t * (wet ? 1.6 : 0.9) + j / n + hash(h.i + j * 0.37) * 0.3) % 1;
+      if (wet) {
+        // Spray: droplets thrown up and back, falling as they go.
+        const dx = -(0.4 + age * 2.6), dy = Math.sin(age * Math.PI) * (0.5 + 0.4 * hash(h.i * 3 + j));
+        ctx.fillStyle = j % 2 ? `rgba(196,206,214,${0.45 * (1 - age)})` : `rgba(92,66,44,${0.55 * (1 - age)})`;
+        ctx.beginPath();
+        ctx.arc(x + dx * k, y - dy * k, Math.max(0.8, (0.05 + 0.06 * (1 - age)) * k), 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Dust: puffs that grow and fade behind, hanging a little in the air.
+        const dx = -(0.9 + age * 4.5), r = (0.35 + age * 1.1) * k;
+        ctx.fillStyle = `rgba(206,174,132,${0.22 * (1 - age) * (0.6 + 0.4 * this.sky.dim)})`;
+        ctx.beginPath();
+        ctx.ellipse(x + dx * k, y - (0.25 + age * 0.55) * k, r, r * 0.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // On a wet track mud builds up on the horses and the silks as the race goes on: on the chest, the legs and
+  // the front of the rider. Most on the ones that have run behind others, least on the leader. (Drawn in the
+  // horse's own space, in metres, while the scene has it placed.)
+  drawMud(h) {
+    const { ctx } = this;
+    const run = Math.max(0, Math.min(1, h.p / this.race.distance));
+    const behind = Math.max(0, Math.min(1, (this.leadP - NOSE - h.p) / (6 * LENGTH)));
+    const n = Math.round(run * (5 + 17 * behind));
+    ctx.fillStyle = 'rgba(72,50,32,.85)';
+    for (let j = 0; j < n; j++) {
+      const a = hash(h.i * 13.1 + j * 1.7), b = hash(h.i * 5.3 + j * 2.9);
+      // A third on the chest and shoulder, a third on the forelegs, a third on the rider's front.
+      const [x, y] = j % 3 === 0 ? [0.42 + a * 0.36, 0.98 + b * 0.5] : j % 3 === 1 ? [0.2 + a * 0.5, 0.25 + b * 0.6] : [0.45 + a * 0.4, 1.75 + b * 0.45];
+      ctx.beginPath();
+      ctx.arc(x, y, 0.022 + 0.022 * hash(j + h.i), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // The late-afternoon light: over the ground, a warm wash that deepens race by race (the sky has had its
+  // own colours all along). Little of it under cloud.
+  drawLight() {
+    const w = this.sky.warm * (this.sky.dim === 1 ? 1 : 0.35);
+    if (w < 0.05) return;
+    const { ctx, W, H, hor } = this;
+    ctx.save();
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = `rgb(255,${Math.round(255 - 22 * w)},${Math.round(255 - 58 * w)})`;
+    ctx.fillRect(0, Math.max(0, hor - 2), W, H);
+    ctx.restore();
+  }
+
   // The outer rail and whatever is between it and the camera.
   drawNear(t) {
     const { ctx, W, H } = this;
@@ -775,27 +858,43 @@ export class RaceScene {
     ctx.fillStyle = shade('#6b9a4c', this.sky.dim);
     ctx.fillRect(0, y0, W, H - y0 + 1);
     this.drawRail(C, '#fbfaf5', true);
-    // A crowd along the rail down the stretch.
-    const D = this.race.distance;
-    const stretchFrom = D - FINISH_FROM_TOP - 30;
+    // A crowd along the rail where the stands are: down the stretch, and the first time past them in a race
+    // that starts there. Across the turf course the camera is further back and the rail is under the picture,
+    // so there the crowd stands on the steps of the apron, and their heads and shoulders are along the
+    // bottom of the picture.
     const R = rng(this.crowdSeed);
     const zc = C - 2.2;
     const colors = ['#c0392b', '#34495e', '#f1c40f', '#ecf0f1', '#8e44ad', '#16a085', '#d35400', '#2980b9', '#7f8c8d', '#e67e22'];
     const skin = ['#f1c7a4', '#d7a27c', '#a86f4c', '#6e4630', '#e8b894'];
     const step = 0.75;
-    const x0 = Math.max(stretchFrom, this.camX - W / 2 * zc / this.f - 2);
-    const x1 = Math.min(D + 60, this.camX + W / 2 * zc / this.f + 2);
-    if (this.py(1.8, zc) < this.py(0, this.zRail - 6)) return;
+    const lift = this.turf ? Math.max(0, this.camH - (0.9 * H - this.hor) * zc / this.f - 1.62) : 0;
+    if (this.py(1.8 + lift, zc) < this.py(0, this.zRail - 6)) return;
+    const seen0 = this.camX - W / 2 * zc / this.f - 2, seen1 = this.camX + W / 2 * zc / this.f + 2;
+    for (const [from, to] of this.stands) {
+    const x0 = Math.max(from, seen0), x1 = Math.min(to, seen1);
     for (let X = Math.floor(x0 / step) * step; X < x1; X += step) {
       const hsh = Math.abs(Math.sin(X * 12.9898) * 43758.5453) % 1;
       const hsh2 = Math.abs(Math.sin(X * 78.233) * 12345.678) % 1;
       const zz = zc - hsh2 * 1.5;
       const k = this.f / zz;
       const x = this.px(X + hsh * 0.4, zz);
-      const bob = Math.sin(t * 6 + X * 3) * 0.05 * (this.excite || 0);
-      const top = this.py(1.62 + hsh * 0.2 + bob, zz);
+      // The crowd comes alive as the leaders go by: they bob, and here and there an arm or two goes up. (Down
+      // the stretch they're up on their toes the whole way to the wire.)
+      const near = t > 0 ? Math.max(0, 1 - Math.abs(X - this.leadP + 4) / 22) : 0;
+      const live = Math.max(near, t > 0 && X > this.race.distance - FINISH_FROM_TOP && this.leadP > this.race.distance - FINISH_FROM_TOP ? 0.35 : 0);
+      const bob = Math.max(0, Math.sin(t * 7 + X * 3)) * 0.09 * live;
+      const top = this.py(1.62 + lift + hsh * 0.2 + bob, zz);
       ctx.fillStyle = colors[Math.floor(hsh * colors.length)];
       ctx.fillRect(x - 0.22 * k, top + 0.25 * k, 0.44 * k, H);
+      if (live > 0.45 && hsh2 > 0.72) {
+        // An arm up (both, for some), in the shirt's colour, the hand at the top.
+        const up = (0.42 + 0.12 * Math.sin(t * 9 + X)) * k;
+        ctx.fillRect(x + 0.12 * k, top + 0.3 * k - up, 0.1 * k, up);
+        if (hsh > 0.5) ctx.fillRect(x - 0.22 * k, top + 0.3 * k - up, 0.1 * k, up);
+        ctx.fillStyle = skin[Math.floor(hsh2 * skin.length)];
+        ctx.fillRect(x + 0.11 * k, top + 0.24 * k - up, 0.12 * k, 0.1 * k);
+        if (hsh > 0.5) ctx.fillRect(x - 0.23 * k, top + 0.24 * k - up, 0.12 * k, 0.1 * k);
+      }
       ctx.fillStyle = skin[Math.floor(hsh2 * skin.length)];
       ctx.beginPath();
       ctx.arc(x, top + 0.12 * k, 0.13 * k, 0, Math.PI * 2);
@@ -804,6 +903,7 @@ export class RaceScene {
         ctx.fillStyle = hsh2 > 0.5 ? '#f3e7c9' : '#2c3e50';
         ctx.fillRect(x - 0.2 * k, top, 0.4 * k, 0.07 * k);
       }
+    }
     }
     void R;
   }
@@ -889,6 +989,7 @@ export class RaceScene {
 }
 
 const smooth = x => x * x * (3 - 2 * x);
+const hash = x => Math.abs(Math.sin(x * 12.9898 + 4.1) * 43758.5453) % 1;
 
 function wrap(a) {
   a = (a + Math.PI) % (Math.PI * 2);
