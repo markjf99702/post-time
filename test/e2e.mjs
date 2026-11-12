@@ -2499,7 +2499,7 @@ await page.waitForSelector('.races');
       clear: Math.round(box('.post-bar').top - box('.actions').bottom) >= 0,
     };
   });
-  const shown = { onScreen: true, inPage: ["Winner's circle ▸", 'Watch again'], clear: true };
+  const shown = { onScreen: true, inPage: ["Winner's circle ▸", 'Watch again', 'The form'], clear: true };
   // The card opens on the race that's up: at the top while that race is on the screen from there, as race 2
   // is. After five races Up next is off the bottom of this screen (it started 772 px down its 664), and the
   // card opens with that row in the middle of what shows under the header. The same from a result's back
@@ -2519,7 +2519,7 @@ await page.waitForSelector('.races');
     r.result.eng = eng; nav.go('result', { no });
     return buttons;
   }, cash.no);
-  assert.deepEqual(older, ["Winner's circle ▸"], 'a race run the way races were run before is offered to be watched again');
+  assert.deepEqual(older, ["Winner's circle ▸", 'The form'], 'a race run the way races were run before is offered to be watched again');
   assert.deepEqual(await resultBar(), { said: `You cashed $${cash.back.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, button: 'Race 2 ▸', ...shown }, 'the bar on a result with a ticket cashed');
   await between.click('.rhead .back');
   await between.waitForSelector('.races');
@@ -2569,7 +2569,7 @@ await page.waitForSelector('.races');
   const last = await run('cash');
   assert.deepEqual([last.no, (await resultBar()).button], [8, 'The card ▸']);
   await between.click('.post-bar .btn');
-  assert.deepEqual([await between.locator('.day-over .btn').textContent(), await scrollY()], ['Next race day ▸', 0]);
+  assert.deepEqual([await between.locator('.day-over .btn.brass').textContent(), await scrollY()], ['Next race day ▸', 0]);
 
   // The race screen's buttons are 40 px tall (they were 34), Results among them when it comes.
   await go('watch', { no: 8 });
@@ -3368,11 +3368,11 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   // "That's the meet", and its closing page.
   await meet.evaluate(() => window.postTime.nav.go('card'));
   assert.equal(await meet.locator('.day-over .h2').textContent(), "That's the meet.");
-  await meet.click('.day-over .btn');
+  await meet.click('.day-over .btn.brass');
   assert.equal(await meet.locator('.rhead .kicker').textContent(), 'Meet 1 · closing day');
   const awards = await meet.locator('.stats').first().locator('.stat .kicker').allTextContents();
   assert.deepEqual(awards, ['Leading rider', 'Leading trainer', 'Horse of the meet', "The forum's champion", 'The longest price']);
-  assert.equal(await meet.locator('.board tbody tr').count(), 10, 'ten stakes winners');
+  assert.equal(await meet.locator('.board', { has: meet.locator('h3', { hasText: 'The stakes winners' }) }).locator('tbody tr').count(), 10, 'ten stakes winners');
   assert.equal(await meet.locator('.meet-big b').textContent(), await meet.evaluate(() => { const r = window.postTime.card().races[7]; return window.postTime.game.world.horses[r.entries[r.result.order[0].k].hid].name; }));
   const bank = await meet.evaluate(() => window.postTime.game.player.bank);
   const horses = await meet.evaluate(() => window.postTime.game.world.horses.length);
