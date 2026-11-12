@@ -71,3 +71,22 @@ export function ago(mins) {
   if (mins < 60) return `${mins} min ago`;
   return `${Math.floor(mins / 60)} hr ago`;
 }
+
+// A part of the page drawn again where it is keeps the keyboard's place. The control that had the focus is
+// found again in what's drawn by its key (data-k), or else by the first of `instead(key)` that's there, and
+// given the focus back. (Every choice in the betting slip, and every tab, drew its part of the page again and
+// left the focus on nothing: the next Tab started again from the top. One $2 exacta took 70 presses of Tab
+// where 31 would do.)
+export function keepFocus(box, draw, instead = () => []) {
+  const was = document.activeElement;
+  const key = was && was !== document.body && box.contains(was) ? was.dataset.k : undefined;
+  draw();
+  if (key === undefined) return;
+  const now = document.activeElement;
+  if (now && now.isConnected && now !== document.body && now.dataset?.k === key) return;
+  for (const k of [key, ...instead(key)]) {
+    const el = box.querySelector(`[data-k="${CSS.escape(k)}"]`);
+    if (el) { el.focus({ preventScroll: true }); return; }
+  }
+}
+

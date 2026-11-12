@@ -1,6 +1,6 @@
 // A race before it runs: the past performances, the paddock, the forum and the betting window.
 
-import { h, money, stake, cloth, silksCanvas, clear, ago, plural, dotted } from './dom.js';
+import { h, money, stake, cloth, silksCanvas, clear, ago, plural, dotted, keepFocus } from './dom.js';
 import { game, card, silksFor, isStarred, toggleStar, cashedOn, formBefore, raceAt, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor, toteFor, MULTI, multiStarting, legRaces, multiFor, multiState, cancelMulti, willPaysFor, multiWouldPay, multiNumbers } from '../game.js';
 import { ageOf, shortDate, clockText, CLASSES, meetStats, isHandicap, prepsOf } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
@@ -42,8 +42,8 @@ export function renderRace(root, nav, params) {
     mtpBox,
     h('div', { class: 'cond' }, conditions(race)),
   );
-  const tabs = h('div', { class: 'tabs', role: 'tablist' });
-  const panel = h('div', { class: 'panel', role: 'tabpanel' });
+  const tabs = h('div', { class: 'tabs', role: 'tablist', 'aria-label': `Race ${race.no}` });
+  const panel = h('div', { class: 'panel', role: 'tabpanel', id: 'race-panel' });
   // What the bar says is read out when it changes: it's where a pick that hasn't been bought is named.
   const info = h('div', { class: 'info', role: 'status' });
   const bar = h('div', { class: 'post-bar' }, info);
@@ -67,23 +67,48 @@ export function renderRace(root, nav, params) {
     nav.tab(k);
     window.scrollTo(0, leftAt[k] ?? Math.min(y, tabsStick()));
   }
+  // The tabs are one stop for Tab, on the tab that's open, and the arrow keys go from tab to tab, as tabs do
+  // everywhere (Home and End to the first and the last).
   function drawTabs() {
-    clear(tabs);
-    for (const [k, label] of TABS) {
-      const count = k === 'bet' ? myBets(race).length + multiFor(race, { starting: true }).length : 0;
-      tabs.append(h('button', { type: 'button', role: 'tab', 'aria-selected': String(k === current), onclick: () => tap(k) }, label, count ? h('span', { class: 'n' }, String(count)) : null));
-    }
+    keepFocus(tabs, () => {
+      clear(tabs);
+      for (const [k, label] of TABS) {
+        const count = k === 'bet' ? myBets(race).length + multiFor(race, { starting: true }).length : 0;
+        tabs.append(h('button', {
+          type: 'button', role: 'tab', id: `tab-${k}`, 'aria-controls': 'race-panel', 'aria-selected': String(k === current),
+          tabindex: k === current ? '0' : '-1', data: { k: `tab:${k}` }, onclick: () => tap(k),
+        }, label, count ? h('span', { class: 'n' }, String(count)) : null));
+      }
+    });
+    panel.setAttribute('aria-labelledby', `tab-${current}`);
   }
+  tabs.addEventListener('keydown', e => {
+    const at = TABS.findIndex(([k]) => k === current);
+    const to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: TABS.length - 1 }[e.key];
+    if (to === undefined || e.altKey || e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    const k = TABS[(to + TABS.length) % TABS.length][0];
+    if (k !== current) tap(k);
+    tabs.querySelector(`[data-k="tab:${k}"]`)?.focus();
+  });
+  // Drawn again, the tab keeps the keyboard where it was: on the same control if it's still there, and
+  // otherwise on the one that takes its place (To the gate where the bar's Buy ticket was, the next ticket's
+  // Cancel, or Buy ticket when the last is cancelled).
+  const instead = k => (k === 'bar:buy' ? ['bar:gate']
+    : k.startsWith('cancel:') ? [`cancel:${+k.slice(7) - 1}`, 'cancelm:0', 'buy']
+      : k.startsWith('cancelm:') ? [`cancelm:${+k.slice(8) - 1}`, `cancel:${myBets(race).length - 1}`, 'buy'] : []);
   function show(which) {
     current = which;
     if (stopPanel) { stopPanel(); stopPanel = null; }
-    drawTabs();
-    clear(panel);
-    if (which === 'form') formPanel(panel, race, isNext ? betOn : null, nav);
-    if (which === 'paddock') stopPanel = paddockPanel(panel, race);
-    if (which === 'forum') forumPanel(panel, race);
-    if (which === 'bet') betPanel(panel, race, { changed: () => show('bet'), picked: refreshBar, open: isNext, nav });
-    refreshBar();
+    keepFocus(root, () => {
+      drawTabs();
+      clear(panel);
+      if (which === 'form') formPanel(panel, race, isNext ? betOn : null, nav);
+      if (which === 'paddock') stopPanel = paddockPanel(panel, race);
+      if (which === 'forum') forumPanel(panel, race);
+      if (which === 'bet') betPanel(panel, race, { changed: () => show('bet'), picked: refreshBar, open: isNext, nav });
+      refreshBar();
+    }, instead);
   }
 
   // The pick on the betting slip, when it's a whole ticket you could buy now for the race that's up. To
@@ -132,7 +157,8 @@ export function renderRace(root, nav, params) {
   // How tall the bar is just now (it has a second row on a phone while a pick isn't bought), so that
   // whatever is brought into view comes to rest above it and not behind it.
   const measureBar = () => document.documentElement.style.setProperty('--bar', `${bar.offsetHeight}px`);
-  function refreshBar() {
+  function refreshBar() { keepFocus(bar, drawBar, instead); }
+  function drawBar() {
     asked = false;
     while (info.nextSibling) info.nextSibling.remove();
     // (A daily double or Pick 3 counts on the race it was bought in.)
@@ -143,8 +169,8 @@ export function renderRace(root, nav, params) {
     if (bet) {
       say([h('b', {}, pickName(race, bet)), `, ${stake(betCost(bet))}: not bought yet`]);
       bar.append(
-        h('button', { class: 'btn ghost', type: 'button', onclick: toGate }, 'To the gate ▸'),
-        h('button', { class: 'btn brass', type: 'button', onclick: buySlip }, `Buy ticket · ${money(betCost(bet))}`),
+        h('button', { class: 'btn ghost', type: 'button', onclick: toGate, data: { k: 'bar:gate' } }, 'To the gate ▸'),
+        h('button', { class: 'btn brass', type: 'button', onclick: buySlip, data: { k: 'bar:buy' } }, `Buy ticket · ${money(betCost(bet))}`),
       );
       measureBar();
       return;
@@ -156,15 +182,17 @@ export function renderRace(root, nav, params) {
       : alive.length && race.status !== 'official' ? [h('b', {}, `Your ${alive.join(' and ').replace('Daily', 'daily')} ${alive.length > 1 ? 'are' : 'is'} alive`)]
         : [h('span', { class: 'muted' }, isNext ? 'No tickets yet. You can watch without betting.' : race.status === 'official' ? 'This race is over.' : `Race ${nxt ? nxt.no : ''} is up first.`)]);
     if (race.status === 'official') bar.append(h('button', { class: 'btn', type: 'button', onclick: () => nav.go('result', { no: race.no }) }, 'Results ▸'));
-    else if (isNext) bar.append(h('button', { class: 'btn brass', type: 'button', onclick: toGate }, 'To the gate ▸'));
+    else if (isNext) bar.append(h('button', { class: 'btn brass', type: 'button', onclick: toGate, data: { k: 'bar:gate' } }, 'To the gate ▸'));
     else bar.append(h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('race', { no: nxt.no }) }, `Race ${nxt.no} first`));
     measureBar();
   }
 
-  // Bet on 3, in a horse opened in the form of the race that's up: the Bet tab, with the horse on the slip.
+  // Bet on 3, in a horse opened in the form of the race that's up: the Bet tab, with the horse on the slip
+  // (and the keyboard on it there).
   function betOn(i) {
     pickOn(race, i);
     tap('bet');
+    panel.querySelector(`[data-k="pick:0:${i}"]`)?.focus({ preventScroll: true });
   }
 
   // Minutes to post tick down, and the odds move with them.
@@ -592,12 +620,15 @@ function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
   const builder = h('div', { class: 'builder' });
   panel.append(builder);
   panel.append(ticketList(race, open, changed));
-  const draw = () => {
+  // Each choice draws the slip again, with the keyboard kept on the button that was pressed (or, when a new
+  // kind of bet has fewer rows, on that kind of bet).
+  const draw = () => keepFocus(builder, drawSlip, () => [`type:${st.type}`]);
+  const drawSlip = () => {
     clear(builder);
     const types = h('div', { class: 'seg', role: 'group', 'aria-label': 'Bet type' });
     for (const t of typesFor(race)) {
       types.append(h('button', {
-        type: 'button', 'aria-pressed': String(st.type === t),
+        type: 'button', 'aria-pressed': String(st.type === t), data: { k: `type:${t}` },
         onclick: () => {
           st.type = t; st.picks = [[], [], []];
           if (st.amt < MIN[legType(t)]) st.amt = MIN[legType(t)];
@@ -622,7 +653,7 @@ function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
         const [bg, fg] = CLOTH[e.pp] || CLOTH[1];
         const on = st.picks[r].includes(i);
         grid.append(h('button', {
-          type: 'button', 'aria-pressed': String(on), 'aria-label': `${e.pp} ${horseOf(e).name}`, style: { backgroundColor: bg, color: fg },
+          type: 'button', 'aria-pressed': String(on), 'aria-label': `${e.pp} ${horseOf(e).name}`, style: { backgroundColor: bg, color: fg }, data: { k: `pick:${r}:${i}` },
           onclick: () => {
             if (multi) st.picks[r] = on ? st.picks[r].filter(x => x !== i) : [...st.picks[r], i];
             else {
@@ -639,7 +670,7 @@ function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
     const amts = h('div', { class: 'seg amounts', role: 'group', 'aria-label': 'Amount' });
     for (const a of [0.5, 1, 2, 5, 10, 20, 50, 100]) {
       if (a < MIN[legType(st.type)]) continue;
-      amts.append(h('button', { type: 'button', 'aria-pressed': String(st.amt === a), onclick: () => { st.amt = a; draw(); } }, stake(a)));
+      amts.append(h('button', { type: 'button', 'aria-pressed': String(st.amt === a), data: { k: `amt:${a}` }, onclick: () => { st.amt = a; draw(); } }, stake(a)));
     }
     builder.append(amts);
     const bet = currentBet(st, race);
@@ -651,9 +682,13 @@ function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
     else msg.append(h('span', { class: 'muted' }, needs(st)));
     // With no money for a ticket and none bought, the way to the ATM is here, where the cost would be.
     const broke = open ? atmLine(changed) : null;
+    // (It isn't `disabled` while there's nothing to buy, only marked so: a disabled button can't hold the
+    // keyboard, and it would drop it the moment a ticket was bought.)
+    const cant = !bet || !open || c > game.player.bank + 1e-9;
     const buy = h('button', {
-      class: 'btn', type: 'button', disabled: !bet || !open || c > game.player.bank + 1e-9 ? true : null,
+      class: 'btn', type: 'button', 'aria-disabled': cant ? 'true' : null, data: { k: 'buy' },
       onclick: () => {
+        if (cant) return;
         const res = placeBet(race, bet);
         if (!res.ok) { msg.textContent = res.why; return; }
         callAgain(race);
@@ -809,21 +844,21 @@ function ticketList(race, open, changed) {
         ticketLine(b, sel),
         h('div', { class: 'small' }, `LRK R${race.no} · ${sel.map(n => horseOf(race.entries.find(e => e.pp === n)).name).join(' / ')} · COST ${money(b.cost)}${boughtAt(race, b)}`),
       ),
-      back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : back === 0 ? h('span', { class: 'small torn' }, 'torn up') : open ? h('button', { type: 'button', onclick: () => { cancelBet(race, i); callAgain(race); changed(); } }, 'Cancel') : null,
+      back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : back === 0 ? h('span', { class: 'small torn' }, 'torn up') : open ? h('button', { type: 'button', data: { k: `cancel:${i}` }, onclick: () => { cancelBet(race, i); callAgain(race); changed(); } }, 'Cancel') : null,
     ));
   });
   // And a daily double or Pick 3 with this race in it: it can be cancelled in its first race, while that's
   // open, and from then on says where it stands.
-  for (const t of multiFor(race)) {
+  multiFor(race).forEach((t, k) => {
     const cancel = open && t.legs[0] === race.no ? () => { cancelMulti(t); callAgain(race); changed(); } : null;
-    wrap.append(multiTicket(t, { cancel, fresh: mine?.multi === t }));
-  }
+    wrap.append(multiTicket(t, { cancel, fresh: mine?.multi === t, key: `cancelm:${k}` }));
+  });
   return wrap;
 }
 
 // A daily double or Pick 3 ticket: "$1 DAILY DOUBLE 3 / 5, 6", its races, horses and cost, and once a race
 // of it has been run, whether it's alive; once the last has, what it paid or that it's torn up.
-export function multiTicket(t, { cancel = null, fresh = false } = {}) {
+export function multiTicket(t, { cancel = null, fresh = false, key = null } = {}) {
   const races = t.legs.map(no => card().races.find(r => r.no === no));
   const st = multiState(t);
   return h('div', { class: `ticket${fresh ? ' printed' : ''}${st === 'paid' ? ' cashed' : st === 'dead' ? ' lost' : ''}` },
@@ -832,7 +867,7 @@ export function multiTicket(t, { cancel = null, fresh = false } = {}) {
       h('div', { class: 'small' }, `LRK R${t.legs[0]}-R${t.legs[t.legs.length - 1]} · ${multiNames(races, t.sel)} · COST ${money(t.cost)}`),
     ),
     st === 'paid' ? h('span', { class: 'stamp' }, `PAID ${money(t.back)}`) : st === 'dead' ? h('span', { class: 'small torn' }, 'torn up')
-      : st === 'alive' ? h('span', { class: 'small alive' }, 'alive') : cancel ? h('button', { type: 'button', onclick: cancel }, 'Cancel') : null,
+      : st === 'alive' ? h('span', { class: 'small alive' }, 'alive') : cancel ? h('button', { type: 'button', data: key ? { k: key } : null, onclick: cancel }, 'Cancel') : null,
   );
 }
 

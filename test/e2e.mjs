@@ -3467,6 +3467,80 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   await ctx10.close();
 }
 
+// Played from the keyboard. Each choice in the betting slip and each tab used to draw its part of the page again
+// and leave the keyboard on nothing, so the next Tab started from the top again: a $2 exacta took 70 presses of
+// Tab where 31 would do. Now the keyboard stays on what was pressed, and the tabs are one stop, with the arrow
+// keys between them.
+{
+  const ctx11 = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const kb = await ctx11.newPage();
+  kb.on('pageerror', e => problems.push(e.message));
+  kb.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
+  await kb.goto(base, { waitUntil: 'domcontentloaded' });
+  await kb.waitForSelector('.races', { timeout: 60000 });
+  await kb.evaluate(async () => { const { createWorld } = await import('./js/world.js'); const { game, save } = window.postTime; game.world = createWorld('keyboard', '2026-11-14'); game.player.settings.sound = false; save(); });
+  await kb.reload({ waitUntil: 'domcontentloaded' });
+  await kb.waitForSelector('.races', { timeout: 60000 });
+  await kb.evaluate(() => document.fonts.ready);
+  const active = () => kb.evaluate(() => { const a = document.activeElement; return { tag: a.tagName, k: a.dataset.k ?? null, no: a.dataset.no ?? null, cls: a.className, text: a.textContent.trim().slice(0, 40), title: document.title }; });
+  // Tab until the keyboard is on the control with this key, counting the presses.
+  let presses = 0;
+  const tabTo = async k => {
+    for (let n = 0; n < 80; n++) {
+      if ((await active()).k === k) return;
+      await kb.keyboard.press('Tab');
+      presses++;
+    }
+    assert.fail(`Tab never reached ${k}`);
+  };
+  await kb.evaluate(() => window.postTime.nav.go('race', { no: 1 }));
+  // The tabs: one stop, and the arrow keys between them.
+  await kb.focus('[data-k="tab:form"]');
+  await kb.keyboard.press('ArrowLeft');
+  assert.equal((await active()).k, 'tab:bet', 'ArrowLeft on the first tab goes round to the last');
+  await kb.keyboard.press('Home');
+  assert.equal((await active()).k, 'tab:form');
+  let at;
+  for (const k of ['paddock', 'forum', 'bet']) {
+    await kb.keyboard.press('ArrowRight');
+    at = await active();
+    assert.equal(at.k, `tab:${k}`, `ArrowRight left the keyboard on ${at.tag} ${at.text}`);
+    assert.equal(await kb.locator('[role="tab"][aria-selected="true"]').getAttribute('data-k'), `tab:${k}`);
+  }
+  assert.deepEqual(await kb.locator('[role="tab"]').evaluateAll(t => t.map(x => x.tabIndex)), [-1, -1, -1, 0]);
+  assert.equal(await kb.locator('#race-panel').getAttribute('aria-labelledby'), 'tab-bet');
+  // A $2 exacta, 2 over 4, by keyboard: the keyboard stays on each button pressed.
+  presses = 0;
+  for (const k of ['type:exacta', 'pick:0:1', 'pick:1:3', 'amt:2']) {
+    await tabTo(k);
+    await kb.keyboard.press('Space');
+    at = await active();
+    assert.equal(at.k, k, `pressing ${k} left the keyboard on ${at.tag} ${at.text}`);
+  }
+  await tabTo('buy');
+  await kb.keyboard.press('Enter');
+  at = await active();
+  assert.equal(at.k, 'buy', `buying left the keyboard on ${at.tag} ${at.text}`);
+  assert.ok(presses <= 35, `a $2 exacta by keyboard took ${presses} presses of Tab`);
+  assert.match(await kb.locator('.ticket .what').first().textContent(), /^\$2 EXACTA \d+-\d+$/);
+  assert.equal(await kb.locator('.builder [data-k="buy"]').getAttribute('aria-disabled'), 'true', 'Buy ticket with nothing on the slip is marked as not working');
+  // Buy ticket with nothing on the slip does nothing, and Cancel on the only ticket leaves the keyboard on Buy.
+  await kb.keyboard.press('Enter');
+  assert.equal(await kb.locator('.ticket').count(), 1);
+  await tabTo('cancel:0');
+  await kb.keyboard.press('Enter');
+  assert.equal(await kb.locator('.ticket').count(), 0);
+  assert.equal((await active()).k, 'buy', 'cancelling the last ticket left the keyboard on nothing');
+  // Bet on 3 from the form: the keyboard is on the horse in the slip.
+  await kb.focus('[data-k="tab:bet"]');
+  await kb.keyboard.press('Home');
+  await kb.locator('.entry-head').nth(2).click();
+  await kb.focus('.bet-on button');
+  await kb.keyboard.press('Enter');
+  assert.equal((await active()).k, 'pick:0:2', 'Bet on 3 left the keyboard off the horse in the slip');
+  await ctx11.close();
+}
+
 await browser.close();
 server.close();
 console.log('all good');
