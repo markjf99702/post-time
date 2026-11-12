@@ -808,6 +808,8 @@ a { color: var(--link); }
 .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; padding: 12px; }
 .stat { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 .stat b { display: block; font: 600 24px/1.1 var(--display); }
+/* An award goes to a name, and a long one (GreyHorseGreg) breaks rather than running out of its tile. */
+.awards .stat b { overflow-wrap: anywhere; }
 .help { padding: 16px; max-width: 640px; }
 .help h3 { font: 600 18px/1.2 var(--display); letter-spacing: .03em; margin: 22px 0 6px; }
 .help p, .help li { line-height: 1.45; }

@@ -148,11 +148,11 @@ export function renderMeet(root, nav, params = {}) {
     h('p', { class: 'pad meet-when' }, `${plural(days, 'race day')}, ${dateOf(r.first)} to ${dateOf(r.last)}${days !== MEET_DAYS ? ' (the first meet, carried over from before meets had an end)' : ''}. ${plural(r.races, 'race')} run.`),
     // (Until the Handicap is run there's nothing here: a bare null put the word "null" on the page.)
     r.handicap ? h('div', { class: 'pad' }, h('div', { class: 'meet-big' }, h('span', { class: 'kicker' }, `The ${BIG_STAKES.name}`), h('b', {}, r.handicap.horse))) : '',
-    h('div', { class: 'stats' },
+    h('div', { class: 'stats awards' },
       award('Leading rider', r.rider && r.rider.w ? JOCKEYS[r.rider.i]?.name : null, r.rider && `${plural(r.rider.w, 'win')} from ${plural(r.rider.starts, 'ride')}`),
       award('Leading trainer', r.trainer && r.trainer.w ? TRAINERS[r.trainer.i] : null, r.trainer && `${plural(r.trainer.w, 'win')} from ${plural(r.trainer.starts, 'starter')}`),
       award('Horse of the meet', r.horse && r.horse.earn ? r.horse.name : null, r.horse && `${plural(r.horse.w, 'win')} from ${plural(r.horse.starts, 'start')}, ${money(r.horse.earn, { cents: false })} won`),
-      award("The forum's champion", champ ? champ.handle : null, r.champ && `${plural(r.champ.wins, 'winner')} from ${plural(r.champ.picks, 'pick')}, ${money(r.champ.back / r.champ.picks)} back for each $2${r.since ? ', over the whole of the forum\'s record' : ''}`),
+      award("The forum's champion", champ ? handleBreaks(champ.handle) : null, r.champ && `${plural(r.champ.wins, 'winner')} from ${plural(r.champ.picks, 'pick')}, ${money(r.champ.back / r.champ.picks)} back for each $2${r.since ? ', over the whole of the forum\'s record' : ''}`),
       award('The longest price', r.long ? r.long.name : null, r.long && `won at ${oddsText(r.long.odds)}, race ${r.long.no} on race day ${r.long.day - r.first + 1}`),
     ),
   );
@@ -234,6 +234,10 @@ function yourRecord(root, r) {
     h('tbody', {}, kinds.map(k => row(k.name, k)))),
   since && since > 1 ? h('p', { class: 'board-note' }, `Since race day ${since}: the record kept the kinds of bet from then.`) : null)));
 }
+
+// A forum handle in an award's tile may break between its words, GreyHorse|Greg, where it would run out of the
+// tile at a desktop's width.
+const handleBreaks = name => name.split(/(?<=[a-z])(?=[A-Z])/).flatMap((part, k) => (k ? [h('wbr'), part] : [part]));
 
 function stat(label, value, note) {
   return h('div', { class: 'stat' }, h('span', { class: 'kicker' }, label), h('b', { class: 'money' }, value), note ? h('span', { class: 'muted', style: { fontSize: '12.5px' } }, note) : null);
