@@ -212,7 +212,9 @@ export function nextDay(world) {
 // results can be looked at again and their races watched again. [{ day, date, races }], and each race is what
 // its card and its result had, less what a result page doesn't show: { no, cls, claim, name, f, surface, cond,
 // purse, fm, e: [[horse id, number, rider, weight, rating, owner, trainer] for each runner], o: [[entry,
-// position, lengths behind, to the one ahead, time] in the order of finish], fr, time, eng, odds, pay, multi }.
+// position, lengths behind, to the one ahead, time] in the order of finish], fr, time, eng, odds, ot, pay,
+// multi }. `ot` is the odds as the board worded them: the odds are kept to the cent, and worded again from
+// that, 1.195-1 (1-1 on the board) came back as 6-5. (A race day kept before has none, and is worded again.)
 // The rating and the race's seed (worked out from the meet's) are what the race is run from again; the owner
 // and the trainer are the ones it ran for. About 4 KB a race day.
 function keepDay(world, day) {
@@ -224,7 +226,7 @@ function keepDay(world, day) {
       no: r.no, cls: r.cls, claim: r.claim, name: r.name, f: r.f, surface: r.surface, cond: r.cond, purse: r.purse, ...(r.fm ? { fm: true } : {}),
       e: r.entries.map(e => { const ran = e.ran || world.horses[e.hid]; return [e.hid, e.pp, e.j, e.wt, e.rating, ran.owner, ran.trainer]; }),
       o: res.order.map(o => [o.k, o.pos, o.behind, o.toPrev, o.time]),
-      fr: res.fr, time: res.time, eng: res.eng, odds: res.odds, pay: res.pay, ...(res.multi ? { multi: res.multi } : {}),
+      fr: res.fr, time: res.time, eng: res.eng, odds: res.odds, ...(res.oddsText ? { ot: res.oddsText } : {}), pay: res.pay, ...(res.multi ? { multi: res.multi } : {}),
     };
   });
   (Array.isArray(world.past) ? world.past : (world.past = [])).push({ day, date: c.date, races });
@@ -244,7 +246,7 @@ export function pastRace(world, day, no) {
     entries: s.e.map(([hid, pp, j, wt, rating, owner, trainer]) => ({ hid, pp, j, wt, rating, ran: { owner, trainer } })),
     result: {
       order: s.o.map(([k, pos, behind, toPrev, time]) => ({ k, pos, behind, toPrev, time })), fr: s.fr, time: s.time, eng: s.eng,
-      odds: s.odds, oddsText: s.odds.map(oddsText), pay: s.pay, ...(s.multi ? { multi: s.multi } : {}),
+      odds: s.odds, oddsText: Array.isArray(s.ot) && s.ot.length === s.odds.length ? s.ot : s.odds.map(oddsText), pay: s.pay, ...(s.multi ? { multi: s.multi } : {}),
     },
   };
   madeAgain.set(s, race);

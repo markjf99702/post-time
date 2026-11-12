@@ -216,6 +216,25 @@ test("earlier race days are kept, this meet's and the last meet's, and each race
   assert.equal(G.raceAt(days[0], 3), G.raceAt(days[0], 3));
 });
 
+// An earlier race day's odds are the board's words for them, as they were when the race went off. They were
+// worded again from the odds kept to the cent: a horse at 1.195-1, 1-1 on the board, came back as 6-5.
+test("an earlier race day's odds read as the board had them, not worded again from the odds kept to the cent", () => {
+  buildOn('past-odds');
+  playDay();
+  const race = card().races[3], day = race.day;
+  race.result.odds[0] = 1.2; race.result.oddsText[0] = '1-1'; // (went off at 1.195-1: kept as 1.2)
+  race.result.odds[1] = 12; race.result.oddsText[1] = '11-1'; // (at 11.996-1)
+  const want = race.result.oddsText.slice();
+  advanceDay();
+  save(); load();
+  assert.deepEqual(G.raceAt(day, 4).result.oddsText, want);
+  // A race day kept before the board's words were kept is worded again from its odds.
+  const kept = game.world.past.find(d => d.day === day).races[3];
+  delete kept.ot;
+  save(); load();
+  assert.deepEqual(G.raceAt(day, 4).result.oddsText.slice(0, 2), ['6-5', '12-1']);
+});
+
 test('"Your first cashed ticket." and "Your biggest ticket of the meet." are said only when they are true', () => {
   buildOn('note-1');
   save(); load();
