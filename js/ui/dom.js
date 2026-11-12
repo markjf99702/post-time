@@ -90,3 +90,29 @@ export function keepFocus(box, draw, instead = () => []) {
   }
 }
 
+
+// The bankroll in the header is a live region: a screen reader says its new figure when it changes. Where a
+// line of the page says it already ("Bought: $2 to win on #3 Early Ticket. You have $198.00."), the header
+// keeps quiet for that change, so it's said once. (For long enough for the count up to the new figure to end.)
+let bankQuiet = 0;
+export function quietBank(fn) {
+  const bank = document.getElementById('bank');
+  if (!bank) return fn();
+  clearTimeout(bankQuiet);
+  bank.setAttribute('aria-live', 'off');
+  try { return fn(); } finally { bankQuiet = setTimeout(() => bank.setAttribute('aria-live', 'polite'), 1500); }
+}
+
+// One line a screen reader says, and nothing on the screen: what a choice in the betting slip comes to, why a
+// ticket can't be bought, that it was. The same words twice running are said twice (emptied, then put back).
+export function speaker() {
+  const el = h('p', { class: 'sr', role: 'status' });
+  let wait = 0;
+  el.say = text => {
+    clearTimeout(wait);
+    if (el.textContent !== text) { el.textContent = text; return; }
+    el.textContent = '';
+    wait = setTimeout(() => { el.textContent = text; }, 80);
+  };
+  return el;
+}

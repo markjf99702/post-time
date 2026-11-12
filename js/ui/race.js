@@ -1,6 +1,6 @@
 // A race before it runs: the past performances, the paddock, the forum and the betting window.
 
-import { h, money, stake, cloth, silksCanvas, clear, ago, plural, dotted, keepFocus } from './dom.js';
+import { h, money, stake, cloth, silksCanvas, clear, ago, plural, dotted, keepFocus, quietBank, speaker } from './dom.js';
 import { game, card, silksFor, isStarred, toggleStar, cashedOn, formBefore, raceAt, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor, toteFor, MULTI, multiStarting, legRaces, multiFor, multiState, cancelMulti, willPaysFor, multiWouldPay, multiNumbers } from '../game.js';
 import { ageOf, shortDate, clockText, CLASSES, meetStats, isHandicap, prepsOf } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
@@ -44,10 +44,14 @@ export function renderRace(root, nav, params) {
   );
   const tabs = h('div', { class: 'tabs', role: 'tablist', 'aria-label': `Race ${race.no}` });
   const panel = h('div', { class: 'panel', role: 'tabpanel', id: 'race-panel' });
-  // What the bar says is read out when it changes: it's where a pick that hasn't been bought is named.
-  const info = h('div', { class: 'info', role: 'status' });
+  const info = h('div', { class: 'info' });
   const bar = h('div', { class: 'post-bar' }, info);
-  root.append(head, tabs, panel, bar);
+  // What a screen reader is told as the page changes under it, in one line: what the slip comes to after each
+  // choice in it, why a ticket can't be bought, that it was, and what To the gate's first tap means. (The bar
+  // was read out whenever it was drawn again, and the slip, a refusal and a ticket bought not at all.)
+  const spoken = speaker();
+  const speak = spoken.say;
+  root.append(head, tabs, panel, bar, spoken);
 
   const TABS = [['form', 'Form'], ['paddock', 'Paddock'], ['forum', 'Forum'], ['bet', 'Bet']];
   let current = tab;
@@ -106,7 +110,7 @@ export function renderRace(root, nav, params) {
       if (which === 'form') formPanel(panel, race, isNext ? betOn : null, nav);
       if (which === 'paddock') stopPanel = paddockPanel(panel, race);
       if (which === 'forum') forumPanel(panel, race);
-      if (which === 'bet') betPanel(panel, race, { changed: () => show('bet'), picked: refreshBar, open: isNext, nav });
+      if (which === 'bet') betPanel(panel, race, { changed: () => show('bet'), picked: refreshBar, open: isNext, nav, speak });
       refreshBar();
     }, instead);
   }
@@ -132,12 +136,14 @@ export function renderRace(root, nav, params) {
       asked = true;
       notBefore = performance.now() + DOUBLE_TAP;
       say([`You picked ${pickShort(race, bet)} for ${stake(betCost(bet))} and haven't bought it. Tap again to go without it.`]);
+      speak(info.textContent);
       return;
     }
     if (!bet && !asked && noTicket()) {
       asked = true;
       notBefore = performance.now() + DOUBLE_TAP;
       say(['No ticket on this race. Tap again to watch without one.']);
+      speak(info.textContent);
       return;
     }
     audio.wake(); audio.primeVoice();
@@ -145,7 +151,9 @@ export function renderRace(root, nav, params) {
   }
   function buySlip() {
     const bet = slip();
-    if (!bet || !placeBet(race, bet).ok) { refreshBar(); return; }
+    const res = bet && quietBank(() => placeBet(race, bet));
+    if (!res || !res.ok) { refreshBar(); if (res) speak(res.why); return; }
+    speak(boughtWords(race, bet));
     callAgain(race);
     audio.ticket();
     clearSlip(race);
@@ -193,6 +201,8 @@ export function renderRace(root, nav, params) {
     pickOn(race, i);
     tap('bet');
     panel.querySelector(`[data-k="pick:0:${i}"]`)?.focus({ preventScroll: true });
+    const st = slipFor(race);
+    speak(slipWords(race, st, currentBet(st, race)));
   }
 
   // Minutes to post tick down, and the odds move with them.
@@ -612,7 +622,7 @@ function showPrinted() {
 // Said under the board and in How to play: a ticket isn't paid at the price it was bought at.
 export const MOVING = 'Odds keep moving until the gate opens. Every ticket is paid at the final odds, whatever the board said when you bought it.';
 
-function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
+function betPanel(panel, race, { changed, picked, open: isNext, nav, speak }) {
   const open = isNext && race.status !== 'official';
 
   panel.append(toteBoard(race));
@@ -622,7 +632,7 @@ function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
   for (const w of willPaysFor(race)) panel.append(willPaysBoard(race, w));
   if (race.status === 'official') {
     panel.append(h('p', { class: 'note' }, 'Betting is closed. See the results for what paid.', what()));
-    panel.append(ticketList(race, false, changed));
+    panel.append(ticketList(race, false, changed, speak));
     return;
   }
   // A later race opens for betting when the one before it is over (which isn't always the one that's up).
@@ -630,7 +640,7 @@ function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
   // A race that isn't up yet has its board and that note, and no betting slip: the slip used to be there,
   // working, with a Buy ticket button that could never buy anything.
   if (!open) {
-    panel.append(ticketList(race, false, changed));
+    panel.append(ticketList(race, false, changed, speak));
     return;
   }
 
@@ -638,10 +648,12 @@ function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
   const st = slipFor(race);
   const builder = h('div', { class: 'builder' });
   panel.append(builder);
-  panel.append(ticketList(race, open, changed));
+  panel.append(ticketList(race, open, changed, speak));
   // Each choice draws the slip again, with the keyboard kept on the button that was pressed (or, when a new
   // kind of bet has fewer rows, on that kind of bet).
   const draw = () => keepFocus(builder, drawSlip, () => [`type:${st.type}`]);
+  // A choice made: the slip drawn again, and what it comes to said. (A new kind of bet says what it is first.)
+  const chose = (type = false) => { draw(); speak(slipWords(race, st, currentBet(st, race), { type })); };
   const drawSlip = () => {
     clear(builder);
     const types = h('div', { class: 'seg', role: 'group', 'aria-label': 'Bet type' });
@@ -654,7 +666,7 @@ function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
           // (It's saved with the next ticket or race: a tap here doesn't write the whole meet. A daily double or
           // Pick 3 isn't: it's sold in one race a day, and the next race's slip would have to forget it.)
           if (game.player.settings && !MULTI[t]) game.player.settings.betType = t;
-          draw();
+          chose(true);
         },
       }, BET_NAMES[t]));
     }
@@ -684,7 +696,7 @@ function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
               // The same horse can't finish in two places.
               if (!on) st.picks.forEach((p, rr) => { if (rr !== r) st.picks[rr] = p.filter(x => x !== i); });
             }
-            draw();
+            chose();
           },
         }, h('span', {}, String(e.pp)))); // the number, on a patch of the cloth at full strength
       });
@@ -693,7 +705,7 @@ function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
     const amts = h('div', { class: 'seg amounts', role: 'group', 'aria-label': 'Amount' });
     for (const a of [0.5, 1, 2, 5, 10, 20, 50, 100]) {
       if (a < MIN[legType(st.type)]) continue;
-      amts.append(h('button', { type: 'button', 'aria-pressed': String(st.amt === a), data: { k: `amt:${a}` }, onclick: () => { st.amt = a; draw(); } }, stake(a)));
+      amts.append(h('button', { type: 'button', 'aria-pressed': String(st.amt === a), data: { k: `amt:${a}` }, onclick: () => { st.amt = a; chose(); } }, stake(a)));
     }
     builder.append(amts);
     const bet = currentBet(st, race);
@@ -711,9 +723,10 @@ function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
     const buy = h('button', {
       class: 'btn', type: 'button', 'aria-disabled': cant ? 'true' : null, data: { k: 'buy' },
       onclick: () => {
-        if (cant) return;
-        const res = placeBet(race, bet);
-        if (!res.ok) { msg.textContent = res.why; return; }
+        if (cant) { speak(open ? slipWords(race, st, bet) : 'Betting is closed.'); return; }
+        const res = quietBank(() => placeBet(race, bet));
+        if (!res.ok) { msg.textContent = res.why; speak(res.why); return; }
+        speak(boughtWords(race, bet));
         callAgain(race);
         audio.ticket();
         clearSlip(race);
@@ -758,6 +771,15 @@ function needs(st) {
   if (MULTI[st.type]) return 'Pick at least one horse in each race.';
   return 'Pick a horse.';
 }
+// What the slip comes to, in words for a screen reader: "$2 exacta 2-4: Anthem's Ledger, Mud Pie. You have
+// $198.00.", or what's still to pick, or that the ticket costs more than there is.
+function slipWords(race, st, bet, { type = false } = {}) {
+  if (!bet) return type ? `${HELP[st.type]} ${needs(st)}` : needs(st);
+  const c = betCost(bet), bank = game.player.bank;
+  const many = c > st.amt + 1e-9 ? `, ${money(c)} for ${Math.round(c / st.amt)} bets` : '';
+  return `${pickLine(race, bet)}${many}. ${c > bank + 1e-9 ? `That's more than the ${money(bank)} you have.` : `You have ${money(bank)}.`}`;
+}
+const boughtWords = (race, bet) => `Bought: ${pickLine(race, bet)}. You have ${money(game.player.bank)}.`;
 
 function toteBoard(race) {
   const b = currentBoard(race);
@@ -850,7 +872,7 @@ export function ticketLine(bet, numbers) {
   return h('div', { class: 'what' }, `${stake(bet.amt)} ${BET_NAMES[bet.type].toUpperCase()} `, h('span', { class: 'bit' }, picked));
 }
 
-function ticketList(race, open, changed) {
+function ticketList(race, open, changed, speak = () => {}) {
   const wrap = h('div', { class: 'tickets' });
   const bets = myBets(race);
   const settled = game.player.settled[raceKey(race)];
@@ -867,13 +889,13 @@ function ticketList(race, open, changed) {
         ticketLine(b, sel),
         h('div', { class: 'small' }, `LRK R${race.no} · ${sel.map(n => horseOf(race.entries.find(e => e.pp === n)).name).join(' / ')} · COST ${money(b.cost)}${boughtAt(race, b)}`),
       ),
-      back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : back === 0 ? h('span', { class: 'small torn' }, 'torn up') : open ? h('button', { type: 'button', data: { k: `cancel:${i}` }, onclick: () => { cancelBet(race, i); callAgain(race); changed(); } }, 'Cancel') : null,
+      back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : back === 0 ? h('span', { class: 'small torn' }, 'torn up') : open ? h('button', { type: 'button', data: { k: `cancel:${i}` }, onclick: () => { quietBank(() => cancelBet(race, i)); callAgain(race); changed(); speak(`Cancelled: ${pickLine(race, b)}. You have ${money(game.player.bank)}.`); } }, 'Cancel') : null,
     ));
   });
   // And a daily double or Pick 3 with this race in it: it can be cancelled in its first race, while that's
   // open, and from then on says where it stands.
   multiFor(race).forEach((t, k) => {
-    const cancel = open && t.legs[0] === race.no ? () => { cancelMulti(t); callAgain(race); changed(); } : null;
+    const cancel = open && t.legs[0] === race.no ? () => { quietBank(() => cancelMulti(t)); callAgain(race); changed(); speak(`Cancelled: ${pickLine(race, t)}. You have ${money(game.player.bank)}.`); } : null;
     wrap.append(multiTicket(t, { cancel, fresh: mine?.multi === t, key: `cancelm:${k}` }));
   });
   return wrap;

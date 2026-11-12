@@ -3648,6 +3648,28 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   await sr.locator('[data-k="type:exacta"]').click();
   for (const row of ['First', 'Second']) assert.ok(await sr.getByRole('group', { name: row }).getByRole('button', { name: /^1 / }).isVisible(), `no ${row} row`);
   assert.equal(await sr.locator('.pick-row .lbl[aria-hidden="true"]').count(), 2, 'the rows are named twice');
+  // One line, said and not shown, follows the slip: what's still to pick, what the ticket comes to, why it
+  // can't be bought, and that it was. The bankroll in the header doesn't say its new figure over it.
+  // (The same words twice running are taken away and put back a moment later, so they're said again.)
+  const said = async () => { await sr.waitForFunction(() => document.querySelector('#app > p.sr[role=status]').textContent); return sr.locator('#app > p.sr[role=status]').textContent(); };
+  await sr.getByRole('group', { name: 'First' }).getByRole('button', { name: /^1 / }).click();
+  assert.equal(await said(), 'Pick a first and a second.');
+  await sr.getByRole('group', { name: 'Second' }).getByRole('button', { name: /^2 / }).click();
+  assert.match(await said(), /^\$2 exacta 1-2: .+, .+\. You have \$200\.00\.$/);
+  await sr.locator('[data-k="amt:100"]').click();
+  await sr.locator('[data-k="type:exbox"]').click();
+  for (const k of [0, 1, 2]) await sr.locator(`[data-k="pick:0:${k}"]`).click();
+  assert.match(await said(), /^\$100 exacta box 1, 2, 3: .+, \$600\.00 for 6 bets\. That's more than the \$200\.00 you have\.$/);
+  await sr.focus('[data-k="buy"]');
+  await sr.keyboard.press('Enter');
+  assert.match(await said(), /^\$100 exacta box 1, 2, 3: .+ That's more than the \$200\.00 you have\.$/, 'Buy ticket said nothing about why it did nothing');
+  await sr.locator('[data-k="pick:0:2"]').click();
+  await sr.locator('[data-k="buy"]').click();
+  assert.match(await said(), /^Bought: \$100 exacta box 1, 2: .+\. You have \$0\.00\.$/);
+  assert.equal(await sr.locator('#bank').getAttribute('aria-live'), 'off', 'the header said the bankroll over the ticket bought');
+  await sr.waitForFunction(() => document.getElementById('bank').getAttribute('aria-live') === 'polite');
+  await sr.locator('[data-k="cancel:0"]').click();
+  assert.match(await said(), /^Cancelled: \$100 exacta box 1, 2: .+\. You have \$200\.00\.$/);
   await ctx12.close();
 }
 
