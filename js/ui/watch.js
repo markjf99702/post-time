@@ -358,7 +358,7 @@ export function renderWatch(el, nav, params) {
     const r = following === null ? null : runners[following];
     const says = official ? [''] : held ? ['You left this race before the result. Tap ▶ to watch it from the gate.', 'Tap ▶ to watch the race you left.'] : r ? [`Following #${r.number} ${r.name}. Tap again for the leaders.`, `Following #${r.number} ${r.name}.`] : [HINT, HINT_SHORT];
     hint.textContent = says[0];
-    if (low) for (const text of says) { hint.textContent = text; if (hint.scrollWidth <= hint.clientWidth) break; }
+    if (low) for (const text of says) { hint.textContent = text; if (hint.scrollWidth <= hint.clientWidth && hint.scrollHeight <= hint.clientHeight + 1) break; }
   }
 
   // The strip's buttons are made once, here, and kept for the race. It used to be emptied and built again

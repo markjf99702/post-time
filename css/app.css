@@ -608,7 +608,8 @@ a { color: var(--link); }
    and what they cost, and the line under the buttons is one line: the picture has the room. */
 .w-tix .count, .w-tix.sum .full { display: none; }
 .w-tix.sum .count { display: inline; }
-.watch.low .w-ctl .hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* There it sits beside Skip, which is 40 px tall, so two lines of it cost the picture nothing. */
+.watch.low .w-ctl .hint { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; max-height: 2.6em; }
 /* There the buttons are two rows (Pause and the longer Skip don't fit one): the rows are closer together, and
    the buttons and the tickets' line have less room round them, so the picture keeps nearly all it had with one
    row. (The buttons stay 40 px tall, to be tapped.) */

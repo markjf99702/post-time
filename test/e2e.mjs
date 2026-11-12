@@ -1783,7 +1783,8 @@ await page.waitForSelector('.races');
       const last = [...document.querySelectorAll('.order button')].pop(), hint = document.querySelector('.w-ctl .hint');
       const name = last.getAttribute('aria-label').replace(/^\d+: number (\d+), /, '#$1 ');
       last.click();
-      const oneLine = () => hint.getBoundingClientRect().height < 22 && hint.scrollWidth <= hint.clientWidth;
+      // (On the short screen the line sits beside Skip, and is no taller than it: two lines at most.)
+      const oneLine = () => hint.getBoundingClientRect().height <= 40 && hint.scrollWidth <= hint.clientWidth && hint.scrollHeight <= hint.clientHeight + 1;
       out.following = innerHeight > 700 ? hint.textContent === `Following ${name}. Tap again for the leaders.` : hint.textContent.startsWith(`Following ${name}.`) && oneLine();
       await frames(3);
       out.ring = getComputedStyle(document.querySelector('.order button.follow .cloth')).boxShadow.includes('245, 179, 61');
@@ -2015,7 +2016,7 @@ await page.waitForSelector('.races');
     assert.equal(short.map < 100, short.picture < 230, `${width} by ${height}: the map is ${short.map} px wide on a picture ${short.picture} px tall`);
     if (height < 700) {
       assert.match(short.tickets, /^Your tickets: 6, \$\d+\.00$/, `${width} by ${height}: the tickets line`);
-      assert.ok(short.lines[0] < 32 && short.lines[1] < 22 && !short.cut && short.hint === 'Tap a number to follow that horse.', `${width} by ${height}: the tickets line is ${short.lines[0]} px tall and the line under the buttons ${short.lines[1]}: ${short.hint}`);
+      assert.ok(short.lines[0] < 32 && short.lines[1] <= 40 && !short.cut && short.hint === 'Tap a number to follow that horse.', `${width} by ${height}: the tickets line is ${short.lines[0]} px tall and the line under the buttons ${short.lines[1]}: ${short.hint}`);
     } else assert.match(short.tickets, /^Your tickets: \$2 Win \d+ · \$2 Exacta \d+-\d+ · .* · \$100 Trifecta \d+-\d+-\d+$/, 'on a tall phone the tickets are listed');
     await card();
   }
