@@ -199,6 +199,60 @@ try {
     await ctx.close();
   }
 
+  // ---------------------------------------------------------------- earlier race days
+  {
+    const { ctx, page } = await freshMeet();
+    await runDay(page, [3]);
+    const ran = await page.evaluate(() => { const r = window.postTime.card().races[2]; return { day: r.day, winner: window.postTime.game.world.horses[r.entries[r.result.order[0].k].hid].name, time: r.result.time, pay: r.result.pay.win[r.result.order[0].k] }; });
+    await page.evaluate(async () => { const G = await import('./js/game.js'); G.advanceDay(); window.postTime.nav.go('card'); });
+    await page.reload();
+    await page.waitForSelector('.races');
+    // From the foot of the card: the race days kept, then the day's races, then a race's results.
+    await page.locator('.card-foot .btn', { hasText: 'Earlier race days' }).click();
+    await page.locator('.meet-row').first().click();
+    assert.equal(await page.locator('.race-row').count(), 8);
+    assert.match(await page.locator('.race-row').nth(2).textContent(), new RegExp(ran.winner));
+    await page.locator('.race-row').nth(2).click();
+    await page.waitForSelector('.official');
+    const result = await page.evaluate(() => ({
+      kicker: document.querySelector('.rhead .kicker').textContent, first: document.querySelector('.board tbody tr b').textContent,
+      buttons: [...document.querySelectorAll('.actions .btn')].map(b => b.textContent), cashed: document.querySelector('.summary .big')?.textContent,
+    }));
+    assert.match(result.kicker, /^\w{3} \d+, \d{4} · race day 1 · Race 3$/);
+    assert.equal(result.first, ran.winner);
+    assert.deepEqual(result.buttons, ['Watch again'], "an earlier race day's result offers what it can't show, or not Watch again");
+    assert.ok(result.cashed, 'what you cashed on it is not said');
+    // Watched again, it's the same race, and Results comes back to it.
+    await page.locator('.actions .btn', { hasText: 'Watch again' }).click();
+    await page.waitForFunction(() => window.__watch && window.__watch.endT > 0);
+    const again = await page.evaluate(() => window.__watch.run.results[0].time + 0);
+    assert.ok(Math.abs(again - ran.time) < 0.01, `watched again the race took ${again}, and ${ran.time} when it was run`);
+    await page.evaluate(() => window.__watch.leave('result'));
+    await page.waitForSelector('.official');
+    assert.match(await page.locator('.rhead .kicker').textContent(), /Race 3$/);
+    // The browser's Back goes to the card from there.
+    await page.goBack();
+    await page.waitForSelector('.races');
+    // A past performance's date opens its race's results, and so does a photo in the scrapbook.
+    const link = await page.evaluate(() => {
+      const { game, card } = window.postTime;
+      for (const race of card().races) for (const e of race.entries) if (game.world.horses[e.hid].pps.some(p => p.d === game.world.day - 1)) return { no: race.no, hid: e.hid, k: race.entries.indexOf(e) };
+      return null;
+    });
+    if (link) {
+      await page.evaluate(no => window.postTime.nav.go('race', { no }), link.no);
+      await page.locator('.entry-head').nth(link.k).click();
+      await page.locator('.entry').nth(link.k).locator('.pp-link').first().click();
+      await page.waitForSelector('.official');
+      assert.match(await page.locator('.rhead .kicker').textContent(), /race day 1 · Race \d$/);
+    }
+    await page.evaluate(() => { const rec = window.postTime.game.player.book[0]; window.postTime.nav.go('photo', { day: rec.day, no: rec.no }); });
+    await page.locator('.actions .btn', { hasText: 'The race' }).click();
+    await page.waitForSelector('.official');
+    assert.match(await page.locator('.rhead .kicker').textContent(), /Race 3$/);
+    await ctx.close();
+  }
+
   assert.deepEqual(problems, [], 'errors on the page');
   console.log('around: all checks passed');
 } finally {

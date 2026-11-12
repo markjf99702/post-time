@@ -7,7 +7,7 @@ import { photoFinish } from '../draw/photo.js';
 import { stateAt, runningOrder } from '../sim.js';
 import { FURLONG } from '../track.js';
 import { marginShort, marginText, fmtTime, fmtClock } from '../chart.js';
-import { game, save, goToGate, raceKey, markWatching, clearWatching, recordingOf, memoKey, callFor, runnersFor, raceLabel, horseOf, myBets, betCost, multiFor, multiState, multiNumbers } from '../game.js';
+import { game, save, raceAt, goToGate, raceKey, markWatching, clearWatching, recordingOf, memoKey, callFor, runnersFor, raceLabel, horseOf, myBets, betCost, multiFor, multiState, multiNumbers } from '../game.js';
 import { BET_NAMES } from '../tote.js';
 import { clockText } from '../world.js';
 import { pace, climb, officialLine, SLOW, SKIP_TO } from '../call.js';
@@ -49,7 +49,8 @@ export function callAsCalled(race) {
 }
 
 export function renderWatch(el, nav, params) {
-  const race = game.world.cards[game.world.day].races.find(r => r.no === params.no);
+  // (An earlier race day's race is watched again from what's kept of it: params.day.)
+  const race = raceAt(params.day, params.no);
   // The race as it will be run. Which voice calls it is decided here, before it's settled, so that the
   // one save a race makes as it goes to the gate keeps that too.
   const run = recordingOf(race);
@@ -628,7 +629,7 @@ export function renderWatch(el, nav, params) {
   }
   function leave(where) {
     teardown(where === 'result');
-    nav.go(where, { no: race.no, fresh: true });
+    nav.go(where, { no: race.no, fresh: true, ...(race.past ? { day: race.day } : {}) });
   }
 
   // The space bar is Pause, unless the keyboard is on another button (which it presses, as it always has).

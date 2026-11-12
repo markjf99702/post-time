@@ -2,7 +2,7 @@
 // and the winner's circle.
 
 import { h, money, cloth, clear } from './dom.js';
-import { game, card, raceKey, horseOf, nextRace, raceLabel, myBets, photoRecord, multiFor, multiState, MULTI } from '../game.js';
+import { game, card, raceKey, horseOf, nextRace, raceLabel, myBets, photoRecord, multiFor, multiState, MULTI, raceAt, earlierDays, meetOf } from '../game.js';
 import { ownerSilks, longDate, isHandicap, raceDayOf, meetDays } from '../world.js';
 import { JOCKEYS, TIPSTERS, TRAINERS, OWNERS, BIG_STAKES } from '../data.js';
 import { marginShort, fmtTime, fmtClock, ordinal } from '../chart.js';
@@ -13,8 +13,12 @@ import { atmLine, redraw } from './card.js';
 import { ticketLine, boughtAt, multiTicket, starButton } from './race.js';
 import { callAsCalled } from './watch.js';
 
+// `params.day` is there for an earlier race day's race (kept in js/world.js's pastRace): its results have the
+// order of finish, what paid, the call and Watch again, and what you bet and got back on it.
 export function renderResult(root, nav, params) {
-  const race = card().races.find(r => r.no === params.no);
+  const race = raceAt(params.day, params.no);
+  if (!race || race.status !== 'official') { nav.go('card'); return; }
+  const past = !!race.past;
   const res = race.result;
   const pay = res.pay;
   const nxt = nextRace();
@@ -25,10 +29,12 @@ export function renderResult(root, nav, params) {
   const win = res.order[0];
 
   const wrap = h('div', { class: 'official' });
+  const when = past ? meetOf(race.day) : null;
   root.append(
     h('div', { class: 'rhead' },
-      h('button', { class: 'back', type: 'button', onclick: () => nav.go('card') }, '‹ The card'),
-      h('div', {}, h('div', { class: 'kicker' }, `Race ${race.no} · Official`), h('h1', { class: 'title' }, raceLabel(race))),
+      past ? h('button', { class: 'back', type: 'button', onclick: () => nav.go('past', { day: race.day }) }, '‹ Earlier race days')
+        : h('button', { class: 'back', type: 'button', onclick: () => nav.go('card') }, '‹ The card'),
+      h('div', {}, h('div', { class: 'kicker' }, past ? `${shortLong(race.date, 3)}${when ? ` · race day ${when.raceDay}` : ''} · Race ${race.no}` : `Race ${race.no} · Official`), h('h1', { class: 'title' }, raceLabel(race))),
       h('div', { class: 'mtp' }, fmtTime(res.time), h('small', {}, 'time')),
       h('div', { class: 'cond' }, `${distanceName(race.distance)}, ${race.surface} (${race.cond}). Fractions ${res.fr.slice(0, -1).map(fmtTime).join(', ')}.`),
     ),
@@ -52,6 +58,12 @@ export function renderResult(root, nav, params) {
       // The race that left you without the price of a ticket says so, with the way to the ATM.
       nxt && nxt.no === race.no + 1 ? atmLine(() => redraw(nav), `That leaves you ${money(game.player.bank)}.`) : null,
     ));
+  }
+  // An earlier race day's tickets go when the race day after it is over; what they came to is in your record.
+  const line = past ? game.player.ledger.find(x => x.day === race.day && x.no === race.no) : null;
+  if (line && !((bets.length || multi.length) && settled)) {
+    wrap.append(h('div', { class: 'summary' }, h('div', {}, h('div', { class: 'kicker' }, line.back > line.spent ? 'You cashed' : 'Your tickets'),
+      h('div', { class: `big money ${line.back - line.spent >= 0 ? 'pos' : 'neg'}` }, money(line.back)), h('div', { class: 'muted' }, `on ${money(line.spent)} bet · ${money(line.back - line.spent, { sign: true })}`))));
   }
 
   // Order of finish.
@@ -89,7 +101,7 @@ export function renderResult(root, nav, params) {
   }
   // A weekly stakes is a prep for the Handicap on closing day: its first two are pointed to it.
   const w = game.world;
-  if (race.cls === 'STK' && !isHandicap(race) && w.meet && race.day >= w.meet.first && race.day < w.meet.last && res.order.length > 1) {
+  if (!past && race.cls === 'STK' && !isHandicap(race) && w.meet && race.day >= w.meet.first && race.day < w.meet.last && res.order.length > 1) {
     const [one, two] = res.order.slice(0, 2).map(o => horseOf(race.entries[o.k]).name);
     const left = meetDays(w) - raceDayOf(w, race.day);
     wrap.append(h('p', { class: 'pointed' }, `${one} and ${two} are pointed to the ${BIG_STAKES.name} on closing day, ${left === 1 ? 'next Saturday' : `race day ${meetDays(w)}`}.`));
@@ -110,7 +122,7 @@ export function renderResult(root, nav, params) {
       pay.trifecta ? h('tr', {}, h('td', {}, `$1 trifecta ${pay.trifecta.sel.map(k => race.entries[k].pp).join('-')}`), h('td', { class: 'r money', colspan: 3 }, money(pay.trifecta.pay))) : null,
       // The daily double and the Pick 3 that end in this race: the winners of their races, by number.
       ...Object.entries(res.multi || {}).map(([type, m]) => {
-        const legs = m.sel.map((k, j) => card().races.find(r => r.no === race.no - m.sel.length + 1 + j));
+        const legs = m.sel.map((k, j) => raceAt(race.day, race.no - m.sel.length + 1 + j));
         if (!MULTI[type] || legs.some(r => !r)) return null;
         return h('tr', {}, h('td', {}, `$1 ${type === 'dd' ? 'daily double' : 'Pick 3'} ${m.sel.map((k, j) => legs[j].entries[k].pp).join('-')}`), h('td', { class: 'r money', colspan: 3 }, money(m.pay)));
       }),
@@ -133,15 +145,24 @@ export function renderResult(root, nav, params) {
     wrap.append(fb);
   }
 
+  const at = past ? { no: race.no, day: race.day } : { no: race.no };
   root.append(h('div', { class: 'actions' },
-    h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('circle', { no: race.no }) }, "Winner's circle ▸"),
+    past ? null : h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('circle', { no: race.no }) }, "Winner's circle ▸"),
     // Only a race run the way races are run now can be watched again: one run before that would be worked
     // out again another way, and could show another horse winning. (A save carries the day's earlier races
     // over a change to the racing.)
-    res.eng === ENGINE ? h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('watch', { no: race.no }) }, 'Watch again') : null,
-    // The race's form, paddock and forum as they were before it, to read the result against.
-    h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('race', { no: race.no, tab: 'form' }) }, 'The form'),
+    res.eng === ENGINE ? h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('watch', at) }, 'Watch again') : null,
+    // The race's form, paddock and forum as they were before it, to read the result against. (Not kept for an
+    // earlier race day.)
+    past ? null : h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('race', { no: race.no, tab: 'form' }) }, 'The form'),
   ));
+  if (past) {
+    root.append(h('div', { class: 'post-bar' },
+      h('div', { class: 'info' }, line ? (line.back > 0 ? ['You cashed ', h('b', { class: 'money' }, money(line.back))] : 'No luck this time') : h('span', { class: 'muted' }, 'No tickets')),
+      h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('card') }, "Today's card ▸"),
+    ));
+    return;
+  }
   // The way on is in a bar at the bottom of the screen, where a race's page has To the gate: what the race
   // did for you on the left, and the next race (the card, after the last one) as the button. (It was the
   // third button of the row above, at the end of the page: 1,700 px down a phone's 664 after an ordinary
@@ -159,6 +180,50 @@ export function renderResult(root, nav, params) {
           : multi.length ? 'No luck this time' : h('span', { class: 'muted' }, 'No tickets')),
     nxt ? h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('race', { no: nxt.no }) }, `Race ${nxt.no} ▸`) : h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('card') }, 'The card ▸'),
   ));
+}
+
+// Earlier race days: the race days kept (this meet's and the last meet's), the newest first, and with
+// `params.day` that day's races, each opening its results.
+export function renderPast(root, nav, params = {}) {
+  const days = earlierDays();
+  const day = params.day !== undefined ? days.find(d => d.day === params.day) : null;
+  const net = d => game.player.ledger.filter(x => x.day === d).reduce((s, x) => s + x.back - x.spent, 0);
+  const bet = d => game.player.ledger.some(x => x.day === d);
+  const label = d => { const m = meetOf(d); return m ? `Meet ${m.no}, race day ${m.raceDay}` : 'Race day'; };
+  if (!day) {
+    root.append(
+      h('div', { class: 'rhead' },
+        h('button', { class: 'back', type: 'button', onclick: () => nav.go('card') }, '‹ The card'),
+        h('div', {}, h('div', { class: 'kicker' }, 'Results'), h('h1', { class: 'title' }, 'Earlier race days')),
+      ),
+      days.length ? h('div', { class: 'meets' }, days.map(d => h('button', { class: 'meet-row', type: 'button', onclick: () => nav.go('past', { day: d.day }) },
+        h('b', {}, label(d.day)), h('span', { class: 'muted' }, shortLong(d.date)),
+        bet(d.day) ? h('span', { class: `money ${net(d.day) >= 0 ? 'pos' : 'neg'}` }, money(net(d.day), { sign: true })) : h('span', {}),
+        h('span', { class: 'go', 'aria-hidden': 'true' }, '▸'),
+      ))) : h('p', { class: 'pad muted' }, 'Once a race day is over its results are kept here, this meet\'s and the last meet\'s.'),
+      days.length ? h('p', { class: 'pad muted' }, 'The results of this meet\'s race days and the last meet\'s are kept, each race to look at and watch again.') : '',
+    );
+    return;
+  }
+  root.append(
+    h('div', { class: 'rhead' },
+      h('button', { class: 'back', type: 'button', onclick: () => nav.go('past') }, '‹ Earlier race days'),
+      h('div', {}, h('div', { class: 'kicker' }, label(day.day)), h('h1', { class: 'title' }, longDate(day.date))),
+    ),
+    h('ol', { class: 'races' }, day.races.map(s => {
+      const race = raceAt(day.day, s.no), win = race.result.order[0].k, e = race.entries[win];
+      const line = game.player.ledger.find(x => x.day === day.day && x.no === s.no);
+      return h('li', {}, h('button', { class: 'race-row done', type: 'button', onclick: () => nav.go('result', { day: day.day, no: s.no }) },
+        h('div', { class: 'no' }, h('small', {}, 'Race'), String(s.no)),
+        h('div', { class: 'what' }, raceLabel(race)),
+        h('div', { class: 'state' },
+          h('div', { class: 'result' }, cloth(e.pp, 'sm'), ' ', horseOf(e).name),
+          h('div', { class: 'money muted' }, `Paid ${money(race.result.pay.win[win])}`),
+          line ? h('div', { class: `money ${line.back - line.spent >= 0 ? 'pos' : 'neg'}` }, money(line.back - line.spent, { sign: true })) : null),
+        h('div', { class: 'sub' }, `${distanceName(race.distance)}${race.surface === 'turf' ? ' on the turf' : ''} · ${race.entries.length} horses`),
+      ));
+    })),
+  );
 }
 
 export function renderCircle(root, nav, params) {

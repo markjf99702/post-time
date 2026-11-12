@@ -1,7 +1,7 @@
 // The race card: today's date and weather, the eight races, and what happened in the ones already run.
 
 import { h, money, cloth, jdFoot, dotted } from './dom.js';
-import { game, card, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay, multiFor, starredIn, dayRecap } from '../game.js';
+import { game, card, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay, multiFor, starredIn, dayRecap, earlierDays } from '../game.js';
 import { longDate, clockText, raceDayOf, meetDays, isClosingDay, isHandicap } from '../world.js';
 import { BIG_STAKES, TIPSTERS } from '../data.js';
 import { distanceName } from '../track.js';
@@ -82,6 +82,8 @@ export function renderCard(root, nav) {
       nextDayButton(nav, closing),
     );
   }
+  // The results of earlier race days.
+  if (earlierDays().length) foot.append(h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('past') }, 'Earlier race days ▸'));
   root.append(foot, jdFoot());
 }
 

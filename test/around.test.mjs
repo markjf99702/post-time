@@ -176,3 +176,37 @@ test('a race looked at again after it is run has its form as it stood before: fi
   }
   assert.equal(checked, 8);
 });
+
+test("earlier race days are kept, this meet's and the last meet's, and each race comes back as it was: its result, its odds and its running", () => {
+  buildOn('past-1');
+  save(); load();
+  const seen = new Map(); // what each race was, as it was run
+  for (let d = 0; d < 22; d++) {
+    playDay(race => { if (race.no === 6) placeBet(race, { type: 'p3', sel: [[0, 1], [0], [0, 2]], amt: 1 }); });
+    for (const race of card().races) seen.set(`${race.day}:${race.no}`, JSON.stringify({ result: race.result, entries: race.entries.map(e => [e.hid, e.pp, e.j, e.wt, e.rating]), name: race.name, cls: race.cls }));
+    advanceDay();
+    save(); load();
+  }
+  const days = G.earlierDays().map(d => d.day);
+  const m = game.world.meet, last = game.world.meets[game.world.meets.length - 1];
+  assert.equal(m.no, 3);
+  assert.deepEqual(days, Array.from({ length: game.world.day - last.first }, (_, k) => game.world.day - 1 - k), "the days kept aren't this meet's and the last meet's, newest first");
+  for (const day of [days[0], days[days.length - 1]]) {
+    for (let no = 1; no <= 8; no++) {
+      const race = G.raceAt(day, no);
+      const was = JSON.parse(seen.get(`${day}:${no}`));
+      // Its result as it was made official, the odds as the board put them, and the pools the double and Pick 3 paid.
+      assert.deepEqual(race.result.order, was.result.order, `day ${day} race ${no}: the order of finish`);
+      assert.deepEqual(race.result.oddsText, was.result.oddsText, `day ${day} race ${no}: the odds`);
+      assert.deepEqual(race.result.pay, was.result.pay);
+      assert.deepEqual(race.result.multi, was.result.multi);
+      assert.deepEqual([race.name, race.cls], [was.name, was.cls]);
+      // And run again it's the same race, to the hundredth.
+      const run = W.simulateRace(race, game.world, { record: true }); // (as the page runs a race to be watched)
+      assert.deepEqual(run.results.map(r => [r.h, +r.time.toFixed(2)]), was.result.order.map(o => [o.k, o.time]), `day ${day} race ${no} runs another way when it's watched again`);
+    }
+  }
+  assert.equal(G.raceAt(last.first - 1, 1), null, 'a race day from two meets back is still kept');
+  // The same object each time it's asked for, so what's worked out from it is kept with it.
+  assert.equal(G.raceAt(days[0], 3), G.raceAt(days[0], 3));
+});

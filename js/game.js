@@ -2,7 +2,7 @@
 // localStorage. A race is settled the moment you send the horses to the gate, so closing the page
 // halfway through a race doesn't change what happened.
 
-import { earnedIn, buildWorld, simulateRace, makeOfficial, forumThread, nextDay as worldNextDay, ownerSilks, fieldSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats, ensureMeet, isClosingDay } from './world.js';
+import { earnedIn, pastRace, pastDays, buildWorld, simulateRace, makeOfficial, forumThread, nextDay as worldNextDay, ownerSilks, fieldSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats, ensureMeet, isClosingDay } from './world.js';
 import { makeTote, board, settle, ticketReturn, cost as betCost, legs, MULTI, firstLeg, multiSettle, multiClose, willPays as multiWillPays, wouldPayMulti } from './tote.js';
 import { reactions } from './forum.js';
 import { oddsText, lineText } from './handicap.js';
@@ -287,6 +287,19 @@ export function newMeet(seed = Math.random().toString(36).slice(2, 10)) {
 }
 
 export const card = () => game.world.cards[game.world.day];
+// A race by its race day and number: today's from the card, an earlier race day's from what's kept of it
+// (pastRace in js/world.js), or null. With no day, today's.
+export function raceAt(day, no) {
+  if (day === undefined || day === null || day === game.world.day) return card().races.find(r => r.no === no) || null;
+  return pastRace(game.world, day, no);
+}
+export const earlierDays = () => pastDays(game.world);
+// The meet a race day was in, and which race day of it: { no, raceDay }. (Meet 1 of a save from before meets
+// ended counts from its first race day.)
+export function meetOf(day) {
+  const w = game.world, m = [w.meet, ...(w.meets || [])].find(x => x && day >= x.first && day <= x.last);
+  return m ? { no: m.no, raceDay: day - m.first + 1 } : null;
+}
 export const raceKey = race => `${race.day}:${race.no}`;
 export const horseOf = e => game.world.horses[e.hid];
 export const nextRace = () => card().races.find(r => r.status !== 'official') || null;

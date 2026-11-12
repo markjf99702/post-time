@@ -370,6 +370,8 @@ a { color: var(--link); }
 /* A run race's own line, at the head of the horse's past performances, looked back at from its results. */
 .pps tr.today td { background: rgba(184,137,45,.13); }
 .pps tr.today td:first-child { box-shadow: inset 3px 0 0 var(--brass); }
+/* A date in the past performances, or a stakes on the meet's page, that opens the race's results. */
+.pp-link { background: none; border: 0; padding: 0; font: inherit; color: var(--link); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; text-align: left; }
 .today-tag { font: 600 11px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; }
 /* The table is as wide as its card and no wider. The line of comment under each row wraps at the table's width
    and has no say in it (its box asks for no width and then takes all there is). If the row above it still

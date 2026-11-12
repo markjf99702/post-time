@@ -1,7 +1,7 @@
 // Your scrapbook of winner's circle photos, your record at the windows, and how to play.
 
 import { h, money, jdFoot } from './dom.js';
-import { game, START_BANK, notSaved, yourMeet, advanceDay, yourWeeks, yourKinds } from '../game.js';
+import { game, START_BANK, notSaved, yourMeet, advanceDay, yourWeeks, yourKinds, raceAt } from '../game.js';
 import { TIPSTERS, JOCKEYS, TRAINERS, BIG_STAKES } from '../data.js';
 import { longDate, dayDate, dateISO, meetRecord, isClosingDay, MEET_DAYS } from '../world.js';
 import { oddsText } from '../handicap.js';
@@ -94,6 +94,8 @@ export function renderPhoto(root, nav, params = {}) {
       h('div', {}, h('div', { class: 'kicker' }, `${shortDay(rec.date)} · Race ${rec.no}`), h('h1', { class: 'title' }, rec.horse.name)),
     ),
     h('div', { class: 'pad' }, photoCard(rec, true)),
+    // Its race's results, while they're kept.
+    raceAt(rec.day, rec.no)?.status === 'official' ? h('div', { class: 'actions' }, h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('result', { day: rec.day, no: rec.no }) }, 'The race ▸')) : '',
   );
 }
 
@@ -157,7 +159,10 @@ export function renderMeet(root, nav, params = {}) {
   if (r.stakes.length) {
     root.append(h('div', { class: 'pad' }, h('div', { class: 'board' }, h('h3', {}, over ? 'The stakes winners' : 'The stakes so far'), h('table', {},
       h('thead', {}, h('tr', {}, h('th', {}, 'Race day'), h('th', {}, 'Stakes'), h('th', {}, 'Winner'))),
-      h('tbody', {}, r.stakes.map(s => h('tr', { class: s.name === BIG_STAKES.name ? 'big' : '' }, h('td', { class: 'money' }, String(s.day - r.first + 1)), h('td', {}, s.name), h('td', {}, h('b', {}, s.horse))))),
+      // (Each opens its results while they're kept.)
+      h('tbody', {}, r.stakes.map(s => h('tr', { class: s.name === BIG_STAKES.name ? 'big' : '' }, h('td', { class: 'money' }, String(s.day - r.first + 1)),
+        h('td', {}, s.no && raceAt(s.day, s.no)?.status === 'official' ? h('button', { class: 'pp-link', type: 'button', onclick: () => nav.go('result', { day: s.day, no: s.no }) }, s.name) : s.name),
+        h('td', {}, h('b', {}, s.horse))))),
     ))));
   }
   const y = r.you;

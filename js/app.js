@@ -1,11 +1,11 @@
 // Post Time: a day at the races. This file starts things up and moves between screens.
 
 import { h, clear, money } from './ui/dom.js';
-import { game, load, save, notSaved, newMeet, card, nextRace, adopt, whereIs, leftWatching } from './game.js';
+import { game, load, save, notSaved, newMeet, card, nextRace, adopt, whereIs, leftWatching, raceAt } from './game.js';
 import { renderCard, upNextInView } from './ui/card.js';
 import { renderRace } from './ui/race.js';
 import { renderWatch, rehearse } from './ui/watch.js';
-import { renderResult, renderCircle } from './ui/results.js';
+import { renderResult, renderCircle, renderPast } from './ui/results.js';
 import { renderBook, renderHelp, renderMeet, renderPhoto } from './ui/book.js';
 import { SAMPLE, pace } from './call.js';
 import * as audio from './audio.js';
@@ -35,7 +35,7 @@ const upNow = () => { const r = nextRace(); return `${game.world.seed}:${game.wo
 
 const nav = {
   go(screen, params = {}) {
-    if (waiting && (screen === 'book' || screen === 'meet' || screen === 'photo')) { closeMenu(); return; }
+    if (waiting && (screen === 'book' || screen === 'meet' || screen === 'photo' || screen === 'past')) { closeMenu(); return; }
     if (cleanup) { cleanup(); cleanup = null; }
     const from = view.screen;
     if (from === 'card' && screen !== 'card' && !waiting) cardLeft = { y: window.scrollY, up: upNow() };
@@ -94,8 +94,11 @@ window.addEventListener('popstate', e => {
     // A meet's closing page (one that has closed), or this meet's page so far.
     const meet = !waiting && screen === 'meet' && (s.params?.no ? (game.world.meets || []).some(m => m.no === s.params.no) : true);
     const photo = !waiting && screen === 'photo' && game.player.book.some(r => r.day === s.params?.day && r.no === s.params?.no);
+    // An earlier race day's results, and the list of them, are there whichever race day it is now.
+    const earlier = !waiting && s.meet === game.world.seed && s.params?.day !== undefined && s.params.day !== game.world.day;
+    if (earlier && (screen === 'result' || screen === 'past')) { nav.go(raceAt(s.params.day, s.params.no) || screen === 'past' ? screen : 'card', s.params); return; }
     const ok = waiting ? screen === 'help'
-      : screen === 'book' || screen === 'help' || meet || photo || (screen === 'race' && !!race) || ((screen === 'result' || screen === 'circle') && race?.status === 'official');
+      : screen === 'book' || screen === 'help' || screen === 'past' || meet || photo || (screen === 'race' && !!race) || ((screen === 'result' || screen === 'circle') && race?.status === 'official');
     nav.go(ok ? screen : 'card', ok ? s.params : {});
     return;
   }
@@ -103,7 +106,7 @@ window.addEventListener('popstate', e => {
   above = false;
   // (An earlier meet's closing page was opened from the scrapbook, and goes back there.)
   const up = !waiting && (view.screen === 'meet' && view.params.no ? 'book' : UP[view.screen]);
-  nav.go(up || 'card', up === 'book' ? { back: view.screen === 'photo' } : up ? { no: view.params.no } : {});
+  nav.go(up || 'card', up === 'book' ? { back: view.screen === 'photo' } : up ? { no: view.params.no, day: view.params.day } : {});
 });
 
 // A reload keeps the history entry it happened on, which may be a screen's. The game opens on the card,
@@ -125,6 +128,7 @@ function render() {
   if (screen === 'card') renderCard(app, nav);
   else if (screen === 'race') cleanup = renderRace(app, nav, params);
   else if (screen === 'result') renderResult(app, nav, params);
+  else if (screen === 'past') renderPast(app, nav, params);
   else if (screen === 'circle') renderCircle(app, nav, params);
   else if (screen === 'book') renderBook(app, nav, params);
   else if (screen === 'photo') renderPhoto(app, nav, params);

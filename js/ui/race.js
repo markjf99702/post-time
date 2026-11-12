@@ -1,7 +1,7 @@
 // A race before it runs: the past performances, the paddock, the forum and the betting window.
 
 import { h, money, stake, cloth, silksCanvas, clear, ago, plural, dotted } from './dom.js';
-import { game, card, silksFor, isStarred, toggleStar, cashedOn, formBefore, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor, toteFor, MULTI, multiStarting, legRaces, multiFor, multiState, cancelMulti, willPaysFor, multiWouldPay, multiNumbers } from '../game.js';
+import { game, card, silksFor, isStarred, toggleStar, cashedOn, formBefore, raceAt, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor, toteFor, MULTI, multiStarting, legRaces, multiFor, multiState, cancelMulti, willPaysFor, multiWouldPay, multiNumbers } from '../game.js';
 import { ageOf, shortDate, clockText, CLASSES, meetStats, isHandicap, prepsOf } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
 import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES, CLOTH } from '../data.js';
@@ -79,7 +79,7 @@ export function renderRace(root, nav, params) {
     if (stopPanel) { stopPanel(); stopPanel = null; }
     drawTabs();
     clear(panel);
-    if (which === 'form') formPanel(panel, race, isNext ? betOn : null);
+    if (which === 'form') formPanel(panel, race, isNext ? betOn : null, nav);
     if (which === 'paddock') stopPanel = paddockPanel(panel, race);
     if (which === 'forum') forumPanel(panel, race);
     if (which === 'bet') betPanel(panel, race, { changed: () => show('bet'), picked: refreshBar, open: isNext });
@@ -200,16 +200,16 @@ export function conditions(race) {
 
 // ------------------------------------------------------------------ form
 
-function formPanel(panel, race, betOn) {
+function formPanel(panel, race, betOn, nav) {
   const stats = meetStats(game.world);
   const board = currentBoard(race);
   panel.append(h('p', { class: 'note' }, race.status === 'official'
     ? 'The form as it stood before the race: the figures, running styles and records leave this race out. Tap a horse for its past performances, with its line from this race marked.'
     : 'Tap a horse for its past performances. Figures are speed figures: higher is faster, adjusted for distance and going.'));
-  race.entries.forEach((e, i) => panel.append(entryCard(race, e, i, stats, board, betOn)));
+  race.entries.forEach((e, i) => panel.append(entryCard(race, e, i, stats, board, betOn, nav)));
 }
 
-function entryCard(race, e, i, stats, board, betOn) {
+function entryCard(race, e, i, stats, board, betOn, nav) {
   // Once the race is run, the horse as the form showed it before the race, and its line from the race.
   const { hs, today, rider: js, trainer: ts } = formBefore(race, e, stats);
   const { trainer } = ranFor(e); // a horse claimed out of this race ran it for the people who entered it
@@ -225,7 +225,7 @@ function entryCard(race, e, i, stats, board, betOn) {
   // another tab, and from another screen.
   const opened = openedIn(race);
   const more = h('div', { class: 'entry-more', hidden: !opened.has(e.hid) });
-  if (!more.hidden) fillMore(more, race, e, hs, betOn && (() => betOn(i)), today);
+  if (!more.hidden) fillMore(more, race, e, hs, betOn && (() => betOn(i)), today, nav);
   const head = h('button', { class: 'entry-head', type: 'button', 'aria-expanded': String(!more.hidden) },
     cloth(e.pp, 'lg'),
     silksCanvas(silks, 30),
@@ -238,7 +238,7 @@ function entryCard(race, e, i, stats, board, betOn) {
     more.hidden = !open;
     head.setAttribute('aria-expanded', String(open));
     if (open) opened.add(e.hid); else opened.delete(e.hid);
-    if (open && !more.firstChild) fillMore(more, race, e, hs, betOn && (() => betOn(i)), today);
+    if (open && !more.firstChild) fillMore(more, race, e, hs, betOn && (() => betOn(i)), today, nav);
   });
   // A horse you cashed on when it won says so, from your winner's circle photos.
   const cashed = cashedOn(e.hid, race);
@@ -280,7 +280,8 @@ function styleName(s) {
 // it on the betting slip. (The form couldn't hand the window a horse: it was read about on one tab and found
 // by its number among numbers on another.) `today` is the race's own line, once it's run: it heads the table,
 // marked.
-function fillMore(more, race, e, hs, bet, today = null) {
+// A line from a race whose results are kept (today's, or an earlier race day's) opens them from its date.
+function fillMore(more, race, e, hs, bet, today = null, nav = null) {
   const age = ageOf(game.world, hs);
   const sireLink = name => IN_BLOODLINES.has(name)
     ? h('a', { href: `https://junkdrawer.works/bloodlines/#${encodeURIComponent(name)}`, target: '_blank', rel: 'noopener' }, name)
@@ -307,7 +308,7 @@ function fillMore(more, race, e, hs, bet, today = null) {
       const mark = p === today;
       tb.append(
         h('tr', { class: mark ? 'today' : null },
-          h('td', {}, mark ? h('b', { class: 'today-tag' }, 'This race') : shortDate(p.dt), h('br'), h('span', { class: 'muted' }, mark ? shortDate(p.dt) : `Lrk ${COND[p.cond] || p.cond}`)),
+          h('td', {}, mark ? h('b', { class: 'today-tag' }, 'This race') : chartLink(p, nav), h('br'), h('span', { class: 'muted' }, mark ? shortDate(p.dt) : `Lrk ${COND[p.cond] || p.cond}`)),
           h('td', {}, `${distanceShort(p.f * FURLONG)}${p.surf === 't' ? ' ⓣ' : ''}`, h('br'), h('span', { class: 'muted' }, `${p.fs} ran`)),
           h('td', {}, p.nm ? shortStakes(p.nm) : (p.fm ? 'f-' : '') + shortClass(p.cls)),
           h('td', { class: 'f' }, String(p.fig)),
@@ -343,6 +344,12 @@ function fillMore(more, race, e, hs, bet, today = null) {
     ])));
   }
   if (bet) more.append(h('div', { class: 'bet-on' }, h('button', { class: 'btn ghost', type: 'button', onclick: bet, 'aria-label': `Bet on ${e.pp} ${hs.name}` }, `Bet on ${e.pp} ▸`)));
+}
+
+function chartLink(p, nav) {
+  const kept = nav && raceAt(p.d, p.no);
+  if (!kept || kept.status !== 'official') return shortDate(p.dt);
+  return h('button', { class: 'pp-link', type: 'button', 'aria-label': `${shortDate(p.dt)}: the results of that race`, onclick: () => nav.go('result', { day: p.d, no: p.no }) }, shortDate(p.dt));
 }
 
 function supCall([pos, margin]) {

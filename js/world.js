@@ -7,7 +7,7 @@ import { runRace, figureFor, ENGINE } from './sim.js';
 import { coursePath, FURLONG } from './track.js';
 import { runningLine, tripComment } from './chart.js';
 import { SIRES, DAMSIRES, JOCKEYS, TRAINERS, OWNERS, SILK_COLORS, PATTERNS, STAKES, BIG_STAKES, makeName, damName } from './data.js';
-import { morningLine, formRating } from './handicap.js';
+import { morningLine, formRating, oddsText } from './handicap.js';
 import { forumPosts, scoreTipsters, favouriteAtTheOff } from './forum.js';
 import { makeTote, board, settle } from './tote.js';
 
@@ -190,6 +190,7 @@ export function* buildWorld(seed, start) {
 
 export function nextDay(world) {
   endOfDay(world, world.day);
+  keepDay(world, world.day);
   // Closing day is over: the meet goes down in the record, and the next one opens next Saturday with the
   // same horses.
   if (world.meet && world.day >= world.meet.last) {
@@ -197,10 +198,60 @@ export function nextDay(world) {
     world.meet = newMeetOn(world.meet.no + 1, world.day + 1);
     world.meet.tips = structuredClone(world.tipsters || {});
   }
+  // Earlier race days are kept from the first race day of the meet before this one.
+  const before = world.meets?.length ? world.meets[world.meets.length - 1].first : -Infinity;
+  if (Array.isArray(world.past)) world.past = world.past.filter(d => d.day >= before);
   world.day += 1;
   world.cards = { [world.day]: buildCard(world, world.day) };
   delete world._names; // a Set doesn't survive being saved
 }
+
+// ------------------------------------------------------------------ earlier race days
+
+// world.past: a slim record of each race of the race days already run, this meet's and the last meet's, so their
+// results can be looked at again and their races watched again. [{ day, date, races }], and each race is what
+// its card and its result had, less what a result page doesn't show: { no, cls, claim, name, f, surface, cond,
+// purse, fm, e: [[horse id, number, rider, weight, rating, owner, trainer] for each runner], o: [[entry,
+// position, lengths behind, to the one ahead, time] in the order of finish], fr, time, eng, odds, pay, multi }.
+// The rating and the race's seed (worked out from the meet's) are what the race is run from again; the owner
+// and the trainer are the ones it ran for. About 4 KB a race day.
+function keepDay(world, day) {
+  const c = world.cards[day];
+  if (!c || !c.races.every(r => r.status === 'official' && r.result)) return;
+  const races = c.races.map(r => {
+    const res = r.result;
+    return {
+      no: r.no, cls: r.cls, claim: r.claim, name: r.name, f: r.f, surface: r.surface, cond: r.cond, purse: r.purse, ...(r.fm ? { fm: true } : {}),
+      e: r.entries.map(e => { const ran = e.ran || world.horses[e.hid]; return [e.hid, e.pp, e.j, e.wt, e.rating, ran.owner, ran.trainer]; }),
+      o: res.order.map(o => [o.k, o.pos, o.behind, o.toPrev, o.time]),
+      fr: res.fr, time: res.time, eng: res.eng, odds: res.odds, pay: res.pay, ...(res.multi ? { multi: res.multi } : {}),
+    };
+  });
+  (Array.isArray(world.past) ? world.past : (world.past = [])).push({ day, date: c.date, races });
+}
+
+// An earlier race day's race as a race: the shape the card's races have, made official. The same object each
+// time it's asked for (what's worked out from a race is kept by it), or null if it isn't kept.
+const madeAgain = new WeakMap();
+export function pastRace(world, day, no) {
+  const d = (world.past || []).find(x => x.day === day);
+  const s = d && d.races.find(r => r.no === no);
+  if (!s) return null;
+  if (madeAgain.has(s)) return madeAgain.get(s);
+  const race = {
+    no: s.no, day, date: d.date, cls: s.cls, surface: s.surface, f: s.f, distance: s.f * FURLONG, cond: s.cond, claim: s.claim, purse: s.purse,
+    name: s.name, fm: !!s.fm, post: postTime(s.no), seed: `${world.seed}:${day}:${s.no}`, status: 'official', past: true,
+    entries: s.e.map(([hid, pp, j, wt, rating, owner, trainer]) => ({ hid, pp, j, wt, rating, ran: { owner, trainer } })),
+    result: {
+      order: s.o.map(([k, pos, behind, toPrev, time]) => ({ k, pos, behind, toPrev, time })), fr: s.fr, time: s.time, eng: s.eng,
+      odds: s.odds, oddsText: s.odds.map(oddsText), pay: s.pay, ...(s.multi ? { multi: s.multi } : {}),
+    },
+  };
+  madeAgain.set(s, race);
+  return race;
+}
+// The earlier race days kept, the newest first.
+export const pastDays = world => (world.past || []).slice().reverse();
 
 // ------------------------------------------------------------------ the meet
 
@@ -332,7 +383,7 @@ export function meetRecord(world) {
     horse: horse && { ...horse, name: nameOf(horse.hid) },
     champ: tips,
     long: T.long && { ...T.long, name: nameOf(T.long.hid) },
-    stakes: T.stk.map(s => ({ day: s.day, name: s.name, hid: s.top[0], horse: nameOf(s.top[0]) })),
+    stakes: T.stk.map(s => ({ day: s.day, no: s.no, name: s.name, hid: s.top[0], horse: nameOf(s.top[0]) })),
     handicap: handicap && { hid: handicap.top[0], horse: nameOf(handicap.top[0]) },
   };
 }
