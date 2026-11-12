@@ -767,6 +767,13 @@ a { color: var(--link); }
 .meet-big { border: 2px solid var(--brass); border-radius: 10px; padding: 12px 14px; background: var(--card); box-shadow: 0 0 0 3px rgba(184,137,45,.25); }
 .meet-big b { display: block; font: 600 26px/1.15 var(--display); margin-top: 4px; }
 .board tr.big td:first-child { box-shadow: inset 4px 0 0 var(--brass); }
+/* The meet so far: the leading riders, trainers and horses, and your own meet. */
+.board .more { padding: 8px 12px 10px; }
+.show-all { min-height: 40px; padding: 8px 14px; font-size: 14px; }
+.horse-leaders { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 12px; }
+.board table.yours td:first-child { white-space: nowrap; }
+.board tr.total td { font-weight: 600; border-top: 2px solid var(--line); }
+.board-note { margin: 0; padding: 8px 12px 10px; font-size: 13.5px; color: var(--muted); }
 .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; padding: 12px; }
 .stat { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 .stat b { display: block; font: 600 24px/1.1 var(--display); }

@@ -400,7 +400,7 @@ export function goToGate(race) {
   const back = returns.reduce((s, r) => s + r, 0) + ending.reduce((s, t) => s + t.back, 0);
   game.player.bank = round2(game.player.bank + back);
   game.player.settled[raceKey(race)] = { returns, spent, back };
-  if (bets.length || ending.length) game.player.ledger.push({ day: race.day, no: race.no, spent, back, best: Math.max(0, ...returns, ...ending.map(t => t.back)) });
+  if (bets.length || ending.length) game.player.ledger.push({ day: race.day, no: race.no, spent, back, best: Math.max(0, ...returns, ...ending.map(t => t.back)), by: byKind(bets, returns, ending) });
   // The winner's circle photo goes in your scrapbook if you backed the winner.
   const winIdx = order[0];
   const cashedWinner = bets.some((b, i) => returns[i] > 0 && (b.type === 'exbox' || b.type === 'tribox' || b.sel[0] === winIdx)) || ending.some(t => t.back > 0);
@@ -411,6 +411,47 @@ export function goToGate(race) {
   }
   save();
   return { run, pay, returns, spent, back, cashedWinner };
+}
+
+// A line of your record says what was bet and got back on each kind of bet: { win: [spent, back], exbox: [...],
+// dd: [...] }, by the kinds the window sells. (A line written before this has none: the record by kind of bet
+// says which race day it runs from.)
+function byKind(bets, returns, ending) {
+  const by = {};
+  const add = (type, spent, back) => { const r = by[type] || (by[type] = [0, 0]); r[0] = round2(r[0] + spent); r[1] = round2(r[1] + back); };
+  bets.forEach((b, i) => add(b.type, b.cost, returns[i]));
+  for (const t of ending) add(t.type, t.cost, t.back);
+  return by;
+}
+
+// Your meet race day by race day, from your record: [{ day, raceDay, spent, back, races, cashed }] for each race
+// day you bet on. And by kind of bet: { since: the first race day every line has its kinds from (null when
+// none has), kinds: [{ kind, spent, back }] }, the kinds grouped as a bettor talks of them (an exacta and an
+// exacta box are both exactas).
+export const KINDS = [['win', 'Win', ['win']], ['place', 'Place', ['place']], ['show', 'Show', ['show']], ['wps', 'Across the board', ['wps']],
+  ['exacta', 'Exacta', ['exacta', 'exbox']], ['trifecta', 'Trifecta', ['trifecta', 'tribox']], ['dd', 'Daily double', ['dd']], ['p3', 'Pick 3', ['p3']]];
+export function yourWeeks(m = game.world.meet, p = game.player) {
+  const days = new Map();
+  for (const x of p.ledger) {
+    if (x.day < m.first || x.day > m.last) continue;
+    const d = days.get(x.day) || { day: x.day, raceDay: x.day - m.first + 1, spent: 0, back: 0, races: 0, cashed: 0 };
+    d.spent = round2(d.spent + x.spent); d.back = round2(d.back + x.back); d.races++; if (x.back > 0) d.cashed++;
+    days.set(x.day, d);
+  }
+  return [...days.values()].sort((a, b) => a.day - b.day);
+}
+export function yourKinds(m = game.world.meet, p = game.player) {
+  const lines = p.ledger.filter(x => x.day >= m.first && x.day <= m.last);
+  // From the first race day after the last line without its kinds.
+  const without = lines.filter(x => !x.by || typeof x.by !== 'object').reduce((d, x) => Math.max(d, x.day), -Infinity);
+  const counted = lines.filter(x => x.day > without && x.by && typeof x.by === 'object');
+  if (!counted.length) return { since: null, kinds: [] };
+  const kinds = KINDS.map(([kind, name, types]) => {
+    let spent = 0, back = 0;
+    for (const x of counted) for (const t of types) if (Array.isArray(x.by[t])) { spent += +x.by[t][0] || 0; back += +x.by[t][1] || 0; }
+    return { kind, name, spent: round2(spent), back: round2(back) };
+  }).filter(k => k.spent > 0);
+  return { since: without === -Infinity ? null : counted[0].day - m.first + 1, kinds };
 }
 
 // A race left before its result came up (the page closed, or dropped by the phone, in the middle of it): the

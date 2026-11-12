@@ -317,7 +317,15 @@ export function meetRecord(world) {
     return { id, picks: r.picks - was.picks, wins: r.wins - was.wins, back: Math.round((r.back - was.back) * 100) / 100 };
   }).filter(x => x.picks > 0 && x.picks >= races / 3).sort((a, b) => b.back / b.picks - a.back / a.picks || b.wins - a.wins)[0] || null;
   const handicap = T.stk.find(s => s.name === BIG_STAKES.name && s.day === m.last) || null;
+  // Every rider and trainer who has had a ride or a starter, most wins first: [index, starts, wins]. And the
+  // leading horses, the five with the most wins and the five that have earned most: { hid, name, starts, w, earn }.
+  const table = (rec, n) => Object.entries(rec).map(([k, [starts, w]]) => [+k, starts, w]).filter(([i, starts]) => i >= 0 && i < n && starts > 0)
+    .sort((a, b) => b[2] - a[2] || a[1] - b[1] || a[0] - b[0]);
+  const horses = Object.entries(T.h).map(([id, [starts, w, earn]]) => ({ hid: +id, name: nameOf(+id), starts, w, earn }));
   return {
+    riders: table(T.j, JOCKEYS.length), trainers: table(T.t, TRAINERS.length),
+    wins: horses.filter(x => x.w > 0).sort((a, b) => b.w - a.w || b.earn - a.earn || a.hid - b.hid).slice(0, 5),
+    earners: horses.filter(x => x.earn > 0).sort((a, b) => b.earn - a.earn || b.w - a.w || a.hid - b.hid).slice(0, 5),
     no: m.no, first: m.first, last: m.last, races, since: !m.tips,
     rider: rider && { i: rider.i, w: rider.w, starts: rider.starts },
     trainer: trainer && { i: trainer.i, w: trainer.w, starts: trainer.starts },

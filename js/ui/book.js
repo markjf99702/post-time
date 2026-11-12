@@ -1,7 +1,7 @@
 // Your scrapbook of winner's circle photos, your record at the windows, and how to play.
 
 import { h, money, jdFoot } from './dom.js';
-import { game, START_BANK, notSaved, yourMeet, advanceDay } from '../game.js';
+import { game, START_BANK, notSaved, yourMeet, advanceDay, yourWeeks, yourKinds } from '../game.js';
 import { TIPSTERS, JOCKEYS, TRAINERS, BIG_STAKES } from '../data.js';
 import { longDate, dayDate, dateISO, meetRecord, isClosingDay, MEET_DAYS } from '../world.js';
 import { oddsText } from '../handicap.js';
@@ -122,10 +122,11 @@ function standings(root) {
 
 const dateOf = day => longDate(dateISO(dayDate(game.world, day))).replace(/^\w+, /, '');
 
-// A meet's closing page: the Handicap's winner, the leading rider and trainer, the horse of the meet, the
-// forum's champion, the longest price, the stakes winners, and your own meet. `params.no` is a meet that
-// has closed, from the scrapbook; without it, it's the meet being run, after its last race, and the way
-// on from it opens the next meet.
+// The meet so far, from the menu, and a meet's closing page: the Handicap's winner, the leading rider and
+// trainer, the horse of the meet, the forum's champion, the longest price; the leading riders, trainers and
+// horses; the stakes run and who won them; and your own meet, race day by race day and by kind of bet.
+// `params.no` is a meet that has closed, from the scrapbook; without it, it's the meet being run, and after its
+// last race the way on from it opens the next meet.
 export function renderMeet(root, nav, params = {}) {
   const w = game.world;
   const live = !params.no || params.no === w.meet.no;
@@ -139,10 +140,11 @@ export function renderMeet(root, nav, params = {}) {
   root.append(
     h('div', { class: 'rhead' },
       h('button', { class: 'back', type: 'button', onclick: () => nav.go(live ? 'card' : 'book') }, live ? '‹ The card' : '‹ Scrapbook'),
-      h('div', {}, h('div', { class: 'kicker' }, `Meet ${r.no}${over ? ' · closing day' : ' so far'}`), h('h1', { class: 'title' }, 'The meet in review')),
+      h('div', {}, h('div', { class: 'kicker' }, `Meet ${r.no}${over ? ' · closing day' : ' so far'}`), h('h1', { class: 'title' }, over ? 'The meet in review' : 'The meet so far')),
     ),
     h('p', { class: 'pad meet-when' }, `${plural(days, 'race day')}, ${dateOf(r.first)} to ${dateOf(r.last)}${days !== MEET_DAYS ? ' (the first meet, carried over from before meets had an end)' : ''}. ${plural(r.races, 'race')} run.`),
-    r.handicap ? h('div', { class: 'pad' }, h('div', { class: 'meet-big' }, h('span', { class: 'kicker' }, `The ${BIG_STAKES.name}`), h('b', {}, r.handicap.horse))) : null,
+    // (Until the Handicap is run there's nothing here: a bare null put the word "null" on the page.)
+    r.handicap ? h('div', { class: 'pad' }, h('div', { class: 'meet-big' }, h('span', { class: 'kicker' }, `The ${BIG_STAKES.name}`), h('b', {}, r.handicap.horse))) : '',
     h('div', { class: 'stats' },
       award('Leading rider', r.rider && r.rider.w ? JOCKEYS[r.rider.i]?.name : null, r.rider && `${plural(r.rider.w, 'win')} from ${plural(r.rider.starts, 'ride')}`),
       award('Leading trainer', r.trainer && r.trainer.w ? TRAINERS[r.trainer.i] : null, r.trainer && `${plural(r.trainer.w, 'win')} from ${plural(r.trainer.starts, 'starter')}`),
@@ -151,8 +153,9 @@ export function renderMeet(root, nav, params = {}) {
       award('The longest price', r.long ? r.long.name : null, r.long && `won at ${oddsText(r.long.odds)}, race ${r.long.no} on race day ${r.long.day - r.first + 1}`),
     ),
   );
+  leaders(root, r);
   if (r.stakes.length) {
-    root.append(h('div', { class: 'pad' }, h('div', { class: 'board' }, h('h3', {}, 'The stakes winners'), h('table', {},
+    root.append(h('div', { class: 'pad' }, h('div', { class: 'board' }, h('h3', {}, over ? 'The stakes winners' : 'The stakes so far'), h('table', {},
       h('thead', {}, h('tr', {}, h('th', {}, 'Race day'), h('th', {}, 'Stakes'), h('th', {}, 'Winner'))),
       h('tbody', {}, r.stakes.map(s => h('tr', { class: s.name === BIG_STAKES.name ? 'big' : '' }, h('td', { class: 'money' }, String(s.day - r.first + 1)), h('td', {}, s.name), h('td', {}, h('b', {}, s.horse))))),
     ))));
@@ -169,7 +172,9 @@ export function renderMeet(root, nav, params = {}) {
       stat('Biggest ticket', y.best > 0 ? money(y.best) : 'None'),
       stat('Photos', String(y.photos)),
       stat(over ? 'Finished with' : 'Bankroll', money(y.end), `${money(net, { sign: true })} on the meet`),
+      stat('Back for every $1 bet', y.bet > 0 ? money(y.back / y.bet) : '–'),
     ));
+    yourRecord(root, r);
   }
   if (live && over) {
     root.append(h('div', { class: 'actions' },
@@ -178,6 +183,50 @@ export function renderMeet(root, nav, params = {}) {
     ));
   }
   root.append(jdFoot());
+}
+
+// The leading riders and trainers (the top five, the rest behind Show all) and the leading horses, by wins and
+// by what they've earned. (A meet that closed before these were kept has its awards and no tables.)
+function leaders(root, r) {
+  const pct = (w, starts) => `${Math.round(100 * w / starts)}%`;
+  for (const [key, title, names, ride] of [['riders', 'Leading riders', i => JOCKEYS[i]?.name, 'Rides'], ['trainers', 'Leading trainers', i => TRAINERS[i], 'Starters']]) {
+    const rows = Array.isArray(r[key]) ? r[key].filter(x => names(x[0])) : [];
+    if (!rows.length) continue;
+    const body = h('tbody', {}, rows.map(([i, starts, w], k) => h('tr', { hidden: k >= 5 }, h('td', {}, names(i)), h('td', { class: 'r money' }, String(w)), h('td', { class: 'r money' }, String(starts)), h('td', { class: 'r money' }, pct(w, starts)))));
+    const more = rows.length > 5 ? h('button', { class: 'btn ghost show-all', type: 'button', 'aria-expanded': 'false', onclick: () => {
+      const open = more.getAttribute('aria-expanded') !== 'true';
+      [...body.rows].forEach((tr, k) => { if (k >= 5) tr.hidden = !open; });
+      more.setAttribute('aria-expanded', String(open));
+      more.textContent = open ? 'Show the top five' : `Show all ${rows.length}`;
+    } }, `Show all ${rows.length}`) : null;
+    root.append(h('div', { class: 'pad' }, h('div', { class: 'board leaders' }, h('h3', {}, title),
+      h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, key === 'riders' ? 'Rider' : 'Trainer'), h('th', { class: 'r' }, 'Wins'), h('th', { class: 'r' }, ride), h('th', { class: 'r' }, 'Won'))), body),
+      more ? h('div', { class: 'more' }, more) : null)));
+  }
+  const horses = (list, title) => (Array.isArray(list) && list.length ? h('div', { class: 'board leaders' }, h('h3', {}, title), h('table', {},
+    h('thead', {}, h('tr', {}, h('th', {}, 'Horse'), h('th', { class: 'r' }, 'Wins'), h('th', { class: 'r' }, 'Starts'), h('th', { class: 'r' }, 'Earned'))),
+    h('tbody', {}, list.map(x => h('tr', {}, h('td', {}, x.name), h('td', { class: 'r money' }, String(x.w)), h('td', { class: 'r money' }, String(x.starts)), h('td', { class: 'r money' }, money(x.earn, { cents: false }))))))) : null);
+  const pair = [horses(r.wins, 'Most wins'), horses(r.earners, 'Most earned')].filter(Boolean);
+  if (pair.length) root.append(h('div', { class: 'pad horse-leaders' }, pair));
+}
+
+// Your meet race day by race day (what you bet and got back, and back for every $1 bet), and by kind of bet.
+function yourRecord(root, r) {
+  const m = { first: r.first, last: r.last };
+  const weeks = yourWeeks(m);
+  if (!weeks.length) return;
+  const per = (back, spent) => (spent > 0 ? money(back / spent) : '–');
+  const row = (label, x) => h('tr', {}, h('td', {}, label), h('td', { class: 'r money' }, money(x.spent)), h('td', { class: 'r money' }, money(x.back)),
+    h('td', { class: `r money ${x.back - x.spent >= 0 ? 'pos' : 'neg'}` }, money(x.back - x.spent, { sign: true })), h('td', { class: 'r money' }, per(x.back, x.spent)));
+  const head = first => h('thead', {}, h('tr', {}, h('th', {}, first), h('th', { class: 'r' }, 'Bet'), h('th', { class: 'r' }, 'Back'), h('th', { class: 'r' }, 'Net'), h('th', { class: 'r' }, 'Per $1')));
+  const all = weeks.reduce((a, x) => ({ spent: a.spent + x.spent, back: a.back + x.back }), { spent: 0, back: 0 });
+  root.append(h('div', { class: 'pad' }, h('div', { class: 'board' }, h('h3', {}, 'Race day by race day'), h('table', { class: 'yours' }, head('Race day'),
+    h('tbody', {}, weeks.map(x => row(`${x.raceDay} · ${dateOf(x.day).replace(/, \d{4}$/, '')}`, x)), weeks.length > 1 ? h('tr', { class: 'total' }, ...row('The meet', all).childNodes) : null)))));
+  const { since, kinds } = yourKinds(m);
+  if (!kinds.length) return;
+  root.append(h('div', { class: 'pad' }, h('div', { class: 'board' }, h('h3', {}, 'By kind of bet'), h('table', { class: 'yours' }, head('Bet'),
+    h('tbody', {}, kinds.map(k => row(k.name, k)))),
+  since && since > 1 ? h('p', { class: 'board-note' }, `Since race day ${since}: the record kept the kinds of bet from then.`) : null)));
 }
 
 function stat(label, value, note) {

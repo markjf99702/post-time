@@ -105,3 +105,53 @@ test("the day's three lines: bet and back as the record has them, the best ticke
     assert.ok(t.back - b.back - 2 * (t.picks - b.picks) <= r.tip.back - 2 * r.tip.picks + 1e-9, `${id} had a better day than ${r.tip.id}`);
   }
 });
+
+test('each line of your record says what kinds of bet it was, and the meet adds up race day by race day and by kind', () => {
+  buildOn('kinds-1');
+  save(); load();
+  for (let d = 0; d < 2; d++) {
+    playDay(race => {
+      placeBet(race, { type: 'exbox', sel: [0, 1], amt: 1 });
+      if (race.no === 7) placeBet(race, { type: 'dd', sel: [[0, 1], [0, 2]], amt: 1 });
+    });
+    advanceDay();
+  }
+  const m = game.world.meet;
+  for (const x of game.player.ledger) {
+    const kinds = Object.values(x.by);
+    assert.equal(G.round2(kinds.reduce((s, k) => s + k[0], 0)), x.spent, `race ${x.no} of day ${x.day}: the kinds don't add up to what was bet`);
+    assert.equal(G.round2(kinds.reduce((s, k) => s + k[1], 0)), x.back, `race ${x.no} of day ${x.day}: the kinds don't add up to what came back`);
+  }
+  const weeks = G.yourWeeks();
+  assert.deepEqual(weeks.map(w => w.raceDay), [1, 2]);
+  const you = G.yourMeet();
+  assert.equal(G.round2(weeks.reduce((s, w) => s + w.spent, 0)), you.bet);
+  assert.equal(G.round2(weeks.reduce((s, w) => s + w.back, 0)), you.back);
+  const { since, kinds } = G.yourKinds();
+  assert.equal(since, null, 'every line has its kinds, and the table says it runs from a later race day');
+  assert.deepEqual(kinds.map(k => k.name), ['Win', 'Exacta', 'Daily double']);
+  assert.equal(G.round2(kinds.reduce((s, k) => s + k.spent, 0)), you.bet);
+  // A record from before the kinds were kept: the table runs from the first race day after its last such line.
+  for (const x of game.player.ledger) if (x.day === m.first) delete x.by;
+  assert.equal(G.yourKinds().since, 2);
+  for (const x of game.player.ledger) delete x.by;
+  assert.deepEqual(G.yourKinds(), { since: null, kinds: [] });
+});
+
+test("the meet's leading riders and trainers add up to its races, and its leading horses are the ones with most wins and earnings", () => {
+  buildOn('leaders-1');
+  for (let d = 0; d < 3; d++) {
+    for (const race of card().races) W.makeOfficial(game.world, race, W.simulateRace(race, game.world, { record: false }));
+    W.nextDay(game.world);
+  }
+  const r = W.meetRecord(game.world);
+  assert.equal(r.riders.reduce((s, x) => s + x[2], 0), r.races, "the riders' wins aren't one a race");
+  assert.equal(r.trainers.reduce((s, x) => s + x[2], 0), r.races, "the trainers' wins aren't one a race");
+  assert.ok(r.riders.every((x, k) => !k || r.riders[k - 1][2] >= x[2]), 'the riders are not most wins first');
+  assert.deepEqual(r.riders[0].slice(0, 3), [r.rider.i, r.rider.starts, r.rider.w], 'the top of the table is not the leading rider');
+  const T = game.world.meet.tally.h;
+  const mostWins = Math.max(...Object.values(T).map(x => x[1]));
+  assert.equal(r.wins[0].w, mostWins);
+  assert.equal(r.earners[0].hid, r.horse.hid, 'the horse that earned most is not the horse of the meet');
+  assert.ok(r.wins.length === 5 && r.earners.length === 5);
+});

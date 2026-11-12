@@ -141,6 +141,41 @@ try {
     await ctx.close();
   }
 
+  // ---------------------------------------------------------------- the meet so far
+  {
+    const { ctx, page } = await freshMeet();
+    await runDay(page, [2, 5]);
+    await page.click('#menuBtn');
+    await page.click('#menu [data-go="meet"]');
+    await page.waitForSelector('.leaders');
+    const meet = await page.evaluate(() => {
+      const boards = Object.fromEntries([...document.querySelectorAll('.board')].map(b => [b.querySelector('h3').textContent, b]));
+      const shown = b => [...b.querySelectorAll('tbody tr')].filter(tr => !tr.hidden).length;
+      return {
+        title: document.querySelector('.rhead .title').textContent, boards: Object.keys(boards),
+        riders: [shown(boards['Leading riders']), boards['Leading riders'].querySelectorAll('tbody tr').length],
+        days: [...boards['Race day by race day'].querySelectorAll('tbody tr')].map(tr => tr.textContent),
+        kinds: [...boards['By kind of bet'].querySelectorAll('tbody tr td:first-child')].map(td => td.textContent),
+        note: !!boards['By kind of bet'].querySelector('.board-note'),
+        perDollar: [...document.querySelectorAll('.stat')].find(x => x.textContent.startsWith('Back for every $1 bet'))?.querySelector('b').textContent,
+        text: document.getElementById('app').textContent,
+      };
+    });
+    assert.equal(meet.title, 'The meet so far');
+    for (const b of ['Leading riders', 'Leading trainers', 'Most wins', 'Most earned', 'The stakes so far', 'Race day by race day', 'By kind of bet']) assert.ok(meet.boards.includes(b), `no ${b} on the meet's page`);
+    assert.equal(meet.riders[0], 5, 'more or fewer than the top five riders show');
+    assert.ok(meet.riders[1] > 5);
+    assert.equal(meet.days.length, 1);
+    assert.match(meet.days[0], /^1 · \w+ \d+\$4\.00/);
+    assert.deepEqual(meet.kinds, ['Win']);
+    assert.equal(meet.note, false);
+    assert.match(meet.perDollar, /^\$\d+\.\d\d$/);
+    assert.ok(!/null|undefined|NaN/.test(meet.text), 'the page says null, undefined or NaN');
+    await page.click('.show-all');
+    assert.equal(await page.locator('.leaders').first().locator('tbody tr:not([hidden])').count(), meet.riders[1], 'Show all does not show them all');
+    await ctx.close();
+  }
+
   assert.deepEqual(problems, [], 'errors on the page');
   console.log('around: all checks passed');
 } finally {

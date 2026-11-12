@@ -91,8 +91,8 @@ window.addEventListener('popstate', e => {
     const here = !waiting && s.day === game.world.day && s.meet === game.world.seed;
     const race = here && s.params && s.params.no ? card().races.find(r => r.no === s.params.no) : null;
     const screen = s.screen === 'watch' ? 'result' : s.screen;
-    // A meet's closing page: one that has closed, or this one once its last race is run.
-    const meet = !waiting && screen === 'meet' && (s.params?.no ? (game.world.meets || []).some(m => m.no === s.params.no) : s.meet === game.world.seed && s.day === game.world.day && !nextRace());
+    // A meet's closing page (one that has closed), or this meet's page so far.
+    const meet = !waiting && screen === 'meet' && (s.params?.no ? (game.world.meets || []).some(m => m.no === s.params.no) : true);
     const photo = !waiting && screen === 'photo' && game.player.book.some(r => r.day === s.params?.day && r.no === s.params?.no);
     const ok = waiting ? screen === 'help'
       : screen === 'book' || screen === 'help' || meet || photo || (screen === 'race' && !!race) || ((screen === 'result' || screen === 'circle') && race?.status === 'official');
