@@ -19,9 +19,9 @@ export function fileName(world = game.world, player = game.player) {
   return `Post Time, meet ${at.meet}, ${at.raceDay ? `race day ${at.raceDay}` : at.date}.json`;
 }
 
-// Starts a download of `text` as a file. Inside the tap that asked for it, or an iPhone won't.
+// Starts a download of `text` (or a Blob) as a file. Inside the tap that asked for it, or an iPhone won't.
 export function download(text, name) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const url = URL.createObjectURL(text instanceof Blob ? text : new Blob([text], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -30,6 +30,28 @@ export function download(text, name) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+// ------------------------------------------------------------------ something to show a friend
+
+// A picture handed over: to the phone's share sheet where it takes files (so it can go to Photos or a message),
+// or else as a download. Offered where one of those can work: not in a frame such as the Artifact copy.
+export const canGive = () => offered();
+export async function givePicture(blob, name) {
+  const file = typeof File === 'function' ? new File([blob], name, { type: 'image/png' }) : null;
+  try {
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return 'shared'; }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return 'cancelled'; // the share sheet closed: nothing more to do
+  }
+  download(blob, name);
+  return 'downloaded';
+}
+// Some text put on the clipboard, where the browser lets a page write to it. (Not in a frame either: a frame is
+// let write to it only if the page around it says so.)
+export const canCopyText = () => offered() && !!(window.isSecureContext && navigator.clipboard && typeof navigator.clipboard.writeText === 'function');
+export async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
 }
 
 export function saveCopy() {

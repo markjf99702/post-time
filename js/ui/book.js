@@ -5,7 +5,7 @@ import { game, START_BANK, notSaved, yourMeet, advanceDay, yourWeeks, yourKinds,
 import { TIPSTERS, JOCKEYS, TRAINERS, BIG_STAKES } from '../data.js';
 import { longDate, dayDate, dateISO, meetRecord, isClosingDay, MEET_DAYS } from '../world.js';
 import { oddsText } from '../handicap.js';
-import { photoCard, drawPhoto } from './results.js';
+import { photoCard, drawPhoto, savePictureButton } from './results.js';
 import { MOVING, shortDay } from './race.js';
 import { JOE, offered as joeOffered } from '../joe.js';
 import { offered as copyOffered } from '../copy.js';
@@ -94,8 +94,9 @@ export function renderPhoto(root, nav, params = {}) {
       h('div', {}, h('div', { class: 'kicker' }, `${shortDay(rec.date)} · Race ${rec.no}`), h('h1', { class: 'title' }, rec.horse.name)),
     ),
     h('div', { class: 'pad' }, photoCard(rec, true)),
-    // Its race's results, while they're kept.
-    raceAt(rec.day, rec.no)?.status === 'official' ? h('div', { class: 'actions' }, h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('result', { day: rec.day, no: rec.no }) }, 'The race ▸')) : '',
+    // The picture to keep or send, and its race's results while they're kept.
+    h('div', { class: 'actions' }, savePictureButton(rec, true),
+      raceAt(rec.day, rec.no)?.status === 'official' ? h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('result', { day: rec.day, no: rec.no }) }, 'The race ▸') : null),
   );
 }
 

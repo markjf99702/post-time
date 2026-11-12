@@ -253,6 +253,48 @@ try {
     await ctx.close();
   }
 
+  // ---------------------------------------------------------------- something to show a friend
+  {
+    const { ctx, page } = await freshMeet({ permissions: ['clipboard-read', 'clipboard-write'], acceptDownloads: true });
+    await runDay(page, [2, 5]);
+    // Copy my day, under the day's three lines.
+    await page.evaluate(() => window.postTime.nav.go('card'));
+    await page.locator('.copy-day').click();
+    await page.waitForFunction(() => document.querySelector('.copy-day').textContent === 'Copied');
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    const lines = text.split('\n');
+    assert.equal(lines.length, 4, text);
+    assert.match(lines[0], /^Post Time, Saturday, \w+ \d+, \d{4} \(meet 1, race day 1 of 10\)$/);
+    assert.match(lines[1], /^Cashed 2 of 2 races: bet \$4\.00, back \$[\d.,]+ \(\+\$[\d.,]+\)$/);
+    assert.match(lines[2], /^Best ticket: \$[\d.,]+ in race [25], .+$/);
+    assert.equal(lines[3], 'https://post-time.junkdrawer.works/');
+    // Save the picture, from the winner's circle: one picture, the photo with its caption.
+    await page.evaluate(() => window.postTime.nav.go('circle', { no: 2 }));
+    const [download] = await Promise.all([page.waitForEvent('download'), page.locator('.save-row .btn').click()]);
+    assert.match(download.suggestedFilename(), /^Post Time, .+, \w+ \d+, \d{4}\.png$/);
+    const png = await readFile(await download.path());
+    const [w, hgt] = [png.readUInt32BE(16), png.readUInt32BE(20)];
+    assert.ok(w === 1080 && hgt > 1000 && hgt < 1150, `the picture is ${w} by ${hgt}`);
+    await ctx.close();
+    // Where the browser can do neither (in a frame, as the Artifact copy is), neither is offered.
+    const fctx = await browser.newContext({ viewport: { width: 420, height: 900 }, serviceWorkers: 'block' });
+    const outer = await fctx.newPage();
+    watch(outer);
+    await outer.setContent(`<iframe src="${base}" style="width:400px;height:880px;border:0"></iframe>`);
+    const frame = await (await outer.waitForSelector('iframe')).contentFrame();
+    await frame.waitForSelector('.races', { timeout: 60000 });
+    await frame.evaluate(async () => {
+      const G = await import('./js/game.js');
+      for (const race of G.card().races) { G.placeBet(race, { type: 'win', sel: [G.recordingOf(race).results[0].h], amt: 2 }); G.goToGate(race); }
+      window.postTime.nav.go('circle', { no: 1 });
+    });
+    assert.equal(await frame.locator('.save-row .btn').count(), 0, 'Save the picture is offered in a frame');
+    await frame.evaluate(() => window.postTime.nav.go('card'));
+    assert.equal(await frame.locator('.recap li').count(), 3);
+    assert.equal(await frame.locator('.copy-day').count(), 0, 'Copy my day is offered in a frame');
+    await fctx.close();
+  }
+
   assert.deepEqual(problems, [], 'errors on the page');
   console.log('around: all checks passed');
 } finally {

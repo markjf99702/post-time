@@ -12,6 +12,7 @@ import { ENGINE } from '../sim.js';
 import { atmLine, redraw } from './card.js';
 import { ticketLine, boughtAt, multiTicket, starButton } from './race.js';
 import { callAsCalled } from './watch.js';
+import { canGive, givePicture } from '../copy.js';
 
 // `params.day` is there for an earlier race day's race (kept in js/world.js's pastRace): its results have the
 // order of finish, what paid, the call and Watch again, and what you bet and got back on it.
@@ -238,6 +239,7 @@ export function renderCircle(root, nav, params) {
       h('div', {}, h('div', { class: 'kicker' }, `Race ${race.no}`), h('h1', { class: 'title' }, "The winner's circle")),
     ),
     h('div', { class: 'pad' }, photoCard(rec, !!bookEntry)),
+    h('div', { class: 'actions save-row' }, savePictureButton(rec, !!bookEntry)),
     h('p', { class: 'center muted', style: { padding: '0 16px' } }, bookEntry ? "You backed the winner, so you're in the picture. It's in your scrapbook." : 'Back the winner and you get into the picture, and it goes in your scrapbook.'),
     h('div', { class: 'actions' },
       nxt ? h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('race', { no: nxt.no }) }, `On to race ${nxt.no} ▸`) : h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('card') }, 'Back to the card ▸'),
@@ -252,8 +254,7 @@ const wornBy = rec => { const s = ownerSilks(rec.owner); return rec.cap ? { ...s
 export function photoCard(rec, you) {
   const c = h('canvas', { width: 720, height: 500 });
   // What the photo was worth is everything cashed on the race, which can be more than one ticket.
-  const cashed = (game.player.settled[`${rec.day}:${rec.no}`]?.returns || []).filter(x => x > 0).length
-    + (game.player.multi || []).filter(t => t.day === rec.day && t.legs[t.legs.length - 1] === rec.no && t.back > 0).length;
+  const cashed = photoTickets(rec);
   // The Larkspur Handicap's photo says so, and is framed in brass in the scrapbook.
   const big = rec.name === BIG_STAKES.name;
   const frame = h('figure', { class: `photo-frame${big ? ' big' : ''}`, style: { margin: '0 auto' } },
@@ -271,9 +272,73 @@ export function photoCard(rec, you) {
   return frame;
 }
 
+// Save the picture: the photo with its caption under it, as one picture 1,080 px wide, the way the scrapbook
+// frames it, handed to the share sheet or downloaded. (A long press on the photo saved a picture with no names
+// on it: the caption is text beside it.) Under the photo where it's shown, wherever it can be handed over.
+export function savePictureButton(rec, you) {
+  if (!canGive()) return null;
+  const b = h('button', { class: 'btn ghost', type: 'button' }, 'Save the picture');
+  b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      const blob = await photoPicture(rec, you);
+      if (blob) await givePicture(blob, `Post Time, ${rec.horse.name}, ${shortLong(rec.date)}.png`);
+    } finally { b.disabled = false; }
+  });
+  return b;
+}
+export async function photoPicture(rec, you) {
+  const W = 1080, pad = 36, inner = W - 2 * pad, ph = Math.round(inner * 25 / 36);
+  const shot = document.createElement('canvas');
+  drawPhoto(shot, rec, you, inner);
+  // The caption's lines, as the photo card sets them: left and right, the horse's name across.
+  const big = rec.name === BIG_STAKES.name;
+  const rows = [
+    ['Larkspur Downs', `Race ${rec.no} · ${shortLong(rec.date)}`],
+    [rec.horse.name],
+    [big ? `Winner of the ${rec.name}` : rec.name || classText(rec), `${rec.dist} · ${fmtTime(rec.time)}`],
+    [`${rec.jockey} up`, `Tr. ${rec.trainer}`],
+    [`Owner ${rec.ownerName}`, ''],
+  ];
+  const note = you && rec.won ? `That's me on the right, holding ${photoTickets(rec) > 1 ? 'tickets' : 'a ticket'} that paid ${money(rec.won)}.` : '';
+  try { await Promise.all(['500 30px Oswald', '500 48px Oswald', 'italic 400 30px Plex'].map(f => document.fonts.load(f))); } catch { /* the fallback fonts */ }
+  const line = 40, H = pad + ph + 24 + line + 62 + line * 3 + (note ? 50 : 0) + pad;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fbf8ef';
+  ctx.fillRect(0, 0, W, H);
+  if (big) { ctx.strokeStyle = '#b8892d'; ctx.lineWidth = 12; ctx.strokeRect(6, 6, W - 12, H - 12); }
+  ctx.drawImage(shot, pad, pad, inner, ph);
+  let y = pad + ph + 24;
+  const caps = s => s.toUpperCase();
+  ctx.textBaseline = 'top';
+  const pair = ([l, r], size, color) => {
+    ctx.font = `500 ${size}px Oswald, 'Arial Narrow', sans-serif`;
+    ctx.fillStyle = color;
+    ctx.textAlign = 'left'; ctx.fillText(caps(l), pad + 6, y, r ? inner * 0.6 : inner - 12);
+    if (r) { ctx.textAlign = 'right'; ctx.fillText(caps(r), W - pad - 6, y, inner * 0.5); }
+  };
+  pair(rows[0], 28, '#2a2419'); y += line;
+  pair(rows[1], 46, '#1d3a2e'); y += 62;
+  for (const r of rows.slice(2)) { pair(r, 28, '#2a2419'); y += line; }
+  if (note) {
+    ctx.font = "italic 400 30px Plex, 'Arial Narrow', sans-serif";
+    ctx.fillStyle = '#6b604b'; ctx.textAlign = 'left';
+    ctx.fillText(note, pad + 6, y + 8, inner - 12);
+  }
+  return new Promise(res => c.toBlob(res, 'image/png'));
+}
+
 // A winner's circle photo drawn on `c`, `w` px wide: in the photo card, and small on the scrapbook's contact sheet.
 export function drawPhoto(c, rec, you, w) {
   drawCircle(c, { horse: rec.horse, silks: wornBy(rec), number: rec.number, stakes: rec.stakes, you, seed: rec.seed, meet: game.world.seed, width: w, height: w * 25 / 36 });
+}
+
+// How many tickets the photo's payout was: everything cashed on the race.
+function photoTickets(rec) {
+  return (game.player.settled[`${rec.day}:${rec.no}`]?.returns || []).filter(x => x > 0).length
+    + (game.player.multi || []).filter(t => t.day === rec.day && t.legs[t.legs.length - 1] === rec.no && t.back > 0).length;
 }
 
 // The kind of race, under the horse's name. A maiden claimer has its price, as it has on the card.

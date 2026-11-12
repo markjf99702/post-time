@@ -1,6 +1,7 @@
 // The race card: today's date and weather, the eight races, and what happened in the ones already run.
 
 import { h, money, cloth, jdFoot, dotted } from './dom.js';
+import { canCopyText, copyText } from '../copy.js';
 import { game, card, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay, multiFor, starredIn, dayRecap, earlierDays } from '../game.js';
 import { longDate, clockText, raceDayOf, meetDays, isClosingDay, isHandicap } from '../world.js';
 import { BIG_STAKES, TIPSTERS } from '../data.js';
@@ -92,11 +93,34 @@ function recap(c) {
   const r = dayRecap(c);
   const tip = r.tip && TIPSTERS.find(t => t.id === r.tip.id);
   const net = r.back - r.spent;
-  return h('ul', { class: 'recap' },
+  const copy = canCopyText() ? h('button', { class: 'btn ghost copy-day', type: 'button' }, 'Copy my day') : null;
+  if (copy) copy.addEventListener('click', async () => {
+    const ok = await copyText(dayText(c, r));
+    copy.textContent = ok ? 'Copied' : "Couldn't copy it here";
+    setTimeout(() => { copy.textContent = 'Copy my day'; }, 2500);
+  });
+  return h('div', { class: 'recap-wrap' }, h('ul', { class: 'recap' },
     h('li', {}, r.spent ? ['Bet ', h('b', { class: 'money' }, money(r.spent)), ', back ', h('b', { class: 'money' }, money(r.back)), ': ', h('b', { class: `money ${net >= 0 ? 'pos' : 'neg'}` }, money(net, { sign: true })), ' on the day.'] : 'No tickets today.'),
     r.spent ? h('li', {}, r.best ? ['Your best ticket: ', h('b', { class: 'money' }, money(r.best.back)), ` in race ${r.best.no}.`] : 'No ticket cashed today.') : null,
     h('li', {}, tip ? [h('b', {}, tip.handle), ` had the forum's best day: ${r.tip.wins} of ${r.tip.picks} picks won, ${money(r.tip.back)} back for $2 on each.`] : 'Nobody on the forum picked a winner today.'),
-  );
+  ), copy);
+}
+
+// Copy my day: a few lines on the finished card, to paste into a message.
+//   Post Time, Saturday, November 21, 2026 (meet 1, race day 9 of 10)
+//   Cashed 4 of 8 races: bet $16.00, back $67.00 (+$51.00)
+//   Best ticket: $17.20 in race 4, Cadence's Kettle
+//   https://post-time.junkdrawer.works/
+function dayText(c, r) {
+  const w = game.world, lines = game.player.ledger.filter(x => x.day === c.day);
+  const best = r.best && c.races.find(x => x.no === r.best.no);
+  const winner = best && horseOf(best.entries[best.result.order[0].k]).name;
+  return [
+    `Post Time, ${longDate(c.date)} (meet ${w.meet.no}, race day ${raceDayOf(w)} of ${meetDays(w)})`,
+    r.spent ? `Cashed ${lines.filter(x => x.back > 0).length} of ${lines.length} races: bet ${money(r.spent)}, back ${money(r.back)} (${money(r.back - r.spent, { sign: true })})` : 'Watched all eight races without a ticket.',
+    r.best ? `Best ticket: ${money(r.best.back)} in race ${r.best.no}${winner ? `, ${winner}` : ''}` : null,
+    'https://post-time.junkdrawer.works/',
+  ].filter(Boolean).join('\n');
 }
 
 // After closing day the way on is the meet's closing page, which opens the next meet.
