@@ -49,7 +49,7 @@ export function renderResult(root, nav, params) {
   landed.add(memoKey(race));
   if ((bets.length || multi.length) && settled) {
     const net = settled.back - settled.spent;
-    const note = !past && net >= 0 ? ticketNote(race) : null;
+    const note = past ? null : ticketNote(race); // (a ticket that cashed, whatever the race came to)
     let k = 0;
     const turn = el => { if (landing) el.style.setProperty('--i', String(k++)); return el; };
     wrap.append(h('div', { class: `summary${landing ? ' landing' : ''}` },
