@@ -1347,6 +1347,25 @@ test("a save that isn't a meet is left alone until a new meet is started", () =>
   assert.ok(card().races.length);
 });
 
+// A race's line in your record, and what it put in the bankroll, are to the cent. Added up as they came, a few
+// tickets' takings came to $901.9000000000001 in the record against $901.90 in the bankroll.
+test("a race's line in your record is to the cent, whatever the tickets on it came to", () => {
+  buildOn('cents', '2026-10-03');
+  game.player.bank = 100000;
+  for (let d = 0; d < 3; d++) {
+    for (const race of card().races) {
+      const n = race.entries.length;
+      for (const bet of [{ type: 'place', sel: [0], amt: 3 }, { type: 'show', sel: [1], amt: 7 }, { type: 'show', sel: [2], amt: 3 }, { type: 'place', sel: [n - 1], amt: 9 },
+        { type: 'exbox', sel: [0, 1, 2, 3], amt: 1.1 }, { type: 'tribox', sel: [0, 1, 2, 3, 4], amt: 0.7 }, { type: 'win', sel: [3], amt: 13 }]) assert.ok(placeBet(race, bet).ok, JSON.stringify(bet));
+      goToGate(race);
+    }
+    advanceDay();
+  }
+  const cents = x => Math.round(x * 100) / 100 === x;
+  for (const x of game.player.ledger) assert.ok(cents(x.spent) && cents(x.back), `race ${x.no} of race day ${x.day}: spent ${x.spent}, back ${x.back}`);
+  for (const [k, x] of Object.entries(game.player.settled)) assert.ok(cents(x.spent) && cents(x.back), `${k}: spent ${x.spent}, back ${x.back}`);
+});
+
 // What the meet with the seed 'pinned', begun on 3 October 2026, comes to over its first three race days,
 // with a $2 win ticket on number 1 in every race: the first three home by number, the time, the $2 win
 // price, and the bankroll after each day. A race's result comes only from its seed and its entries, and

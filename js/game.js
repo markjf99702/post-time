@@ -409,8 +409,10 @@ export function goToGate(race) {
   const returns = bets.map(b => ticketReturn(b, pay));
   // A double or Pick 3 that ends in this race is settled with it, and goes on its line in your record.
   const ending = settleMulti(race, order[0]);
-  const spent = bets.reduce((s, b) => s + b.cost, 0) + ending.reduce((s, t) => s + t.cost, 0);
-  const back = returns.reduce((s, r) => s + r, 0) + ending.reduce((s, t) => s + t.back, 0);
+  // (To the cent: added up as they come, a few tickets' takings can come to $901.9000000000001, and the
+  // line in your record then didn't match the bankroll's $901.90, or the sum of its kinds of bet.)
+  const spent = round2(bets.reduce((s, b) => s + b.cost, 0) + ending.reduce((s, t) => s + t.cost, 0));
+  const back = round2(returns.reduce((s, r) => s + r, 0) + ending.reduce((s, t) => s + t.back, 0));
   game.player.bank = round2(game.player.bank + back);
   game.player.settled[raceKey(race)] = { returns, spent, back };
   if (bets.length || ending.length) game.player.ledger.push({ day: race.day, no: race.no, spent, back, best: Math.max(0, ...returns, ...ending.map(t => t.back)), by: byKind(bets, returns, ending) });
