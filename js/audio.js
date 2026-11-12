@@ -663,6 +663,7 @@ export function callQueue(voice, { now = () => performance.now(), later = (fn, m
     // The line being said, if any, is let finish; the one waiting is forgotten.
     settle() { held = null; },
     speaking: () => !!cur,
+    saying: () => (cur ? cur.item.line : null),
     stats: () => ({ ...count }),
   };
 }
@@ -732,12 +733,14 @@ export function prepareCall(lines) { if (!calling && voiceEnabled()) caller.prep
 // One voice calls a race from the gate to the official sign: the downloaded one if it took the race
 // (joeTakes below), the browser's otherwise.
 export function say(line, opts) {
+  carried = null; // a race's own line comes first
   line = typeof line === 'string' ? { text: line } : line;
   if (calling) { if (voiceOn) joeCaller.speak(line, opts); } else if (voiceEnabled()) caller.speak(line, opts);
 }
 // One line in the chosen voice, for the menu's Hear it. A second tap starts it again.
 export function hearIt(line, opts) {
   if (!voiceOn) return;
+  carried = null;
   primeVoice();
   hush();
   if (downloadedReads()) { hearDownloaded(line, opts); return; }
@@ -759,10 +762,43 @@ export function announce(line) {
   if (voiceEnabled()) caller.speak(line, { rate: 1.15 });
 }
 
+// What the winner paid, when the race is left for its results before the announcer has said it (tapping
+// Results as soon as it comes up, while the caller is still on the placings and the time): it's said on the
+// results instead, as soon as nothing else is being said. In Joe's voice if he called the race, from the
+// sound already made of it (taken now, before the race's sounds are let go), and in the browser's voice
+// otherwise. Never over another voice, and not at all if that takes longer than CARRY, a race's own line
+// comes, or the voice is stopped; the next race sent to the gate stops it (dropCarried). (It was dropped,
+// so a player who taps Results at once seldom heard it.)
+const CARRY = 15000; // ms
+let carried = null;     // waiting to be said
+let carriedLine = null; // said in the browser's voice: the line, while it may still be being said
+let carriedStop = null; // said in Joe's: stops it
+export function carryResult(line) {
+  dropCarried();
+  if (!voiceOn || out || !line) return;
+  const clip = calling && rehearsed ? rehearsed.clips.clip(line.say || line.text) : null;
+  if (calling ? !clip : !voiceEnabled()) return; // (his race with no sound of it made: left unsaid, as it would have been in the race)
+  const me = carried = { until: performance.now() + CARRY };
+  const go = () => {
+    if (carried !== me) return;
+    if (!voiceOn || out || performance.now() > me.until) { carried = null; return; }
+    if (callerBusy()) { setTimeout(go, 150); return; }
+    carried = null;
+    if (clip) { output(); carriedStop = playClip(clip, { onend: () => { carriedStop = null; } }); } else { carriedLine = line; caller.speak(line, { rate: 1.15 }); }
+  };
+  setTimeout(go, 0);
+}
+export function dropCarried() {
+  carried = null;
+  if (carriedStop) carriedStop();
+  if (carriedLine && caller.saying() === carriedLine) caller.stop();
+  carriedLine = null;
+}
+
 // Stops the caller mid-line, whichever voice it is. With `finish`, the line being said is let finish, and
-// nothing follows it.
+// nothing follows it (but what the winner paid, carried onto the results).
 export function hush({ finish = false } = {}) {
-  if (finish) { caller.settle(); joeCaller.settle(); } else { caller.stop(); joeCaller.stop(); quiet(); }
+  if (finish) { caller.settle(); joeCaller.settle(); } else { carried = null; caller.stop(); joeCaller.stop(); quiet(); }
 }
 
 // ---------------------------------------------------------------- the caller's downloaded voice

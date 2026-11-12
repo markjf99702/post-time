@@ -64,6 +64,7 @@ export function renderWatch(el, nav, params) {
   let joeCalls = false;
   let call = null;
   audio.primeVoice(); // this is inside the tap that started the race, from the form or from Watch again
+  audio.dropCarried(); // what the last winner paid, if it's still being said on its results
   if (audio.joeCanCall()) {
     const his = joePlan(race, run, { bugle, lead: () => (joeCalls ? audio.joeLead() : 0) });
     joeCalls = audio.joeTakes(memoKey(race), joeAhead(his, run));
@@ -609,6 +610,8 @@ export function renderWatch(el, nav, params) {
   }
   // With the official sign up, the announcer says what the winner paid, once the caller is done: after the
   // placings and the time (and, after a photo, the winner's line), and when nothing else is being said.
+  // Left for the results before then, it's said there (leave, below).
+  let resultSaid = false;
   function announceResult() {
     if (!call.result) return;
     const last = call.lines[call.lines.length - 1];
@@ -616,8 +619,7 @@ export function renderWatch(el, nav, params) {
       if (gone) return;
       // (The line on the board has had its time there too: after a photo, the winner's line.)
       const over = up && up.line === last && shown && performance.now() >= shown.at + (shown.line.d || audio.voiceSeconds(shown.line.say, 1.15)) * 1000;
-      if ((over && !audio.callerBusy()) || performance.now() - endedAt > 20000) showLine(call.result, now.textContent);
-      else setTimeout(tryNow, 150);
+      if ((over && !audio.callerBusy()) || performance.now() - endedAt > 20000) { resultSaid = true; showLine(call.result, now.textContent); } else setTimeout(tryNow, 150);
     };
     tryNow();
   }
@@ -642,6 +644,7 @@ export function renderWatch(el, nav, params) {
     for (const x of behind) x.inert = false;
   }
   function leave(where) {
+    if (where === 'result' && official && !resultSaid && call.result) audio.carryResult(call.result);
     teardown(where === 'result');
     nav.go(where, { no: race.no, fresh: true, ...(race.past ? { day: race.day } : {}) });
   }

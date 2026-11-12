@@ -1150,7 +1150,8 @@ await page.evaluate(() => window.__watch.setT(window.__watch.endT - 0.05));
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 await page.click('.w-ctl .btn');
 await page.waitForSelector('.official');
-await page.waitForFunction(() => window.__quiet());
+// (What the winner paid is said on the results if it wasn't said before Results was tapped.)
+await page.waitForFunction(() => window.__quiet() && window.__heard.some(x => x.ev === 'end' && /^The result is official\./.test(x.text)), null, { timeout: 20000 });
 await page.locator('.post-bar .btn', { hasText: /^Race 2/ }).click();
 await toTheGate(page);
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
@@ -1321,6 +1322,41 @@ await page.waitForSelector('.races');
   await page.evaluate(() => window.postTime.nav.go('card'));
   await page.waitForSelector('.races');
   assert.equal(await page.evaluate(() => window.__sound.state), 'running', 'a race left while paused left the sound held');
+}
+
+// Results tapped the moment it comes up, with the caller still on the placings and the time: what the winner
+// paid is said on the results once he's done with that line (which isn't cut off), not dropped.
+{
+  const done = await page.evaluate(() => window.postTime.card().races.filter(r => r.status === 'official').pop().no);
+  await page.waitForFunction(() => window.__quiet());
+  await page.evaluate(no => window.postTime.nav.go('watch', { no }), done);
+  await page.waitForSelector('.watch:not([hidden]) canvas.scene');
+  const carried = await page.evaluate(async () => {
+    const w = window.__watch, heard = window.__heard, start = heard.length;
+    const until = async (f, ms = 30000) => { for (const end = performance.now() + ms; !f();) { if (performance.now() > end) return false; await new Promise(r => setTimeout(r, 30)); } return true; };
+    const results = [...document.querySelectorAll('.w-ctl .btn')].find(b => /^Results/.test(b.textContent));
+    // (The race is taken to its end while the caller is still on the placings and the time, as it is watched
+    // at 2x or 4x.)
+    const last = w.call.lines[w.call.lines.length - 1];
+    w.setT(w.t0 + w.call.lines.find(l => l.wire).t + 0.02);
+    await until(() => heard.slice(start).some(x => x.ev === 'speak' && x.text === last.say));
+    w.setT(w.endT - 0.05);
+    await until(() => !results.hidden);
+    const paid = x => x.ev === 'speak' && /^The result is official\./.test(x.text);
+    const before = heard.slice(start).some(paid), from = heard.length;
+    const latest = heard.filter(x => x.ev === 'speak').pop();
+    const saying = heard.some(x => x.at > latest.at && x.ev !== 'speak') ? null : latest.text;
+    results.click();
+    await until(() => document.querySelector('.official'));
+    await until(() => heard.slice(from).some(paid), 15000);
+    const after = heard.slice(from), k = after.findIndex(paid);
+    return { before, saying, said: k >= 0, cut: after.some(x => x.ev === 'cancel'), afterLine: k > 0 && after.slice(0, k).some(x => x.ev === 'end' && x.text === saying), results: !!document.querySelector('.official') };
+  });
+  assert.ok(!carried.before && carried.saying, `the winner's price was said, or the caller was done, before Results was tapped, and this checked nothing: ${JSON.stringify(carried)}`);
+  assert.deepEqual({ said: carried.said, cut: carried.cut, afterLine: carried.afterLine, results: carried.results }, { said: true, cut: false, afterLine: true, results: true }, 'what the winner paid, with Results tapped at once: not said on the results, or said over the caller');
+  await page.waitForFunction(() => window.__quiet());
+  await page.evaluate(() => window.postTime.nav.go('card'));
+  await page.waitForSelector('.races');
 }
 
 // Close the page in the middle of a race and the game opens on that race again, from the gate, as a replay,
