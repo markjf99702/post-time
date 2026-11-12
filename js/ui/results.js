@@ -2,7 +2,7 @@
 // and the winner's circle.
 
 import { h, money, cloth, clear } from './dom.js';
-import { game, card, raceKey, horseOf, nextRace, raceLabel, myBets, photoRecord, multiFor, multiState, MULTI, raceAt, earlierDays, meetOf } from '../game.js';
+import { game, card, raceKey, horseOf, nextRace, raceLabel, myBets, photoRecord, multiFor, multiState, MULTI, raceAt, earlierDays, meetOf, ticketNote, memoKey } from '../game.js';
 import { ownerSilks, longDate, isHandicap, raceDayOf, meetDays } from '../world.js';
 import { JOCKEYS, TIPSTERS, TRAINERS, OWNERS, BIG_STAKES } from '../data.js';
 import { marginShort, fmtTime, fmtClock, ordinal } from '../chart.js';
@@ -16,6 +16,7 @@ import { canGive, givePicture } from '../copy.js';
 
 // `params.day` is there for an earlier race day's race (kept in js/world.js's pastRace): its results have the
 // order of finish, what paid, the call and Watch again, and what you bet and got back on it.
+const landed = new Set(); // the races whose tickets have landed on their result
 export function renderResult(root, nav, params) {
   const race = raceAt(params.day, params.no);
   if (!race || race.status !== 'official') { nav.go('card'); return; }
@@ -42,19 +43,26 @@ export function renderResult(root, nav, params) {
     wrap,
   );
 
-  // Your result.
+  // Your result. Come straight from the race, the tickets settle in turn: each PAID stamp lands, one after
+  // another, and a losing ticket tears a beat after them. (Once a race: not again when the page is drawn again.)
+  const landing = !!params.fresh && !landed.has(memoKey(race));
+  landed.add(memoKey(race));
   if ((bets.length || multi.length) && settled) {
     const net = settled.back - settled.spent;
-    wrap.append(h('div', { class: 'summary' },
+    const note = !past && net >= 0 ? ticketNote(race) : null;
+    let k = 0;
+    const turn = el => { if (landing) el.style.setProperty('--i', String(k++)); return el; };
+    wrap.append(h('div', { class: `summary${landing ? ' landing' : ''}` },
       // (The money is what was settled on this race. A double or Pick 3 is settled on its last race, so a
       // race with only one of those still running on it has none.)
-      settled.spent > 0 ? h('div', {}, h('div', { class: 'kicker' }, net >= 0 ? 'You cashed' : 'Your tickets'), h('div', { class: `big money ${net >= 0 ? 'pos' : 'neg'}` }, money(settled.back)), h('div', { class: 'muted' }, `on ${money(settled.spent)} bet · ${money(net, { sign: true })}`)) : null,
-      h('div', { class: 'tickets', style: { marginTop: 0, flex: '1 1 220px' } }, ...multi.map(t => multiTicket(t)), bets.map((b, i) => {
+      settled.spent > 0 ? h('div', {}, h('div', { class: 'kicker' }, net >= 0 ? 'You cashed' : 'Your tickets'), h('div', { class: `big money ${net >= 0 ? 'pos' : 'neg'}` }, money(settled.back)), h('div', { class: 'muted' }, `on ${money(settled.spent)} bet · ${money(net, { sign: true })}`),
+        note ? h('div', { class: 'ticket-note' }, note) : null) : null,
+      h('div', { class: 'tickets', style: { marginTop: 0, flex: '1 1 220px' } }, ...multi.map(t => turn(multiTicket(t))), bets.map((b, i) => {
         const back = settled.returns[i];
-        return h('div', { class: `ticket ${back > 0 ? 'cashed' : 'lost'}` },
+        return turn(h('div', { class: `ticket ${back > 0 ? 'cashed' : 'lost'}` },
           h('div', {}, ticketLine(b, b.sel.map(x => race.entries[x].pp)), h('div', { class: 'small' }, `COST ${money(b.cost)}${boughtAt(race, b)}`)),
           back > 0 ? h('span', { class: 'stamp' }, `PAID ${money(back)}`) : h('span', { class: 'small torn' }, 'torn up'),
-        );
+        ));
       })),
       // The race that left you without the price of a ticket says so, with the way to the ATM.
       nxt && nxt.no === race.no + 1 ? atmLine(() => redraw(nav), `That leaves you ${money(game.player.bank)}.`) : null,
@@ -238,13 +246,20 @@ export function renderCircle(root, nav, params) {
       h('button', { class: 'back', type: 'button', onclick: () => nav.go('result', { no: race.no }) }, '‹ Results'),
       h('div', {}, h('div', { class: 'kicker' }, `Race ${race.no}`), h('h1', { class: 'title' }, "The winner's circle")),
     ),
-    h('div', { class: 'pad' }, photoCard(rec, !!bookEntry)),
+    h('div', { class: 'pad' }, flash(photoCard(rec, !!bookEntry), bookEntry ? memoKey(race) : null)),
     h('div', { class: 'actions save-row' }, savePictureButton(rec, !!bookEntry)),
     h('p', { class: 'center muted', style: { padding: '0 16px' } }, bookEntry ? "You backed the winner, so you're in the picture. It's in your scrapbook." : 'Back the winner and you get into the picture, and it goes in your scrapbook.'),
     h('div', { class: 'actions' },
       nxt ? h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('race', { no: nxt.no }) }, `On to race ${nxt.no} ▸`) : h('button', { class: 'btn brass', type: 'button', onclick: () => nav.go('card') }, 'Back to the card ▸'),
     ),
   );
+}
+
+// The camera flashes the first time you see yourself in a photo (once a race, while the page is open).
+const flashed = new Set();
+function flash(frame, key) {
+  if (key && !flashed.has(key)) { flashed.add(key); frame.classList.add('flash'); }
+  return frame;
 }
 
 // The silks in a winner's circle photo: the owner's, with the cap the horse wore when it was the owner's

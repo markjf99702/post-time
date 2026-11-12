@@ -210,3 +210,32 @@ test("earlier race days are kept, this meet's and the last meet's, and each race
   // The same object each time it's asked for, so what's worked out from it is kept with it.
   assert.equal(G.raceAt(days[0], 3), G.raceAt(days[0], 3));
 });
+
+test('"Your first cashed ticket." and "Your biggest ticket of the meet." are said only when they are true', () => {
+  buildOn('note-1');
+  save(); load();
+  const notes = [];
+  for (let d = 0; d < 2; d++) {
+    for (const race of card().races) {
+      placeBet(race, { type: 'win', sel: [chalk(race)], amt: 2 });
+      if (race.no % 4 === 2) placeBet(race, { type: 'win', sel: [G.recordingOf(race).results[0].h], amt: d + 1 + race.no });
+      goToGate(race);
+      notes.push([race, G.ticketNote(race)]);
+    }
+    advanceDay();
+  }
+  const ledger = game.player.ledger;
+  let firstSeen = false, best = 0;
+  for (const [race, note] of notes) {
+    const line = ledger.find(x => x.day === race.day && x.no === race.no);
+    let want = null;
+    if (line.back > 0) {
+      if (!firstSeen) want = 'Your first cashed ticket.';
+      else if (line.best > best) want = 'Your biggest ticket of the meet.';
+      firstSeen = true;
+      best = Math.max(best, line.best);
+    }
+    assert.equal(note, want, `day ${race.day} race ${race.no}`);
+  }
+  assert.ok(notes.filter(([, n]) => n === 'Your biggest ticket of the meet.').length >= 1, 'no biggest ticket in two days, and this checked nothing');
+});

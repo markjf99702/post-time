@@ -295,6 +295,66 @@ try {
     await fctx.close();
   }
 
+  // ---------------------------------------------------------------- a little more ceremony
+  for (const reduce of [false, true]) {
+    const { ctx, page } = await freshMeet({ reducedMotion: reduce ? 'reduce' : 'no-preference' });
+    // Race 1 with two winning tickets and a losing one, watched to the end and on to its result.
+    const bankWas = await page.evaluate(async () => {
+      const G = await import('./js/game.js');
+      const race = G.card().races[0], won = G.recordingOf(race).results[0].h;
+      G.placeBet(race, { type: 'win', sel: [won], amt: 2 });
+      G.placeBet(race, { type: 'show', sel: [won], amt: 2 });
+      G.placeBet(race, { type: 'win', sel: [won === 0 ? 1 : 0], amt: 2 });
+      window.postTime.nav.go('card');
+      return document.getElementById('bank').textContent;
+    });
+    await page.evaluate(() => window.postTime.nav.go('watch', { no: 1 }));
+    await page.waitForFunction(() => window.__watch && window.__watch.endT > 0);
+    await page.evaluate(() => window.__watch.setT(window.__watch.endT - 0.05));
+    await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 20000 });
+    await page.click('.w-ctl .btn');
+    await page.waitForSelector('.official');
+    const landed = await page.evaluate(() => {
+      const b = document.getElementById('bank');
+      const anim = el => { const cs = getComputedStyle(el); return [cs.animationName, parseFloat(cs.animationDelay)]; };
+      return {
+        summary: document.querySelector('.summary').className, bank: [b.textContent, b.classList.contains('counting'), b.getAttribute('aria-busy')],
+        has: window.postTime.game.player.bank,
+        stamps: [...document.querySelectorAll('.summary .stamp')].map(anim), tear: anim(document.querySelector('.summary .ticket.lost')),
+        note: document.querySelector('.ticket-note')?.textContent, fade: getComputedStyle(document.getElementById('app')).animationName,
+      };
+    });
+    assert.equal(landed.bank[0], `$${landed.has.toFixed(2)}`, 'the box does not hold the new bankroll while it counts');
+    assert.notEqual(landed.bank[0], bankWas);
+    assert.equal(landed.note, 'Your first cashed ticket.');
+    if (!reduce) {
+      assert.match(landed.summary, /landing/);
+      assert.deepEqual([landed.bank[1], landed.bank[2]], [true, 'true'], 'the bankroll does not count to its new figure');
+      assert.equal(landed.stamps.length, 2);
+      assert.ok(landed.stamps.every(([n]) => n === 'stamp') && landed.stamps[1][1] > landed.stamps[0][1], `the stamps don't land in turn: ${JSON.stringify(landed.stamps)}`);
+      assert.ok(landed.tear[0] === 'tear' && landed.tear[1] > landed.stamps[1][1], "the losing ticket doesn't tear after the stamps");
+      assert.equal(landed.fade, 'fade-in');
+      await page.waitForFunction(() => !document.getElementById('bank').classList.contains('counting'), null, { timeout: 3000 });
+    } else {
+      assert.equal(landed.bank[1], false, 'the bankroll counts under Reduce Motion');
+      assert.ok(landed.stamps.every(([n]) => n === 'none') && landed.tear[0] === 'none' && landed.fade === 'none', 'something moves under Reduce Motion');
+    }
+    // Drawn again, the tickets don't land a second time.
+    await page.evaluate(() => window.postTime.nav.refresh());
+    assert.doesNotMatch(await page.locator('.summary').getAttribute('class'), /landing/);
+    // The camera flashes the first time you're in the photo, and not the next.
+    await page.click('.actions .btn.brass');
+    await page.waitForSelector('.photo-frame');
+    const flash = () => page.evaluate(() => { const f = document.querySelector('.photo-frame'); return [f.classList.contains('flash'), getComputedStyle(f, '::after').animationName]; });
+    assert.deepEqual(await flash(), [true, reduce ? 'none' : 'flash']);
+    await page.goBack();
+    await page.waitForSelector('.official');
+    await page.click('.actions .btn.brass');
+    await page.waitForSelector('.photo-frame');
+    assert.equal((await flash())[0], false, 'the camera flashed again');
+    await ctx.close();
+  }
+
   assert.deepEqual(problems, [], 'errors on the page');
   console.log('around: all checks passed');
 } finally {

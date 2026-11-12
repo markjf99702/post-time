@@ -667,6 +667,19 @@ export function dayTotals(c = card()) {
   return { spent, back, net: back - spent, pending };
 }
 
+// A word under "You cashed" on a race's result, when it's earned: "Your first cashed ticket." for the first race
+// you ever cashed on, or "Your biggest ticket of the meet." for a ticket bigger than any before it in the meet.
+export function ticketNote(race) {
+  const p = game.player, line = p.ledger.find(x => x.day === race.day && x.no === race.no);
+  if (!line || !(line.back > 0)) return null;
+  const earlier = p.ledger.filter(x => x !== line && (x.day < race.day || (x.day === race.day && x.no < race.no)));
+  if (!earlier.some(x => x.back > 0)) return 'Your first cashed ticket.';
+  const m = game.world.meet;
+  const inMeet = earlier.filter(x => m && x.day >= m.first && x.day <= m.last);
+  if (inMeet.some(x => x.back > 0) && line.best > Math.max(0, ...inMeet.map(x => x.best || 0))) return 'Your biggest ticket of the meet.';
+  return null;
+}
+
 // The day in three lines, once its last race is run: what you bet and got back, your best ticket (the race it
 // was in and what it paid), and the forum regular who came out furthest ahead on $2 to win on each top pick.
 // { spent, back, best: { back, no } | null, tip: { id, picks, wins, back } | null }

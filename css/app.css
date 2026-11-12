@@ -129,6 +129,10 @@ a { color: var(--link); }
 .bank.up { background: #2d7a3e; }
 .bank.down { background: rgba(179, 55, 44, .7); }
 .bank:empty { visibility: hidden; } /* while a meet is being built; it keeps its place */
+/* The bankroll counting to its new figure: the count is drawn over the new figure, which stays in the box. */
+.bank { position: relative; }
+.bank.counting { color: transparent; }
+.bank.counting::after { content: attr(data-show); position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #f3ecd8; white-space: nowrap; }
 /* Google Drive's cloud, beside the bankroll while saving to Drive is on: a dot on it, green when synced, amber
    while syncing, red when it wants a tap. 44 by 44 to a finger, in the room the header has. */
 .cloud { position: relative; background: none; border: 0; padding: 9px; margin: -3px -6px; cursor: pointer; color: #f3ecd8; }
@@ -220,6 +224,9 @@ a { color: var(--link); }
 .unsaved { margin: 0; padding: 8px max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left)); background: var(--paper-2); border-bottom: 2px solid var(--red); font-size: 14.5px; line-height: 1.3; text-align: center; }
 
 .app { max-width: 760px; margin: 0 auto; padding: 0 0 calc(110px + env(safe-area-inset-bottom)); }
+/* A new screen fades in. */
+.app.fade, .watch.fade { animation: fade-in .16s ease-out; }
+@keyframes fade-in { from { opacity: 0; } }
 
 /* ------------------------------------------------------------ shared bits */
 .cloth {
@@ -490,6 +497,16 @@ a { color: var(--link); }
 @keyframes print { from { transform: translateY(-14px); clip-path: inset(0 0 100% 0); } to { transform: none; clip-path: inset(0); } }
 .ticket.cashed { background-color: #eaf5e4; }
 .ticket.cashed .stamp { color: #2d7a3e; border: 2px solid #2d7a3e; padding: 2px 6px; border-radius: 4px; transform: rotate(-6deg); font-weight: 700; }
+/* Straight from the race, a result's tickets settle in turn: each PAID stamp lands, and a losing ticket tears a
+   beat after the stamps (--i is each ticket's turn). Without the movement they're simply stamped and torn. */
+.summary.landing .ticket.cashed .stamp { animation: stamp .34s cubic-bezier(.2, 1.4, .4, 1) both; animation-delay: calc(var(--i, 0) * .22s + .25s); }
+@keyframes stamp { from { opacity: 0; transform: rotate(-14deg) scale(2.4); } to { opacity: 1; transform: rotate(-6deg); } }
+.summary.landing .ticket.lost { animation: tear .3s ease-out both; animation-delay: calc(var(--i, 0) * .22s + .55s); }
+@keyframes tear {
+  from { clip-path: polygon(0 0, calc(100% - 76px) 0, calc(100% - 80px) 31%, calc(100% - 73px) 59%, calc(100% - 78px) 100%, 0 100%, 0 0,
+    100% 0, 100% 100%, calc(100% - 78px) 100%, calc(100% - 73px) 59%, calc(100% - 80px) 31%, calc(100% - 76px) 0); }
+}
+.ticket-note { font: italic 400 14px/1.3 var(--body); color: var(--win); margin-top: 3px; }
 /* A losing ticket, torn in two. The tear runs down the gutter between the print and the words "torn up", which
    have a column of their own of a fixed width, so it never goes through a letter or a horse's number. (It was cut
    at 51 to 59% of the ticket's width, through whatever was printed there: "5, 7, 2, 1" read "5, , 2, 1".) The ink
@@ -577,7 +594,8 @@ a { color: var(--link); }
 .w-stage.small .w-board .row { padding: 1px 0; font-size: 13.5px; }
 .w-stage.small .w-board .card { padding: 6px 10px 5px; }
 .w-stage.small .w-board .time { margin-top: 3px; padding-top: 3px; font-size: 12.5px; }
-.w-tix .won { color: #f5d77a; }
+.w-tix .won { color: #f5d77a; animation: won .9s ease-out; }
+@keyframes won { from { color: #fff; text-shadow: 0 0 10px #f5d77a; } }
 /* The photo finish, in a box of its own over the picture (and over what's under the picture, where the
    picture is too short for it): the race screen places the box and draws the photo the size it's shown here. */
 .w-photo { position: absolute; z-index: 2; display: flex; align-items: center; justify-content: center; background: rgba(8,10,8,.82); flex-direction: column; gap: 8px; padding: 8px 10px; }
@@ -739,6 +757,10 @@ a { color: var(--link); }
 .summary .big { font: 600 26px/1 var(--display); }
 .photo-frame { background: #fbf8ef; padding: 10px 10px 0; border-radius: 3px; box-shadow: 0 6px 24px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.05); color: #2a2419; max-width: 520px; margin: 0 auto; }
 .photo-frame.big { box-shadow: 0 6px 24px rgba(0,0,0,.18), 0 0 0 3px var(--brass); }
+/* The camera's flash, the first time you see yourself in a photo. (Nothing shows without the movement.) */
+.photo-frame.flash { position: relative; }
+.photo-frame.flash::after { content: ''; position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; animation: flash .8s ease-out .15s; }
+@keyframes flash { from { opacity: .95; } to { opacity: 0; } }
 .photo-frame canvas { width: 100%; display: block; aspect-ratio: 36 / 25; background: #ddd; }
 .photo-frame .caption { padding: 8px 4px 12px; font: 500 12px/1.35 var(--display); letter-spacing: .06em; text-transform: uppercase; display: grid; grid-template-columns: 1fr auto; gap: 1px 10px; }
 .photo-frame .caption .horse { font-size: 19px; letter-spacing: .04em; grid-column: 1 / -1; color: #1d3a2e; margin: 2px 0; }

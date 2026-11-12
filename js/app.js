@@ -43,6 +43,7 @@ const nav = {
     remember(screen, params);
     closeMenu();
     render();
+    fadeIn(screen === 'watch' ? watchEl : app, from !== screen || screen === 'watch');
     // (The scrapbook, back from a photo, puts itself back where it was.)
     if (screen !== 'watch' && !params.back) window.scrollTo(0, 0);
     drive.idle();
@@ -136,6 +137,15 @@ function render() {
   else if (screen === 'help') renderHelp(app, nav);
 }
 
+// A new screen fades in, a short one, rather than cutting from cream to the race's black and back. (Not a
+// screen drawn again where it is.) Reduce Motion turns it off, with the stylesheet's other movement.
+function fadeIn(el, now) {
+  if (!now) return;
+  el.classList.remove('fade');
+  void el.offsetWidth;
+  el.classList.add('fade');
+}
+
 function updateBank() {
   if (waiting) { bankEl.textContent = ''; return; } // no bankroll until the meet is built
   const b = game.player.bank;
@@ -145,8 +155,27 @@ function updateBank() {
     void bankEl.offsetWidth;
     bankEl.classList.add(b > lastBank ? 'up' : 'down');
     setTimeout(() => bankEl.classList.remove('up', 'down'), 1200);
+    countBank(lastBank, b);
   }
   lastBank = b;
+}
+// The bankroll counts up (or down) to its new figure. The figure in the box is the new one from the start, for
+// a screen reader and anything else that reads it: the count is drawn over it, and the box is marked busy
+// meanwhile so the new figure is read out once, not every step of the way.
+let counting = 0;
+function countBank(from, to) {
+  cancelAnimationFrame(counting);
+  const stop = () => { bankEl.classList.remove('counting'); bankEl.removeAttribute('aria-busy'); };
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { stop(); return; }
+  const start = performance.now(), ms = 700;
+  bankEl.classList.add('counting');
+  bankEl.setAttribute('aria-busy', 'true');
+  const step = now => {
+    const t = Math.min(1, (now - start) / ms), e = 1 - (1 - t) ** 3;
+    bankEl.dataset.show = money(Math.round((from + (to - from) * e) * 100) / 100);
+    if (t < 1) counting = requestAnimationFrame(step); else stop();
+  };
+  step(start);
 }
 
 // ------------------------------------------------------------------ menu and settings
