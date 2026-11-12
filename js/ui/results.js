@@ -139,6 +139,8 @@ export function renderResult(root, nav, params) {
     // out again another way, and could show another horse winning. (A save carries the day's earlier races
     // over a change to the racing.)
     res.eng === ENGINE ? h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('watch', { no: race.no }) }, 'Watch again') : null,
+    // The race's form, paddock and forum as they were before it, to read the result against.
+    h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('race', { no: race.no, tab: 'form' }) }, 'The form'),
   ));
   // The way on is in a bar at the bottom of the screen, where a race's page has To the gate: what the race
   // did for you on the left, and the next race (the card, after the last one) as the button. (It was the

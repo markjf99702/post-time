@@ -648,6 +648,8 @@ export function makeOfficial(world, race, run, { tote = makeTote(race, world), b
 const SPLIT = [0.6, 0.2, 0.11, 0.05, 0.02];
 // The share of the purse a finishing place earns, in a field of `fs`.
 const share = (pos, fs) => SPLIT[pos - 1] || (pos <= fs ? 0.02 / Math.max(1, fs - 5) : 0);
+// What a horse earned for finishing `pos` in `race`, as it went on its record.
+export const earnedIn = (race, pos) => Math.round(share(pos, race.entries.length) * race.purse);
 
 export function applyResult(world, race, run, odds) {
   const R = rng(`apply:${race.seed}`);

@@ -1,7 +1,7 @@
 // A race before it runs: the past performances, the paddock, the forum and the betting window.
 
 import { h, money, stake, cloth, silksCanvas, clear, ago, plural, dotted } from './dom.js';
-import { game, card, silksFor, isStarred, toggleStar, cashedOn, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor, toteFor, MULTI, multiStarting, legRaces, multiFor, multiState, cancelMulti, willPaysFor, multiWouldPay, multiNumbers } from '../game.js';
+import { game, card, silksFor, isStarred, toggleStar, cashedOn, formBefore, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor, toteFor, MULTI, multiStarting, legRaces, multiFor, multiState, cancelMulti, willPaysFor, multiWouldPay, multiNumbers } from '../game.js';
 import { ageOf, shortDate, clockText, CLASSES, meetStats, isHandicap, prepsOf } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
 import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES, CLOTH } from '../data.js';
@@ -203,15 +203,17 @@ export function conditions(race) {
 function formPanel(panel, race, betOn) {
   const stats = meetStats(game.world);
   const board = currentBoard(race);
-  panel.append(h('p', { class: 'note' }, 'Tap a horse for its past performances. Figures are speed figures: higher is faster, adjusted for distance and going.'));
+  panel.append(h('p', { class: 'note' }, race.status === 'official'
+    ? 'The form as it stood before the race: the figures, running styles and records leave this race out. Tap a horse for its past performances, with its line from this race marked.'
+    : 'Tap a horse for its past performances. Figures are speed figures: higher is faster, adjusted for distance and going.'));
   race.entries.forEach((e, i) => panel.append(entryCard(race, e, i, stats, board, betOn)));
 }
 
 function entryCard(race, e, i, stats, board, betOn) {
-  const hs = horseOf(e);
+  // Once the race is run, the horse as the form showed it before the race, and its line from the race.
+  const { hs, today, rider: js, trainer: ts } = formBefore(race, e, stats);
   const { trainer } = ranFor(e); // a horse claimed out of this race ran it for the people who entered it
   const silks = silksFor(race)[i]; // an owner's second runner in a cap of its own
-  const js = stats.jockeys[e.j], ts = stats.trainers[trainer];
   const figs = hs.pps.slice().reverse().slice(0, 5).map(p => p.fig);
   const best = figs.length ? Math.max(...figs) : null;
   // In the Handicap, a horse pointed to it says which weekly stakes sent it: "Won the Brass Pull Stakes".
@@ -223,7 +225,7 @@ function entryCard(race, e, i, stats, board, betOn) {
   // another tab, and from another screen.
   const opened = openedIn(race);
   const more = h('div', { class: 'entry-more', hidden: !opened.has(e.hid) });
-  if (!more.hidden) fillMore(more, race, e, hs, betOn && (() => betOn(i)));
+  if (!more.hidden) fillMore(more, race, e, hs, betOn && (() => betOn(i)), today);
   const head = h('button', { class: 'entry-head', type: 'button', 'aria-expanded': String(!more.hidden) },
     cloth(e.pp, 'lg'),
     silksCanvas(silks, 30),
@@ -236,7 +238,7 @@ function entryCard(race, e, i, stats, board, betOn) {
     more.hidden = !open;
     head.setAttribute('aria-expanded', String(open));
     if (open) opened.add(e.hid); else opened.delete(e.hid);
-    if (open && !more.firstChild) fillMore(more, race, e, hs, betOn && (() => betOn(i)));
+    if (open && !more.firstChild) fillMore(more, race, e, hs, betOn && (() => betOn(i)), today);
   });
   // A horse you cashed on when it won says so, from your winner's circle photos.
   const cashed = cashedOn(e.hid, race);
@@ -276,8 +278,9 @@ function styleName(s) {
 
 // `bet` is there for a race that's up for betting: the horse's past performances end with a button that puts
 // it on the betting slip. (The form couldn't hand the window a horse: it was read about on one tab and found
-// by its number among numbers on another.)
-function fillMore(more, race, e, hs, bet) {
+// by its number among numbers on another.) `today` is the race's own line, once it's run: it heads the table,
+// marked.
+function fillMore(more, race, e, hs, bet, today = null) {
   const age = ageOf(game.world, hs);
   const sireLink = name => IN_BLOODLINES.has(name)
     ? h('a', { href: `https://junkdrawer.works/bloodlines/#${encodeURIComponent(name)}`, target: '_blank', rel: 'noopener' }, name)
@@ -292,18 +295,19 @@ function fillMore(more, race, e, hs, bet) {
       turf.length ? ` On turf: ${turf.length}-${turf.filter(p => p.fin === 1).length}-${turf.filter(p => p.fin === 2).length}-${turf.filter(p => p.fin === 3).length}.` : '',
     ),
   );
-  if (!hs.pps.length) more.append(h('p', { class: 'first-timer' }, newcomer(hs).note));
+  if (!hs.pps.length && !today) more.append(h('p', { class: 'first-timer' }, newcomer(hs).note));
   else {
     const t = h('table', { class: 'pps' },
       h('thead', {}, h('tr', {}, ['Date', 'Race', 'Class', 'Fig', 'Calls · Fin', 'Odds'].map(x => h('th', {}, x)))),
     );
     const tb = h('tbody');
-    for (const p of hs.pps.slice().reverse()) {
+    for (const p of [...(today ? [today] : []), ...hs.pps.slice().reverse()]) {
       const calls = p.line.slice(0, -1).filter(Boolean);
       const fin = p.line[p.line.length - 1];
+      const mark = p === today;
       tb.append(
-        h('tr', {},
-          h('td', {}, shortDate(p.dt), h('br'), h('span', { class: 'muted' }, `Lrk ${COND[p.cond] || p.cond}`)),
+        h('tr', { class: mark ? 'today' : null },
+          h('td', {}, mark ? h('b', { class: 'today-tag' }, 'This race') : shortDate(p.dt), h('br'), h('span', { class: 'muted' }, mark ? shortDate(p.dt) : `Lrk ${COND[p.cond] || p.cond}`)),
           h('td', {}, `${distanceShort(p.f * FURLONG)}${p.surf === 't' ? ' ⓣ' : ''}`, h('br'), h('span', { class: 'muted' }, `${p.fs} ran`)),
           h('td', {}, p.nm ? shortStakes(p.nm) : (p.fm ? 'f-' : '') + shortClass(p.cls)),
           h('td', { class: 'f' }, String(p.fig)),
@@ -314,7 +318,7 @@ function fillMore(more, race, e, hs, bet) {
         ),
         // The rider is on this line, which wraps, and not under the odds, where a long surname made the
         // narrowest column the widest and pushed the table off the side of a phone.
-        h('tr', { class: 'c' }, h('td', { colspan: 6 }, h('div', {},
+        h('tr', { class: `c${mark ? ' today' : ''}` }, h('td', { colspan: 6 }, h('div', {},
           h('b', {}, p.cm), ' · ',
           p.fr.slice(0, -1).map(fmtTime).join(' '), ' ', h('b', {}, fmtTime(p.fr[p.fr.length - 1])), ' · ',
           p.top.map((x, k) => `${x[0]}${k < 2 && x[1] ? ' ' + marginShort(x[1]) : ''}`).join(', '),

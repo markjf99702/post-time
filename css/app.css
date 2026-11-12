@@ -367,6 +367,10 @@ a { color: var(--link); }
 .pps th { font: 500 10px/1 var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 4px 3px; border-bottom: 1px solid var(--line); }
 .pps td { padding: 5px 3px 1px; vertical-align: top; white-space: nowrap; }
 .pps tr.c td { padding: 0 3px 6px; color: var(--muted); white-space: normal; border-bottom: 1px solid var(--line); font-size: 12px; }
+/* A run race's own line, at the head of the horse's past performances, looked back at from its results. */
+.pps tr.today td { background: rgba(184,137,45,.13); }
+.pps tr.today td:first-child { box-shadow: inset 3px 0 0 var(--brass); }
+.today-tag { font: 600 11px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; }
 /* The table is as wide as its card and no wider. The line of comment under each row wraps at the table's width
    and has no say in it (its box asks for no width and then takes all there is). If the row above it still
    doesn't fit, its calls go onto a second line, breaking between one call and the next. */

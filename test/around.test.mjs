@@ -155,3 +155,24 @@ test("the meet's leading riders and trainers add up to its races, and its leadin
   assert.equal(r.earners[0].hid, r.horse.hid, 'the horse that earned most is not the horse of the meet');
   assert.ok(r.wins.length === 5 && r.earners.length === 5);
 });
+
+test('a race looked at again after it is run has its form as it stood before: figures, running style, chips and records', async () => {
+  const { angles } = await import('../js/handicap.js');
+  const { runStyle } = await import('../js/forum.js');
+  buildOn('before-1');
+  save(); load();
+  let checked = 0;
+  for (const race of card().races) {
+    const was = () => race.entries.map(e => {
+      const { hs, rider, trainer } = G.formBefore(race, e, W.meetStats(game.world));
+      return JSON.stringify({ figs: hs.pps.map(p => p.fig), style: runStyle(hs), chips: angles(race, hs, game.world.day), life: hs.life, rider, trainer });
+    });
+    const before = was();
+    goToGate(race);
+    assert.deepEqual(was(), before, `race ${race.no}: the form changed once the race was run`);
+    // And each horse's line from the race is there, to be marked.
+    for (const e of race.entries) assert.equal(G.formBefore(race, e, W.meetStats(game.world)).today?.no, race.no);
+    checked++;
+  }
+  assert.equal(checked, 8);
+});

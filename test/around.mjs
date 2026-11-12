@@ -176,6 +176,29 @@ try {
     await ctx.close();
   }
 
+  // ---------------------------------------------------------------- looking back at a race
+  {
+    const { ctx, page } = await freshMeet();
+    // The figures shown before race 1 is run, and after, from its results' The form.
+    await page.evaluate(() => window.postTime.nav.go('race', { no: 1 }));
+    const figs = () => page.locator('.entry .figs').evaluateAll(fs => fs.map(f => [...f.querySelectorAll('.fig, .chip')].map(x => x.textContent).join(' ')));
+    const before = await figs();
+    await runDay(page);
+    await page.evaluate(() => window.postTime.nav.go('result', { no: 1 }));
+    await page.locator('.actions .btn', { hasText: 'The form' }).click();
+    await page.waitForSelector('.entry');
+    assert.deepEqual(await figs(), before, "the form looked back at isn't the form as it stood before the race");
+    assert.match(await page.locator('.panel .note').first().textContent(), /^The form as it stood before the race/);
+    await page.locator('.entry-head').first().click();
+    const first = page.locator('.entry').first().locator('.pps tbody tr').first();
+    assert.equal(await first.getAttribute('class'), 'today', "the race's own line doesn't head the past performances");
+    assert.match(await first.textContent(), /^This race/);
+    // Its paddock and its forum, with the posts from before the race.
+    await page.locator('.tabs button', { hasText: 'Forum' }).click();
+    assert.ok(await page.locator('.post:not(.after)').count() > 0, 'no posts from before the race on its forum');
+    await ctx.close();
+  }
+
   assert.deepEqual(problems, [], 'errors on the page');
   console.log('around: all checks passed');
 } finally {

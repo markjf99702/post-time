@@ -2,7 +2,7 @@
 // localStorage. A race is settled the moment you send the horses to the gate, so closing the page
 // halfway through a race doesn't change what happened.
 
-import { buildWorld, simulateRace, makeOfficial, forumThread, nextDay as worldNextDay, ownerSilks, fieldSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats, ensureMeet, isClosingDay } from './world.js';
+import { earnedIn, buildWorld, simulateRace, makeOfficial, forumThread, nextDay as worldNextDay, ownerSilks, fieldSilks, firstSaturday, CLASSES, redrawShortRaces, ensureStats, ensureMeet, isClosingDay } from './world.js';
 import { makeTote, board, settle, ticketReturn, cost as betCost, legs, MULTI, firstLeg, multiSettle, multiClose, willPays as multiWillPays, wouldPayMulti } from './tote.js';
 import { reactions } from './forum.js';
 import { oddsText, lineText } from './handicap.js';
@@ -486,6 +486,39 @@ export function photoRecord(race, winIdx, won) {
     seed: race.seed, won: round2(won || 0), stakes: race.cls === 'STK', hid: e.hid,
     // The cap the winner wore, when it wasn't the owner's own (an owner's second runner in the race).
     ...(worn.cap !== ownerSilks(owner).cap ? { cap: worn.cap } : {}),
+  };
+}
+
+// ------------------------------------------------------------------ the form as it stood
+
+// A horse as the form showed it before `race` was run: once a race is run its line goes on the horse's card,
+// its record and its rider's and trainer's, and the figures, the running style and the chips worked out from
+// them would count the race itself. { hs: the horse with its lines, record and works from before the race,
+// today: the race's own line (null before it's run), rider: and trainer: their [starts, wins] before it }.
+// Lines and works from later races (a race looked back at from a later race day) are left out too.
+export function formBefore(race, e, stats) {
+  const hs = horseOf(e);
+  const { trainer } = ranFor(e);
+  const rider = stats.jockeys[e.j], trains = stats.trainers[trainer];
+  if (race.status !== 'official') return { hs, today: null, rider, trainer: trains };
+  const before = p => p.d < race.day || (p.d === race.day && p.no < race.no);
+  const today = hs.pps.find(p => p.d === race.day && p.no === race.no) || null;
+  const fin = race.result.order.find(o => o.k === race.entries.indexOf(e))?.pos;
+  const life = { ...hs.life };
+  if (fin && (race.day === game.world.day)) {
+    // (Only today's records can be taken back to before the race: an earlier race day's are long gone by.)
+    life.starts--; if (fin === 1) life.w--; else if (fin === 2) life.p--; else if (fin === 3) life.s--;
+    life.earn -= earnedIn(race, fin);
+  }
+  // (A trainer can have more than one runner in the race: each was a start, and the winner a win.)
+  const now = fin && race.day === game.world.day;
+  const winner = race.entries[race.result.order[0].k];
+  const ran = race.entries.filter(x => ranFor(x).trainer === trainer).length;
+  return {
+    hs: { ...hs, pps: hs.pps.filter(before), works: hs.works.filter(w => w.dt < race.date), life },
+    today,
+    rider: now ? { starts: rider.starts - 1, w: rider.w - (fin === 1 ? 1 : 0) } : rider,
+    trainer: now ? { starts: trains.starts - ran, w: trains.w - (ranFor(winner).trainer === trainer ? 1 : 0) } : trains,
   };
 }
 
