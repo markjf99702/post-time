@@ -65,7 +65,7 @@ export function renderResult(root, nav, params) {
         ));
       })),
       // The race that left you without the price of a ticket says so, with the way to the ATM.
-      nxt && nxt.no === race.no + 1 ? atmLine(() => redraw(nav), `That leaves you ${money(game.player.bank)}.`) : null,
+      !past && nxt && nxt.no === race.no + 1 ? atmLine(() => redraw(nav), `That leaves you ${money(game.player.bank)}.`) : null,
     ));
   }
   // An earlier race day's tickets go when the race day after it is over; what they came to is in your record.
