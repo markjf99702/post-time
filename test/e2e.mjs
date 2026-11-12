@@ -638,7 +638,8 @@ const board = await page.evaluate(() => {
   const r = window.postTime.card().races[0], s = window.postTime.game.player.settled['0:1'];
   const { fmtTime, marginShort } = window.__fmt;
   return {
-    rows: [...document.querySelectorAll('.w-board .row')].map(x => x.innerText.replace(/\s+/g, ' ').trim()),
+    // (Less the margin in words, which is there for a screen reader alone.)
+    rows: [...document.querySelectorAll('.w-board .row')].map(x => x.innerText.replace(x.querySelector('.sr')?.textContent || '\0', '').replace(/\s+/g, ' ').trim()),
     want: r.result.order.slice(0, 4).map((o, k) => `${k + 1} ${r.entries[o.k].pp} ${window.postTime.game.world.horses[r.entries[o.k].hid].name.toUpperCase()}${k ? ` ${marginShort(o.toPrev)}` : ''}`),
     time: document.querySelector('.w-board .time').textContent, wantTime: `Time ${fmtTime(r.result.time)}`,
     over: getComputedStyle(document.querySelector('.w-board')).backgroundColor,
@@ -3604,6 +3605,15 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
 // Played with a screen reader, which reads the page's words and not its look.
 {
   const ctx12 = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  // A browser's voice for the game's caller, which says nothing and ends each line at once.
+  await ctx12.addInitScript(() => {
+    window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+    const list = [{ name: 'Chrome OS US English 4', lang: 'en-US', localService: true }];
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
+      getVoices: () => list, cancel() {}, addEventListener() {},
+      speak(u) { setTimeout(() => u.onstart && u.onstart({}), 20); setTimeout(() => u.onend && u.onend({}), 150); },
+    } });
+  });
   const sr = await ctx12.newPage();
   sr.on('pageerror', e => problems.push(e.message));
   sr.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
@@ -3670,6 +3680,28 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   await sr.waitForFunction(() => document.getElementById('bank').getAttribute('aria-live') === 'polite');
   await sr.locator('[data-k="cancel:0"]').click();
   assert.match(await said(), /^Cancelled: \$100 exacta box 1, 2: .+\. You have \$200\.00\.$/);
+  // The race call on the screen is read out as it comes up, but not while the game's own voice is reading it:
+  // that was every line twice, in two voices at once. At the finish the board's margins are read in words,
+  // and the line of tickets says how they did.
+  await sr.locator('[data-k="type:win"]').click();
+  await sr.locator('[data-k="amt:2"]').click();
+  await sr.locator('[data-k="pick:0:0"]').click();
+  await sr.locator('[data-k="buy"]').click();
+  await sr.evaluate(() => window.postTime.nav.go('watch', { no: 1 }));
+  await sr.waitForSelector('.watch:not([hidden]) .skip');
+  const live = () => sr.locator('.watch .now').getAttribute('aria-live');
+  assert.equal(await live(), 'polite', 'with the caller off, the call on the screen is not read out');
+  await sr.locator('.watch .caller').click();
+  assert.equal(await live(), 'off', 'with the caller on, a screen reader reads the call over him');
+  await sr.locator('.watch .caller').click();
+  assert.equal(await live(), 'polite');
+  assert.equal(await sr.locator('.watch .w-tix').getAttribute('aria-live'), 'polite');
+  await sr.evaluate(() => window.__watch.setT(window.__watch.endT - 0.05));
+  await sr.waitForSelector('.watch .w-board', { timeout: 20000 });
+  const margins = await sr.locator('.w-board .row .sr').allTextContents();
+  assert.equal(margins.length, 3);
+  for (const m of margins) assert.match(m, /^, (a (nose|head|neck)|\S+ lengths?) behind$/);
+  assert.equal(await sr.locator('.w-board .row .mg[aria-hidden="true"]').count(), 4);
   await ctx12.close();
 }
 

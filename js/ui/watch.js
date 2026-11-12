@@ -94,6 +94,10 @@ export function renderWatch(el, nav, params) {
   const order = h('div', { class: 'order', role: 'group', 'aria-label': 'Running order' });
   const prev = h('div', { class: 'prev' });
   const now = h('div', { class: 'now', 'aria-live': 'polite' });
+  // The line on the screen is read out by a screen reader as it comes up, except while the game's own voice
+  // is reading the call: then a screen reader's user heard every line twice, in two voices at once.
+  const quietCall = () => now.setAttribute('aria-live', audio.joeCanCall() || (audio.voiceEnabled() && !audio.noVoice()) ? 'off' : 'polite');
+  quietCall();
   const callBox = h('div', { class: 'call' }, prev, now);
   const mineList = myTickets(race);
   const speedBtns = [1, 2, 4].map(s => h('button', { type: 'button', 'aria-pressed': String(s === 1), onclick: () => setSpeed(s) }, `${s}×`));
@@ -114,6 +118,7 @@ export function renderWatch(el, nav, params) {
     audio.setVoice(on); // off, that stops him mid-line
     if (on) audio.primeVoice(); // inside the tap, so a phone lets him speak
     callerBtn.setAttribute('aria-pressed', String(on));
+    quietCall();
     save();
   } }, micIcon());
   // Skip says what it will do: from the gate on, to the stretch (twelve seconds from the wire); from there, to
@@ -297,6 +302,7 @@ export function renderWatch(el, nav, params) {
   let shown = null; // the line on the board, and when it went up
   function showLine(line, before) {
     shown = { line, at: performance.now() };
+    quietCall(); // (the voice may have come or gone since the last line: Joe's download, a voice that failed)
     prev.textContent = before;
     now.textContent = line.text;
     fitCall();
@@ -516,7 +522,10 @@ export function renderWatch(el, nav, params) {
     }
     const rows = run.results.slice(0, 4).map((r, k) => {
       const who = runners[r.h];
-      return h('div', { class: 'row' }, h('span', { class: 'pos' }, String(k + 1)), cloth(who.number, 'sm'), h('span', { class: 'nm' }, who.name), h('span', { class: 'mg' }, k ? marginShort(r.toPrev) : ''));
+      // (A screen reader is given the margin in words: it read the board's "hd" as the letters.)
+      const by = r.toPrev < 0.375 ? `a ${marginText(r.toPrev)}` : marginText(r.toPrev);
+      return h('div', { class: 'row' }, h('span', { class: 'pos' }, String(k + 1)), cloth(who.number, 'sm'), h('span', { class: 'nm' }, who.name),
+        h('span', { class: 'mg', 'aria-hidden': 'true' }, k ? marginShort(r.toPrev) : ''), k ? h('span', { class: 'sr' }, `, ${by} behind`) : null);
     });
     board = h('div', { class: 'w-board', role: 'status' },
       h('div', { class: 'card' },
@@ -717,7 +726,8 @@ function myTickets(race) {
   const paid = [...bets, ...here].reduce((sum, b) => sum + (b.cost ?? betCost(b)), 0);
   const alive = multi.filter(x => x.st === 'alive').map(x => `${SHORT[x.t.type]} alive`);
   const count = bets.length + here.length ? [`Your tickets: ${bets.length + here.length}, ${money(paid)}`] : [];
-  const box = h('div', { class: 'w-tix' }, full, h('span', { class: 'count' }, [...count, ...alive].join(' · ')));
+  // (A screen reader says how they did when the official sign goes up: it's the one line that changes then.)
+  const box = h('div', { class: 'w-tix', 'aria-live': 'polite' }, full, h('span', { class: 'count' }, [...count, ...alive].join(' · ')));
   // With the official sign, each ticket's line says how it did: "$2 Win 3: paid $7.40", "lost"; a double or
   // Pick 3 that goes on to a later race, "alive" or "out". (A winning ticket was marked only by the cash
   // window's ring, which a phone on silent never plays.) The short screen's count says what they paid.
