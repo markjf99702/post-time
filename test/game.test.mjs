@@ -16,7 +16,7 @@ const { LENGTH, FURLONG, segmentAt } = await import('../js/track.js');
 const { raceCall, raceClock } = await import('../js/call.js');
 const { marginShort } = await import('../js/chart.js');
 const { buildWorld, meetStats, ownerSilks, simulateRace } = await import('../js/world.js');
-const { TRAINERS, OWNERS, SIRES } = await import('../js/data.js');
+const { TRAINERS, OWNERS, SIRES, TIPSTERS } = await import('../js/data.js');
 const { runStyle } = await import('../js/forum.js');
 const { makeTote, board } = await import('../js/tote.js');
 
@@ -115,7 +115,7 @@ function forumBefore(race) {
     posts: forumFor(race).map(p => {
       const e = race.entries[p.pick[0]], h = e && horseOf(e);
       return {
-        who: p.who, text: p.text, pp: e ? e.pp : null,
+        who: p.who, text: p.text, pp: e ? e.pp : null, pass: !!p.pass,
         top: h ? { style: runStyle(h), sire: SIRES.find(x => x.name === h.sire).dist, paddock: e.pdk.kind, starts: h.life.starts, lines: lines(h), works: h.works.map(w => ({ dt: w.dt, rank: w.rank, f: w.f })) } : null,
       };
     }),
@@ -127,7 +127,13 @@ function forumAfter(race, run) {
   const odds = race.result.odds, chalk = race.forum.find(p => p.who === 'chalk');
   return {
     chalk: { pick: chalk.pick[0], odds, win: run.results[0].h, wins: game.world.tipsters.chalk.wins },
-    after: (race.forumAfter || []).map(a => ({ who: a.who, text: a.text, won: a.won, note: horseOf(race.entries[race.forum.find(p => p.who === a.who).pick[0]]).pps.at(-1).cm })),
+    after: (race.forumAfter || []).map(a => {
+      const h = horseOf(race.entries[race.forum.find(p => p.who === a.who).pick[0]]), before = h.pps.at(-2);
+      return { who: a.who, text: a.text, won: a.won, note: h.pps.at(-1).cm, pos: h.pps.at(-1).fin, before: before ? { cm: before.cm, fin: before.fin } : null };
+    }),
+    // Each regular's top pick as the race went off (ChalkEater's is the favourite then), and the winner.
+    picks: Object.fromEntries(race.forum.filter(p => !p.pass && p.pick.length).map(p => [p.who, race.entries[p.pick[0]].pp])),
+    winner: race.entries[run.results[0].h].pp,
   };
 }
 
@@ -848,6 +854,46 @@ test("a regular's losing line is what the trip note says happened to his horse",
   assert.ok(wide.length > 5);
   // And a horse with trouble in its note isn't said to have done nothing.
   assert.deepEqual(lost.filter(a => /Never fired|Nothing\. Tossing/.test(a.text) && /Checked|Blocked|Stumbled|Broke slowly|Bumped|Dueled|Late gain/.test(a.note)).map(a => a.where), []);
+});
+
+// After a race each regular had one winning line, and all seven drew their losing lines from one pool of 15:
+// PedigreePam said "Second guessed myself on the exacta", and GreyHorseGreg, who bets one grey to win, too.
+test('each regular has his own lines after a race, and a losing run or a repeat of trouble is said only when it happened', () => {
+  const { races } = threads();
+  const TRIP = [/Checked/, /Blocked/, /Stumbled/, /Broke slowly/, /Bumped/, /\d wide/, /Dueled/, /Set pace/, /Chased/, /Late gain|[Ii]mproved position/];
+  const trip = note => TRIP.find(re => re.test(note));
+  // Who says each line, with the money, the prices, the places, the sires and the riders taken out.
+  const shape = t => t.replace(/\$[\d,]+\.\d\d/g, '$').replace(/\b\d+-\d+\b/g, 'N-N').replace(/\b(first|second|third|First|Second|Third)\b/g, 'ORD')
+    .replace(new RegExp(SIRES.map(x => x.name).join('|'), 'g'), 'SIRE').replace(/\b[A-Z]\. [A-Z][a-zñ]+\b/g, 'RIDER');
+  const by = new Map();
+  for (const r of races) for (const a of r.forum.after) {
+    if (!a.won && a.pos > 3 && trip(a.note)) continue; // the chart's complaint about the trip is anybody's
+    const k = shape(a.text);
+    if (!by.has(k)) by.set(k, new Set());
+    by.get(k).add(a.who);
+  }
+  assert.deepEqual([...by].filter(([, who]) => who.size > 1).map(([k, who]) => `"${k}": ${[...who].join(', ')}`), []);
+  for (const who of TIPSTERS.map(t => t.id)) {
+    const own = [...by].filter(([, w]) => w.has(who)).length;
+    assert.ok(own >= 6, `${who} has ${own} lines of his own after a race`);
+  }
+  // "0 for 4 today": his top picks today, up to this race, lost that many in a row.
+  let day = 0, run = {}, cold = 0;
+  for (const r of races) {
+    if (r.day !== day) { day = r.day; run = {}; }
+    for (const p of r.forum.posts) {
+      const said = p.text.match(/0 for (\d+) today/);
+      if (said) cold++;
+      const now = p.pass ? 0 : run[p.who] || 0;
+      assert.equal(!!said, [3, 5, 7].includes(now), `race day ${r.day}, race ${r.no}: ${p.text} (his picks have lost ${now} in a row today)`);
+      if (said) assert.equal(+said[1], now, `race day ${r.day}, race ${r.no}: ${p.text}`);
+    }
+    for (const [who, pp] of Object.entries(r.forum.picks)) run[who] = pp === r.forum.winner ? 0 : (run[who] || 0) + 1;
+  }
+  // "Nowhere to go again": the horse's race before this one was beaten with the same trouble.
+  const again = races.flatMap(r => r.forum.after.filter(a => / again\b/.test(a.text)).map(a => ({ ...a, where: `race day ${r.day}, race ${r.no}: "${a.text}" (its note "${a.note}", the race before "${a.before?.cm}")` })));
+  assert.deepEqual(again.filter(a => !a.before || a.before.fin === 1 || !trip(a.note)?.test(a.before.cm)).map(a => a.where), []);
+  assert.ok(cold > 10 && again.length > 3, `${cold} losing runs, ${again.length} repeats of trouble`);
 });
 
 test("two regulars don't post the same reaction after a race", () => {
