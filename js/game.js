@@ -580,6 +580,29 @@ export function dayTotals(c = card()) {
   return { spent, back, net: back - spent, pending };
 }
 
+// The day in three lines, once its last race is run: what you bet and got back, your best ticket (the race it
+// was in and what it paid), and the forum regular who came out furthest ahead on $2 to win on each top pick.
+// { spent, back, best: { back, no } | null, tip: { id, picks, wins, back } | null }
+export function dayRecap(c = card()) {
+  const { spent, back } = dayTotals(c);
+  const lines = game.player.ledger.filter(x => x.day === c.day && x.best > 0);
+  const top = lines.reduce((a, x) => (!a || x.best > a.best ? x : a), null);
+  const tips = new Map();
+  for (const race of c.races) {
+    if (race.status !== 'official' || !Array.isArray(race.forum)) continue;
+    const won = race.result.order[0].k;
+    for (const p of race.forum) {
+      if (p.pass || !p.pick || !p.pick.length) continue;
+      const r = tips.get(p.who) || { id: p.who, picks: 0, wins: 0, back: 0 };
+      r.picks++;
+      if (p.pick[0] === won) { r.wins++; r.back = round2(r.back + (race.result.pay.win[won] || 0)); }
+      tips.set(p.who, r);
+    }
+  }
+  const tip = [...tips.values()].filter(r => r.wins).sort((a, b) => (b.back - 2 * b.picks) - (a.back - 2 * a.picks) || b.wins - a.wins)[0] || null;
+  return { spent: round2(spent), back: round2(back), best: top ? { back: top.best, no: top.no } : null, tip };
+}
+
 export function raceLabel(race) {
   if (race.name) return race.name;
   const C = CLASSES[race.cls];

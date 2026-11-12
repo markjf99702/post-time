@@ -85,3 +85,23 @@ test('a winner you cash is starred, its entry says what you cashed when it won, 
   assert.ok(before.length && before.every(x => x.day < race.day), 'the cashes said on its entry are not from before the race');
 });
 
+test("the day's three lines: bet and back as the record has them, the best ticket, and the forum's best day", () => {
+  buildOn('recap-1');
+  save(); load();
+  const was = structuredClone(game.world.tipsters);
+  playDay();
+  const r = G.dayRecap();
+  const lines = game.player.ledger.filter(x => x.day === game.world.day);
+  assert.equal(r.spent, G.round2(lines.reduce((s, x) => s + x.spent, 0)));
+  assert.equal(r.back, G.round2(lines.reduce((s, x) => s + x.back, 0)));
+  const best = lines.reduce((a, x) => (x.best > (a?.best || 0) ? x : a), null);
+  assert.deepEqual(r.best, best ? { back: best.best, no: best.no } : null);
+  // The forum's day is what was added to its records today.
+  assert.ok(r.tip, 'no forum regular picked a winner all day');
+  const now = game.world.tipsters[r.tip.id], then = was[r.tip.id] || { picks: 0, wins: 0, back: 0 };
+  assert.deepEqual([r.tip.picks, r.tip.wins, r.tip.back], [now.picks - then.picks, now.wins - then.wins, G.round2(now.back - then.back)]);
+  for (const [id, t] of Object.entries(game.world.tipsters)) {
+    const b = was[id] || { picks: 0, wins: 0, back: 0 };
+    assert.ok(t.back - b.back - 2 * (t.picks - b.picks) <= r.tip.back - 2 * r.tip.picks + 1e-9, `${id} had a better day than ${r.tip.id}`);
+  }
+});

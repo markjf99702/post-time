@@ -1,9 +1,9 @@
 // The race card: today's date and weather, the eight races, and what happened in the ones already run.
 
 import { h, money, cloth, jdFoot, dotted } from './dom.js';
-import { game, card, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay, multiFor, starredIn } from '../game.js';
+import { game, card, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay, multiFor, starredIn, dayRecap } from '../game.js';
 import { longDate, clockText, raceDayOf, meetDays, isClosingDay, isHandicap } from '../world.js';
-import { BIG_STAKES } from '../data.js';
+import { BIG_STAKES, TIPSTERS } from '../data.js';
 import { distanceName } from '../track.js';
 import { ordinal } from '../chart.js';
 
@@ -58,7 +58,8 @@ export function renderCard(root, nav) {
         h('span', {}, 'Dirt ', h('b', {}, c.wx.dirt)),
         h('span', {}, 'Turf ', h('b', {}, c.wx.turf)),
       ),
-      (tot.spent || tot.pending) ? h('div', { class: 'daysum' },
+      // (With the last race run, the day's three lines under "That's the card" say what this would.)
+      nxt && (tot.spent || tot.pending) ? h('div', { class: 'daysum' },
         tot.spent ? ['Today: bet ', h('b', { class: 'money' }, money(tot.spent)), ', back ', h('b', { class: 'money' }, money(tot.back)), ' ', h('b', { class: `money ${tot.net >= 0 ? 'pos' : 'neg'}` }, `(${money(tot.net, { sign: true })})`)] : null,
         tot.pending ? h('span', { class: 'muted' }, `${tot.spent ? ' · ' : ''}${money(tot.pending)} riding on races to come`) : null,
       ) : null,
@@ -67,7 +68,7 @@ export function renderCard(root, nav) {
       atmLine(() => redraw(nav)),
       // With the last race run, the way on is here as well as under the eight results, where it was about
       // 1,170 px down a phone's 844: a card opened the next morning had nothing on it to press.
-      !nxt ? h('div', { class: 'day-over' }, h('p', { class: 'h2' }, closing ? "That's the meet." : "That's the card."), nextDayButton(nav, closing)) : null,
+      !nxt ? h('div', { class: 'day-over' }, h('p', { class: 'h2' }, closing ? "That's the meet." : "That's the card."), nextDayButton(nav, closing), recap(c)) : null,
     ),
     h('ol', { class: 'races' }, c.races.map(r => h('li', {}, raceRow(r, nxt, nav)))),
   );
@@ -82,6 +83,18 @@ export function renderCard(root, nav) {
     );
   }
   root.append(foot, jdFoot());
+}
+
+// The day in three lines, under "That's the card": bet and back, your best ticket, and the forum's best day.
+function recap(c) {
+  const r = dayRecap(c);
+  const tip = r.tip && TIPSTERS.find(t => t.id === r.tip.id);
+  const net = r.back - r.spent;
+  return h('ul', { class: 'recap' },
+    h('li', {}, r.spent ? ['Bet ', h('b', { class: 'money' }, money(r.spent)), ', back ', h('b', { class: 'money' }, money(r.back)), ': ', h('b', { class: `money ${net >= 0 ? 'pos' : 'neg'}` }, money(net, { sign: true })), ' on the day.'] : 'No tickets today.'),
+    r.spent ? h('li', {}, r.best ? ['Your best ticket: ', h('b', { class: 'money' }, money(r.best.back)), ` in race ${r.best.no}.`] : 'No ticket cashed today.') : null,
+    h('li', {}, tip ? [h('b', {}, tip.handle), ` had the forum's best day: ${r.tip.wins} of ${r.tip.picks} picks won, ${money(r.tip.back)} back for $2 on each.`] : 'Nobody on the forum picked a winner today.'),
+  );
 }
 
 // After closing day the way on is the meet's closing page, which opens the next meet.

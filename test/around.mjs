@@ -66,13 +66,20 @@ try {
     const line = await page.locator('.race-row').nth(1).locator('.starred').textContent();
     assert.equal(line, `★ Starred: ${name} runs`, 'the card does not mark the race with the starred horse');
     assert.equal(await page.locator('.race-row .starred').count(), 1, 'a race without a starred horse is marked');
-    // Run the day, cashing on races 1 and 3: each winner is starred on its result, and the card says where the
-    // starred horses finished.
+    // Run the day, cashing on races 1 and 3: each winner is starred on its result, the card says where the
+    // starred horses finished, and the day is said in three lines under "That's the card".
     await runDay(page, [1, 3]);
     await page.evaluate(() => window.postTime.nav.go('result', { no: 1 }));
     assert.equal(await page.locator('.board tbody tr').first().locator('.star').getAttribute('aria-pressed'), 'true', 'the winner you cashed on is not starred');
     await page.evaluate(() => window.postTime.nav.go('card'));
     assert.match(await page.locator('.race-row').nth(1).locator('.starred').textContent(), new RegExp(`${name}, \\d+(st|nd|rd|th)$`));
+    const recap = await page.locator('.day-over .recap li').allTextContents();
+    assert.equal(recap.length, 3, `the day isn't three lines: ${recap.join(' | ')}`);
+    assert.match(recap[0], /^Bet \$4\.00, back \$[\d.]+: \+\$[\d.]+ on the day\.$/);
+    assert.match(recap[1], /^Your best ticket: \$[\d.]+ in race [13]\.$/);
+    assert.match(recap[2], /had the forum's best day: \d+ of \d+ picks won, \$[\d.,]+ back for \$2 on each\.$|^Nobody on the forum picked a winner today\.$/);
+    // (With the day over, the line of the day's money above it goes: the first of the three says it.)
+    assert.equal(await page.locator('.daysum').count(), 0, "the day's money is said twice");
     await ctx.close();
   }
 
