@@ -823,6 +823,12 @@ a { color: var(--link); }
 .help-table { border-collapse: collapse; margin: 6px 0 2px; font-size: 14.5px; color: var(--ink); }
 .help-table td, .help-table th { padding: 3px 14px 3px 0; text-align: left; vertical-align: top; }
 .help-table .r { text-align: right; font-variant-numeric: tabular-nums; padding-right: 0; }
+/* The sires: five columns, which slide sideways on a phone too narrow for them rather than squeeze. */
+.sires-wrap { overflow-x: auto; margin: 6px 0 0; }
+.help-table.sires { font-size: 14px; }
+.help-table.sires td, .help-table.sires th { padding-right: 10px; }
+.help-table.sires th { font: 600 12px/1.2 var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); }
+.help-table.sires td { border-bottom: 1px solid var(--line); }
 .help-link { background: none; border: 0; padding: 0; font: inherit; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 /* The note a first visit finds on the card. */
 .welcome { margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--brass); background: var(--card); border-radius: 0 8px 8px 0; }

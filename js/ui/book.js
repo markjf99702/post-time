@@ -2,7 +2,7 @@
 
 import { h, money, jdFoot } from './dom.js';
 import { game, START_BANK, notSaved, yourMeet, advanceDay, yourWeeks, yourKinds, raceAt, card } from '../game.js';
-import { TIPSTERS, JOCKEYS, TRAINERS, BIG_STAKES } from '../data.js';
+import { TIPSTERS, JOCKEYS, TRAINERS, BIG_STAKES, SIRES } from '../data.js';
 import { longDate, dayDate, dateISO, meetRecord, isClosingDay, MEET_DAYS } from '../world.js';
 import { oddsText } from '../handicap.js';
 import { photoCard, drawPhoto, savePictureButton } from './results.js';
@@ -263,6 +263,19 @@ const part = (id, title) => h('h3', { id: `help-${id}`, tabindex: '-1' }, title)
 // six meets of twenty race days (seeds wf1 to wf6, measured 12 November 2026).
 const WINS_AT = [['A $20,000 maiden claimer', 66], ['A $10,000 claimer', 69], ['A $16,000 claimer', 73], ['A maiden special weight', 77], ['A $25,000 claimer', 78], ['A $40,000 claimer', 81], ['An allowance', 83], ['A stakes', 92]];
 
+// What a sire's foals want, in words, from the sire's own numbers (js/data.js SIRES): his distance (each foal's
+// is his, give or take about a furlong), and how much grass, a wet track and early speed suit them. A
+// sprinter's sire is one to seven furlongs, as PedigreePam has it, a miler's seven and a half or a mile, and a
+// stayer's further. Grass: a "loves it" sire is worth five or six points on the turf to his foals, "likes it" about
+// three, "handles it" a point or two either way, and "better on dirt" costs about two. Wet: "loves it" is
+// worth one and a half points or more, "likes it" about half that, "dislikes it" costs a point or so.
+const halves = f => `${Math.floor(f)}${f % 1 ? '½' : ''}f`;
+const sireTrip = s => `${s.dist <= 7 ? 'Sprinter' : s.dist <= 8 ? 'Miler' : 'Stayer'}, ${halves(s.dist)}`;
+// (An "it" isn't left on a line of its own in a column a phone has narrowed.)
+const sireGrass = s => (s.turf >= 0.75 ? 'Loves\u00a0it' : s.turf >= 0.45 ? 'Likes\u00a0it' : s.turf > -0.2 ? 'Handles\u00a0it' : 'Better on dirt');
+const sireWet = s => (s.mud >= 0.3 ? 'Loves\u00a0it' : s.mud >= 0.1 ? 'Likes\u00a0it' : s.mud > -0.1 ? 'Handles\u00a0it' : 'Dislikes\u00a0it');
+const sireSpeed = s => (s.speed >= 0.75 ? 'Lots' : s.speed >= 0.55 ? 'Some' : 'Little');
+
 export function renderHelp(root, nav, params = {}) {
   const from = params.from && game.world && card().races.some(r => r.no === params.from.no) ? params.from : null;
   root.append(
@@ -297,8 +310,15 @@ export function renderHelp(root, nav, params = {}) {
         h('dt', {}, 'Workouts'), h('dd', {}, 'Morning training runs: the date, the distance, dirt (ft) or turf, the time, B for breezing (under a hold) or H for handily (pushed along), and the rank among the horses that worked that distance that morning. A bullet (●) in front of one marks the fastest of the day, and can mean a horse is sharp.'),
         h('dt', {}, 'Post'), h('dd', {}, 'Where the horse starts in the gate, 1 nearest the rail. In a race of a mile or more the first turn comes up quickly: posts 2 and 3 do best, and from post 7 out a horse loses ground or has to take back. In a sprint it matters less. Riders dread drawing the rail, where a horse that doesn\'t break sharply gets squeezed as the others come over. The morning line and the odds allow for the draw.'),
         h('dt', {}, 'Morning line'), h('dd', {}, "The track handicapper's guess at the odds, printed before any money is bet. The odds on the board are what the betting public actually thinks. On the board, ▼ marks a horse at a shorter price than its morning line (it's been backed) and ▲ one at a longer price, and FAV the favourite. A win, place or show ticket remembers the price it was bought at, and its result says what it went off at."),
-        h('dt', {}, 'Pedigree'), h('dd', {}, 'The sire (father) and the dam\'s sire. Some sires get horses that love grass, or mud, or a long way. Sire names link to Bloodlines, the racehorse family tree.'),
+        h('dt', {}, 'Pedigree'), h('dd', {}, "The sire (the father), and the dam (the mother) with her own sire. Here only the sire counts: a horse takes after him in the distance it wants, how it goes on grass and on a wet track, and its early speed (Sires, below). The dam's sire is drawn at random and changes nothing. Sire names link to Bloodlines, the racehorse family tree."),
       ),
+      part('sires', 'Sires'),
+      h('p', {}, "A horse's best distance is its sire's, give or take about a furlong, and the further a race is from it the more that costs: two or three furlongs off can cost several lengths. A grass sire's foals tend to go better on turf, a mud sire's on a wet track (sloppy or muddy dirt, yielding or soft turf), and a sire with early speed gets foals that are quick away. The odds on the board go by the figures and know none of this."),
+      h('div', { class: 'sires-wrap' }, h('table', { class: 'help-table sires' },
+        h('thead', {}, h('tr', {}, ['Sire', 'Best trip', 'Grass', 'Wet track', 'Early speed'].map(x => h('th', {}, x)))),
+        h('tbody', {}, SIRES.slice().sort((a, b) => a.dist - b.dist || a.name.localeCompare(b.name)).map(x => h('tr', {},
+          h('td', {}, x.name), h('td', {}, sireTrip(x)), h('td', {}, sireGrass(x)), h('td', {}, sireWet(x)), h('td', {}, sireSpeed(x))))),
+      )),
       part('paddock', 'The paddock'),
       h('p', {}, "The horses walk the paddock before each race, with a word on how each one looks. It says something about how a horse feels today, which the form can't: dappled, gleaming or bright-eyed is good news, and washed out (sweating between the legs), dull or fighting the groom is bad. Most look like nothing much either way, and that says nothing."),
       part('betting', 'Betting'),

@@ -66,6 +66,9 @@ try {
     await page.getByRole('tab', { name: 'Bet' }).click();
     await page.locator('.tote ~ .note .help-link').click();
     await page.waitForFunction(() => document.activeElement?.id === 'help-odds');
+    // How to play has every sire, with what its foals want: Frankel's are stayers that love grass.
+    assert.equal(await page.locator('.sires tbody tr').count(), 24);
+    assert.deepEqual(await page.locator('.sires tbody tr', { hasText: 'Frankel' }).locator('td').allTextContents(), ['Frankel', 'Stayer, 10f', 'Loves\u00a0it', 'Dislikes\u00a0it', 'Little']);
     // Back, the browser's or the page's, goes to the race's tab it came from.
     await page.goBack();
     await page.waitForSelector('.tote');
