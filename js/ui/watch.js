@@ -526,7 +526,15 @@ export function renderWatch(el, nav, params) {
     );
     stage.querySelector('.w-flash')?.remove();
     stage.append(board);
-    if (mineList) { const tall = mineList.offsetHeight; mineList.settle(); if (mineList.offsetHeight > tall) mineList.classList.add('sum'); }
+    // Each ticket's outcome stays in full where the line has room to grow: the call's box gives up a line and
+    // nothing else moves. On a short phone, or where the picture or the buttons would move for it, it's one
+    // line of what they paid. (It fell back to that whenever the line grew, so three tickets on a laptop read
+    // "Your tickets paid $7.20" with half the column empty.)
+    if (mineList) {
+      const tall = mineList.offsetHeight, pic = stage.offsetHeight, foot = ctl.getBoundingClientRect().bottom;
+      mineList.settle();
+      if (mineList.offsetHeight > tall && (low || stage.offsetHeight !== pic || ctl.getBoundingClientRect().bottom > foot + 1)) mineList.classList.add('sum');
+    }
   }
 
   function finish() {

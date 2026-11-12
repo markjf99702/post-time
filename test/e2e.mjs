@@ -2017,7 +2017,20 @@ await page.waitForSelector('.races');
     if (height < 700) {
       assert.match(short.tickets, /^Your tickets: 6, \$\d+\.00$/, `${width} by ${height}: the tickets line`);
       assert.ok(short.lines[0] < 32 && short.lines[1] <= 40 && !short.cut && short.hint === 'Tap a number to follow that horse.', `${width} by ${height}: the tickets line is ${short.lines[0]} px tall and the line under the buttons ${short.lines[1]}: ${short.hint}`);
-    } else assert.match(short.tickets, /^Your tickets: \$2 Win \d+ · \$2 Exacta \d+-\d+ · .* · \$100 Trifecta \d+-\d+-\d+$/, 'on a tall phone the tickets are listed');
+    } else {
+      assert.match(short.tickets, /^Your tickets: \$2 Win \d+ · \$2 Exacta \d+-\d+ · .* · \$100 Trifecta \d+-\d+-\d+$/, 'on a tall phone the tickets are listed');
+      // With the result up, each of the six says how it did, in full, and the picture and the buttons stay
+      // where they were: the call's box gives up the room. (Whenever the line grew it fell back to one line of
+      // what they paid, so three tickets on a laptop read "Your tickets paid $7.20" with the column half empty.)
+      await win.evaluate(() => { const w = window.__watch; w.setT(w.endT); });
+      await win.waitForSelector('.w-board', { timeout: 40000 });
+      const after = await win.evaluate(() => {
+        const tix = document.querySelector('.w-tix'), screen = document.getElementById('watch');
+        return { sum: tix.classList.contains('sum'), text: tix.innerText, picture: Math.round(document.querySelector('.w-stage').getBoundingClientRect().height), scrolls: screen.scrollHeight - screen.clientHeight };
+      });
+      assert.ok(!after.sum && /^Your tickets: \$2 Win \d+: (paid \$[\d.]+|lost) · (.*: (paid \$[\d.]+|lost)){5}/.test(after.text.replace(/\n/g, ' ')) && after.picture === short.picture && after.scrolls <= 0,
+        `on a tall phone with the result up the tickets read "${after.text}"${after.sum ? ' (as one line of what they paid)' : ''}, the picture is ${after.picture} px tall (was ${short.picture}) and the screen scrolls by ${after.scrolls} px`);
+    }
     await card();
   }
 
