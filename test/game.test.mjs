@@ -10,7 +10,7 @@ globalThis.localStorage = {
   removeItem: k => { store.delete(k); },
 };
 globalThis.window = new EventTarget();
-const { game, newMeet, load, save, notSaved, card, toteFor, placeBet, goToGate, mtpState, currentBoard, advanceDay, callFor, callInfo, horseOf, runnersFor, photoRecord, forumFor, bestDay, multiState, willPaysFor, cancelMulti, dayTotals, meetCopy, readCopy, adopt } = await import('../js/game.js');
+const { game, newMeet, load, save, notSaved, card, leftWatching, markWatching, toteFor, placeBet, goToGate, mtpState, currentBoard, advanceDay, callFor, callInfo, horseOf, runnersFor, photoRecord, forumFor, bestDay, multiState, willPaysFor, cancelMulti, dayTotals, meetCopy, readCopy, adopt } = await import('../js/game.js');
 const { stateAt, RAIL } = await import('../js/sim.js');
 const { LENGTH, FURLONG, segmentAt } = await import('../js/track.js');
 const { raceCall, raceClock } = await import('../js/call.js');
@@ -1366,6 +1366,23 @@ test("a race's line in your record is to the cent, whatever the tickets on it ca
   for (const [k, x] of Object.entries(game.player.settled)) assert.ok(cents(x.spent) && cents(x.back), `${k}: spent ${x.spent}, back ${x.back}`);
 });
 
+// A race left in the middle is opened again from the gate, as a replay worked out from its seed: only if it
+// was run the way races are run now. (One run before a change to the racing would play out another way on
+// the screen from the result it was given.)
+test('a race left in the middle opens again only if it was run the way races are run now', () => {
+  buildOn('left', '2026-10-03');
+  const race = card().races[0];
+  goToGate(race);
+  markWatching(race);
+  assert.equal(leftWatching(), race);
+  const eng = race.result.eng;
+  delete race.result.eng; // as a race run by the live version before the racing changed
+  assert.equal(leftWatching(), null, 'a race run another way is opened again to be watched');
+  race.result.eng = eng - 1;
+  assert.equal(leftWatching(), null, 'a race run another way is opened again to be watched');
+  race.result.eng = eng;
+});
+
 // What the meet with the seed 'pinned', begun on 3 October 2026, comes to over its first three race days,
 // with a $2 win ticket on number 1 in every race: the first three home by number, the time, the $2 win
 // price, and the bankroll after each day. A race's result comes only from its seed and its entries, and
@@ -1374,9 +1391,9 @@ test("a race's line in your record is to the cent, whatever the tickets on it ca
 // set the new lines in the same commit and say in its message that meets in progress will run
 // differently from there.
 const PINNED = [
-  { bank: 194.2, races: ['R1 2-1-3 70.86 $8.40', 'R2 7-4-2 65.01 $21.00', 'R3 6-9-8 82.98 $11.00', 'R4 5-9-6 70.79 $6.40', 'R5 1-5-3 64.13 $10.20', 'R6 9-4-7 64.31 $4.80', 'R7 4-1-2 63.32 $17.20', 'R8 6-10-5 101.53 $7.80'] },
-  { bank: 178.2, races: ['R1 4-7-3 110.71 $20.40', 'R2 8-2-10 64.80 $13.20', 'R3 3-5-11 101.91 $15.60', 'R4 6-4-3 103.54 $21.00', 'R5 6-8-5 76.82 $8.20', 'R6 6-1-9 63.68 $14.00', 'R7 7-6-4 108.64 $24.00', 'R8 9-1-5 94.35 $3.60'] },
-  { bank: 202.4, races: ['R1 1-4-6 83.95 $5.00', 'R2 1-6-2 97.60 $13.60', 'R3 4-11-6 64.67 $14.00', 'R4 1-3-5 64.32 $21.60', 'R5 7-5-1 83.54 $5.00', 'R6 5-2-4 110.08 $18.80', 'R7 3-2-1 103.36 $9.80', 'R8 6-3-7 109.26 $13.40'] },
+  { bank: 240.6, races: ['R1 2-3-1 71.43 $5.20', 'R2 1-2-4 64.65 $12.60', 'R3 5-4-11 81.94 $4.60', 'R4 1-4-9 70.83 $8.80', 'R5 7-8-2 64.04 $8.20', 'R6 1-9-8 64.49 $35.20', 'R7 4-6-7 63.40 $11.20', 'R8 4-8-5 102.20 $18.60'] },
+  { bank: 257.2, races: ['R1 1-2-6 110.05 $6.60', 'R2 2-8-7 64.90 $7.60', 'R3 1-4-6 103.23 $11.20', 'R4 3-4-9 103.48 $7.00', 'R5 2-4-1 77.02 $2.80', 'R6 1-7-5 63.76 $14.80', 'R7 6-8-1 108.40 $4.40', 'R8 6-1-5 94.58 $3.40'] },
+  { bank: 241.2, races: ['R1 5-7-1 84.49 $26.80', 'R2 4-1-3 97.86 $16.00', 'R3 6-1-9 64.37 $7.00', 'R4 9-5-3 64.97 $35.40', 'R5 4-3-2 83.72 $9.00', 'R6 2-3-1 109.66 $12.40', 'R7 6-7-3 103.48 $12.60', 'R8 4-3-6 108.45 $8.20'] },
 ];
 
 test('a meet in progress runs the way it did: three race days of a fixed meet come out the same', () => {
@@ -1614,6 +1631,7 @@ test("the announcer: what the winner paid is what the tote pays, said in words, 
   assert.deepEqual([12, 10, 6, 5, 2].map(m => minutesLine(m)?.say ?? null), [null, 'Ten minutes to post.', null, 'Five minutes to post.', 'Two minutes to post.']);
   // Worked out before the race, with your tickets in, it's what the race pays once it's run.
   build('announcer');
+  game.player.bank = 10000; // ($20 on every race of two race days, whatever comes in)
   let posts = 0, races = 0;
   for (let d = 0; d < 2; d++) {
     for (const race of card().races) {

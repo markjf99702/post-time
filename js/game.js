@@ -9,6 +9,7 @@ import { oddsText, lineText } from './handicap.js';
 import { liveCall } from './call.js';
 import { JOCKEYS, TRAINERS, OWNERS } from './data.js';
 import { distanceName } from './track.js';
+import { ENGINE } from './sim.js';
 
 const KEY_WORLD = 'post-time/world';
 const KEY_PLAYER = 'post-time/player';
@@ -480,13 +481,15 @@ export function markWatching(race) {
 export function clearWatching() {
   try { localStorage.removeItem(KEY_WATCHING); } catch { /* nothing to clear */ }
 }
-// The race to open on, if there is one: run, and on today's card of this meet.
+// The race to open on, if there is one: run, on today's card of this meet, and run the way races are run
+// now. (One left in a page from before a change to the racing would be worked out again another way, and
+// could show another horse winning: it opens on the card, where its result is.)
 export function leftWatching() {
   let w = null;
   try { w = JSON.parse(localStorage.getItem(KEY_WATCHING) || 'null'); } catch { /* unreadable: none */ }
   if (!w || !game.world || w.meet !== game.world.seed || w.day !== game.world.day) return null;
   const race = card().races.find(r => r.no === w.no);
-  return race && race.status === 'official' ? race : null;
+  return race && race.status === 'official' && race.result && race.result.eng === ENGINE ? race : null;
 }
 
 export function photoRecord(race, winIdx, won) {

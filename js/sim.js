@@ -40,8 +40,8 @@ export function figureFor(time, distance, surface, cond) {
 // given: a different horse could win on the screen. The number goes up whenever a change means the same
 // seed and entries run another way, and a result records the number it was run by (world.js applyResult).
 // (1 was every race before the posts, the start and the dirt pace were changed in November 2026; its
-// results carry no number.)
-export const ENGINE = 2;
+// results carry no number. 2 was before a closer on dirt saved more for the stretch than a speed horse.)
+export const ENGINE = 3;
 
 const START_LOSS = 0.33; // seconds lost breaking from a standstill (calibrated in test/sim.test.mjs)
 
@@ -53,7 +53,15 @@ const START_LOSS = 0.33; // seconds lost breaking from a standstill (calibrated 
 // quicker and tires in the stretch. Run that way a horse covers the distance a little slower than it would
 // at an even pace, so it is given DIRT_PACE points back, which keeps a winner's figure what it was. Turf
 // races are run as they were.
+// A closer still saves a little more for the stretch than a speed horse, as on turf: DIRT_SPREAD of its
+// reserve more for a horse that likes to come from furthest back than for one that needs the lead, and the
+// field as a whole spends what it did. (With every horse planning alike, a speed horse that dawdled alone on
+// the lead came to the stretch as fresh as the closers: among eight horses alike in all but how they run,
+// the only one that needed the lead won 43% of six-furlong races, and $2 to win on the only horse in a race
+// that needs the lead made about 20% profit, over three sets of 48 meets. It wins about 21% of those races
+// now. The old turf spread of 0.3 would have it win under its share, 9%.)
 const DIRT_KICK = -0.15;
+const DIRT_SPREAD = 0.2;
 const DIRT_PACE = 4;
 // Turn a horse's figure for the day into its cruising speed and reserve.
 function engine(e, distance, surface, cond) {
@@ -128,8 +136,8 @@ export function runRace(race, entrants, { record = true } = {}) {
   const hs = entrants.map((e, i) => {
     const eng = engine(e, D, race.surface, race.cond);
     const kickBase = D < 1300 ? 360 : D < 1650 ? 470 : 560;
-    const reserveAtKick = (dirt ? DIRT_KICK : 0.5 - 0.3 * e.style) + R.range(-0.05, 0.05);
-    const floor = dirt ? DIRT_KICK : 0.12;
+    const reserveAtKick = (dirt ? DIRT_KICK + DIRT_SPREAD * (0.5 - e.style) : 0.5 - 0.3 * e.style) + R.range(-0.05, 0.05);
+    const floor = dirt ? DIRT_KICK - DIRT_SPREAD / 2 : 0.12;
     // A slow break costs a step and a stumble a moment's momentum a couple of strides out: each about a
     // length, what a bump costs. (A slow break was a third to two thirds of a second, and slow breakers won
     // 1.8% of their starts; a stumble came while the horse was barely moving and cost nothing.)

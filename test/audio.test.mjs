@@ -1007,7 +1007,10 @@ test('the call is read at 2x and 4x: no line is cut off for a change of speed, a
       // every line spoken is one of the new plan's, started within a second and a half of coming up.
       const after = said.filter(x => x.t > changedAt + 100 && x.line !== (during && during.line));
       assert.ok(said.some(x => x.line.kind === 'off') && said.some(x => x.line.wire), `${at}: the off or the winner's line was never said`);
-      assert.ok(after.some(x => x.line.lead !== undefined || x.line.pair), `${at}: nobody was said to lead after the change`);
+      // (At 4x, Skip can jump past the turn for home and leave the furlong pole and the wire too close together
+      // for a name at the furlong pole: then the winner's line is the first to name anybody.)
+      const onlyTheEnd = skips && speed === 4 && after.every(x => ['eighth', 'wire', 'placings', 'official'].includes(x.line.slot));
+      assert.ok(onlyTheEnd || after.some(x => x.line.lead !== undefined || x.line.pair), `${at}: nobody was said to lead after the change`);
       for (const x of said) assert.ok(x.t - cameUp.get(x.line).now <= (x.line.placings || x.line.slot === 'official' ? 6000 : 1500), `${at}: "${x.text}" was said ${x.t - cameUp.get(x.line).now} ms after it came up`);
       if (speed === 4) assert.deepEqual(after.filter(x => !headlines.has(x.line.slot)).map(x => `${x.line.slot}: ${x.text}`), [], `${at}: more than the headlines`);
       // The winner's line and the placings are at the pace they have at any speed.
@@ -1241,7 +1244,7 @@ test("a line whose clip isn't made by its time is left out, not said late, and i
   // before the gate. (The page would have given this race to the browser's voice: this is what happens to
   // one he has taken when the making falls behind.)
   let said = 0, unmade = 0;
-  for (const race of races.slice(0, 4)) {
+  for (const race of races.slice(0, 5)) {
     const { cameUp, r, stats } = joeReplay(race, { rate: 1.5 });
     const spoken = r.log.filter(x => x.ev === 'speak');
     assert.equal(stats.said + stats.unmade + stats.dropped + stats.unfit, cameUp.size, `${race.no}: lines unaccounted for`);

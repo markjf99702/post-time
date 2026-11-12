@@ -3,7 +3,7 @@
 // knows a little more than the early money.
 
 import { rng, hash } from './rng.js';
-import { publicRating, postEdge, probsFrom, oddsText } from './handicap.js';
+import { publicRating, postEdge, paceEdge, probsFrom, oddsText } from './handicap.js';
 
 export const TAKEOUT = { win: 0.16, place: 0.16, show: 0.16, exacta: 0.2, trifecta: 0.25, dd: 0.2, p3: 0.25 };
 export const BASE = { win: 2, place: 2, show: 2, exacta: 2, trifecta: 1, dd: 1, p3: 1 };
@@ -18,19 +18,20 @@ const POOL = { MCL: 70000, MSW: 95000, C10: 65000, C16: 80000, C25: 95000, C40: 
 export function makeTote(race, world) {
   const R = rng(`tote:${race.seed}`);
   const n = race.entries.length;
-  const seen = race.entries.map(e => publicRating(world.horses[e.hid], race, e));
+  const seen = race.entries.map(e => publicRating(world.horses[e.hid], race, e, world.horses));
   const pub = seen.map(r => r + R.gauss() * 1.6);
   const early = probsFrom(pub, 0.15).map((p, i) => 0.6 * p + 0.4 * (1 / (race.entries[i].ml + 1)));
   // The late money knows what the public knows, and has a fair but rough idea of how each horse is
   // doing today: its day rating, give or take about seven points. It's most of the pool by the off, so
   // what it knows is in the final price as well as in the way the odds moved.
   const L = rng(`late:${race.seed}`);
-  // (It knows the draw as the public does: the post is in what it sees, and in its idea of the day rating.)
+  // (It knows the draw, and a horse that should have the lead to itself, as the public does: they're in what
+  // it sees, and in its idea of the day rating.)
   // Part of it watches the paddock too: a horse that looks good there is backed a little more, one that
   // looks poor a little less. (Nobody at the track bet on the paddock, which is read from how a horse
   // really is that day, and $2 to win on every good-looker made a profit with no handicapping at all.)
   const looks = e => ({ good: PADDOCK_LATE, poor: -PADDOCK_LATE }[e.pdk?.kind] || 0);
-  const late = probsFrom(seen.map((r, i) => 0.062 * r + 0.101 * (race.entries[i].rating + postEdge(race, race.entries[i].pp) + L.gauss() * 7) + looks(race.entries[i])), 1);
+  const late = probsFrom(seen.map((r, i) => 0.062 * r + 0.101 * (race.entries[i].rating + postEdge(race, race.entries[i].pp) + paceEdge(race, world.horses, race.entries[i]) + L.gauss() * 7) + looks(race.entries[i])), 1);
   const size = (POOL[race.cls] || 80000) * (race.purse >= 300000 ? 2.2 : 1) * R.range(0.8, 1.25) * (race.no === 8 ? 1.3 : 1);
   const wig = [...Array(n)].map(() => R.range(0, 1000));
   return { n, early: norm(early), late: norm(late), size, wig, seed: race.seed };

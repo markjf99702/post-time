@@ -132,9 +132,31 @@ export function postEdge(race, pp) {
   return t[Math.min(t.length, Math.max(1, pp)) - 1];
 }
 
-export function publicRating(h, race, entry) {
+// How a horse usually runs, read from its past performances: E (need the lead) .. S (closer). A horse
+// that's first or second at the first call, on average, is one that needs the lead.
+export function runStyle(h) {
+  const lines = h.pps.slice(-4).map(p => p.line[0] && p.line[0][0]).filter(Boolean);
+  if (!lines.length) return null;
+  const avg = lines.reduce((a, b) => a + b, 0) / lines.length;
+  return avg <= 2 ? 'E' : avg <= 3.2 ? 'E/P' : avg <= 5 ? 'P' : 'S';
+}
+
+// What the betting public, the line maker and the late money think the pace of a race is worth to a horse,
+// in points of rating: the only horse in the field that needs the lead is likely to get it to itself. (They
+// thought it worth nothing, and $2 to win on that horse in every race made a profit with no handicapping
+// beyond counting the speed horses in the form.) `horses` is where the runners are looked up by id.
+const LONE_SPEED = 1.5;
+export function paceEdge(race, horses, entry) {
+  if (!horses || runStyle(horses[entry.hid]) !== 'E') return 0;
+  return race.entries.filter(e => e !== entry && runStyle(horses[e.hid]) === 'E').length ? 0 : LONE_SPEED;
+}
+
+// How the public rates a horse in a race. With `horses` (where the runners are looked up by id) it knows
+// the pace of the race too: paceEdge.
+export function publicRating(h, race, entry, horses = null) {
   let r = formRating(h, race);
   if (entry.pp) r += postEdge(race, entry.pp);
+  r += paceEdge(race, horses, entry);
   r += (JOCKEYS[entry.j]?.skill || 0) * 1.4;
   const f = race.distance / FURLONG;
   // Never tried the distance or surface: the public is wary.
@@ -188,7 +210,7 @@ export function lineText(price, text) {
 
 // The track handicapper's morning line: a fair book plus about 20%. For each horse, [the price, as printed].
 export function morningLine(race, horses) {
-  const ratings = race.entries.map(e => publicRating(horses[e.hid], race, e));
+  const ratings = race.entries.map(e => publicRating(horses[e.hid], race, e, horses));
   const p = probsFrom(ratings, 0.15);
   return p.map(x => { const [price, text] = snapOdds(1 / (x * 1.2) - 1); return [price, lineText(price, text)]; });
 }

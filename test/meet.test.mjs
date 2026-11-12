@@ -134,9 +134,10 @@ test('a meet saved before meets ended is meet 1, and closes on its next tenth ra
     // Today's card is the card that was saved: nothing on it is drawn again.
     assert.deepEqual(w.cards[w.day].races.map(r => [r.name, r.entries.map(e => e.hid)]), was.world.cards[was.world.day].races.map(r => [r.name, r.entries.map(e => e.hid)]));
     // The meet's count, from the lines: every race run so far has a winning rider, unless its winner has
-    // since retired with a later line, or run ten times since (a meet carried over from a long one).
+    // since retired with a later line (a retired horse keeps only its last), or run ten times since (a meet
+    // carried over from a long one). A retirement can come at any time: allow three races either way.
     const record = W.meetRecord(w), run = days * 8 + 3;
-    assert.ok(record.races <= run && record.races >= run - (days > 9 ? 3 : 0), `saved on race day ${days + 1}: ${record.races} of ${run} races counted`);
+    assert.ok(record.races <= run && record.races >= run - 3, `saved on race day ${days + 1}: ${record.races} of ${run} races counted`);
     assert.equal(record.since, true, "the regulars' records go back before the meet");
     assert.ok(record.rider && record.horse && record.long);
     // Your meet: $200 to start, and every ticket so far.

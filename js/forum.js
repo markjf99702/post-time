@@ -3,18 +3,12 @@
 
 import { rng } from './rng.js';
 import { TIPSTERS, SIRES, JOCKEYS } from './data.js';
-import { formRating, recentBullet, lastPrice, TROUBLE } from './handicap.js';
+import { formRating, recentBullet, lastPrice, TROUBLE, runStyle } from './handicap.js';
 import { tripComment } from './chart.js';
 import { FURLONG } from './track.js';
 
-// How a horse usually runs, read from its past performances: E (need the lead) .. S (closer). A horse
-// that's first or second at the first call, on average, is one that needs the lead.
-export function runStyle(h) {
-  const lines = h.pps.slice(-4).map(p => p.line[0] && p.line[0][0]).filter(Boolean);
-  if (!lines.length) return null;
-  const avg = lines.reduce((a, b) => a + b, 0) / lines.length;
-  return avg <= 2 ? 'E' : avg <= 3.2 ? 'E/P' : avg <= 5 ? 'P' : 'S';
-}
+// (How a horse usually runs is in js/handicap.js now, since the betting reads it too.)
+export { runStyle };
 
 function label(race, i) { return `#${race.entries[i].pp}`; }
 function nm(world, race, i) { return world.horses[race.entries[i].hid].name; }

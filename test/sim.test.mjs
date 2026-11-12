@@ -618,6 +618,29 @@ test('a horse claimed out of a race goes to a different owner', () => {
   assert.deepEqual(same, [], `of ${claims} claimed horses, these stayed with the owner they ran for`);
 });
 
+// On dirt every horse planned to have spent the same share of its reserve by the top of the stretch, so the
+// closers came there no fresher than a speed horse that had dawdled alone on the lead: in a field of eight
+// alike in all but how they run, the only one that needs the lead won 43% of the time, three and a half times
+// its share. A closer saves a little more for the stretch now, and lone speed has an edge, not the race.
+test('lone speed on dirt has an edge, not the race: among horses alike, it wins more than its share but less than a third', () => {
+  let w = 0;
+  const N = 240, styles = [0.9, 0.4, 0.4, 0.2, 0.2, 0.3, 0.1, 0.45];
+  for (let s = 0; s < N; s++) if (runRace(race(6, 'dirt', `lone${s}`), styles.map(st => horse({ style: st })), { record: false }).results[0].h === 0) w++;
+  assert.ok(w / N > 1 / 8 && w / N < 1 / 3, `lone speed won ${w} of ${N}`);
+});
+
+// The public, the morning line and the late money took no account of the pace: $2 to win on the only horse in
+// a race that needs the lead made a profit. They see it now, as the form shows it: a horse first or second at
+// the first call, on average, in its last races.
+test('the morning line knows lone speed: the only horse that needs the lead is priced shorter than one with company', () => {
+  const lines = first => Array.from({ length: 4 }, (_, k) => ({ fig: 80, surf: 'd', f: 6, cls: 'ALW', cm: '', line: [[first, 1], [first, 1], [first, 1], [first, 1]], d: -k - 1 }));
+  const field = speed => Array.from({ length: 8 }, (_, i) => ({ id: i, pps: lines(speed.includes(i) ? 1 : 5), works: [], sire: 'nobody', life: { starts: 4 } }));
+  const line = speed => { const horses = field(speed); return morningLine({ distance: 6 * FURLONG, surface: 'dirt', cls: 'ALW', par: 85, entries: horses.map(h => ({ hid: h.id, pp: h.id + 1 })) }, horses).map(x => x[0]); };
+  const alone = line([4]), company = line([4, 5]), nobody = line([]);
+  assert.ok(alone[4] < company[4] && alone[4] < nobody[4], `post 5 alone on the lead ${alone[4]}-1, with company ${company[4]}-1, and with nobody needing the lead ${nobody[4]}-1`);
+  assert.equal(company[4], nobody[4], 'two speed horses are priced as if neither needed the lead');
+});
+
 // The public, the morning line and the late money took no account of the draw, and $2 to win on post 1 in
 // every race made a profit. Now they price it the way the posts win at Larkspur: the rail is the post
 // riders dread, posts 2 and 3 are best in a race of a mile or more, and the outside posts worst there.

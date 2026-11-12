@@ -1906,7 +1906,10 @@ await page.waitForSelector('.races');
   await desk.setViewportSize({ width: 1280, height: 800 });
   await desk.evaluate(no => window.postTime.nav.go('watch', { no }), biggest);
   await desk.waitForSelector('.watch:not([hidden]) .order button');
-  await desk.evaluate(() => window.__watch.setT(8));
+  // (Sixteen seconds in, with the field settled into its running. Eight seconds in it's still sorting itself
+  // out after the break, and on dirt, where the speed horses now go on and the closers drop back, those
+  // seconds see real changes of place: seven in this race, three at sixteen.)
+  await desk.evaluate(() => window.__watch.setT(16));
   await desk.waitForTimeout(400);
   const parked = await desk.evaluate(() => new Promise(resolve => {
     const strip = document.querySelector('.order'), b = strip.querySelectorAll('button')[3];
@@ -3034,13 +3037,14 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
 
   // ------------------------------------------------------------ he calls a race
   //
-  // A meet whose first race is five furlongs with a photo at the end of it, so the whole of a call is
-  // here in a minute and a half: the gate, the running, slow motion to the wire, the placings, and the
-  // winner's line when the sign goes up.
+  // A meet whose first race is five and a half furlongs with a photo at the end of it, so the whole of a call
+  // is here in a minute and a half: the gate, the running, slow motion to the wire, the placings, and the
+  // winner's line when the sign goes up. (The seed is picked for that, and picked again when a change to the
+  // racing runs its meet another way.)
   await page.evaluate(async () => {
     const { createWorld } = await import('./js/world.js');
     const { game, save } = window.postTime;
-    game.world = createWorld('joe-e2e-31', '2026-11-14');
+    game.world = createWorld('joe-e2e-206', '2026-11-14');
     Object.assign(game.player, { bank: 200, bets: {}, settled: {}, ledger: [], book: [], opened: {} });
     game.player.settings.sound = true;
     save();

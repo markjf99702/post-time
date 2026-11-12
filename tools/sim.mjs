@@ -28,7 +28,7 @@ const WAYS = [
   ['Favourite to place', c => [{ type: 'place', sel: [byOdds(c)[0]], amt: 2 }]],
   ['Favourite to show', c => [{ type: 'show', sel: [byOdds(c)[0]], amt: 2 }]],
   ['Morning-line favourite to win', c => win(argmin(c.race.entries.map(e => e.ml)))],
-  ['Best on the form to win', c => win(argmax(c.race.entries.map(e => publicRating(c.world.horses[e.hid], c.race, e))))],
+  ['Best on the form to win', c => win(argmax(c.race.entries.map(e => publicRating(c.world.horses[e.hid], c.race, e, c.world.horses))))],
   ['A horse picked at random, to win', c => win(rng(`sim:${c.race.seed}`).int(0, c.race.entries.length - 1))],
   ['Longest price to win', c => win(argmax(c.late))],
   ['Biggest drop in the odds since the opening, to win', c => {
@@ -41,7 +41,7 @@ const WAYS = [
     return good.length === 1 ? win(good[0]) : [];
   }],
   ['Best on the form and good in the paddock, to win', c => {
-    const best = argmax(c.race.entries.map(e => publicRating(c.world.horses[e.hid], c.race, e)));
+    const best = argmax(c.race.entries.map(e => publicRating(c.world.horses[e.hid], c.race, e, c.world.horses)));
     return c.race.entries[best].pdk.kind === 'good' ? win(best) : [];
   }],
   ['Favourite at 3-5 or shorter, to place', c => (c.late[byOdds(c)[0]] <= 0.6 ? [{ type: 'place', sel: [byOdds(c)[0]], amt: 2 }] : [])],
