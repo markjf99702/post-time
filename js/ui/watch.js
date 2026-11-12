@@ -7,7 +7,7 @@ import { photoFinish } from '../draw/photo.js';
 import { stateAt, runningOrder } from '../sim.js';
 import { FURLONG } from '../track.js';
 import { marginShort, marginText, fmtTime, fmtClock } from '../chart.js';
-import { game, save, goToGate, raceKey, recordingOf, memoKey, callFor, runnersFor, raceLabel, horseOf, myBets, betCost, multiFor, multiState, multiNumbers } from '../game.js';
+import { game, save, goToGate, raceKey, markWatching, clearWatching, recordingOf, memoKey, callFor, runnersFor, raceLabel, horseOf, myBets, betCost, multiFor, multiState, multiNumbers } from '../game.js';
 import { BET_NAMES } from '../tote.js';
 import { clockText } from '../world.js';
 import { pace, climb, officialLine, SLOW, SKIP_TO } from '../call.js';
@@ -69,6 +69,8 @@ export function renderWatch(el, nav, params) {
     if (joeCalls) { call = his; delete game.player.settings.callerBehind; } else game.player.settings.callerBehind = true;
   }
   const result = goToGate(race);
+  // Until its result comes up, closing the page leaves the game to open on this race again (js/app.js).
+  markWatching(race);
   const runners = runnersFor(race);
   const t0 = run.t0;
   const endT = run.frames.length * run.dt;
@@ -184,7 +186,15 @@ export function renderWatch(el, nav, params) {
   function setPaused(on) {
     if (on === paused || (on && ended)) return;
     paused = on;
-    if (on) audio.pause(); else audio.play();
+    if (on) audio.pause();
+    else {
+      audio.play();
+      // (This is a tap: the first one there's been, if the race was opened again when the page was.)
+      if (game.player.settings.sound) audio.wake();
+      audio.primeVoice();
+      held = false;
+      showHint();
+    }
     pauseBtn.setAttribute('aria-pressed', String(on));
     pauseBtn.title = on ? 'Paused: tap to go on' : 'Pause';
     // (Under Play, the race goes on from the frame it was paused on, however long it was.)
@@ -343,10 +353,10 @@ export function renderWatch(el, nav, params) {
   // Under the buttons: how to follow a horse or, while one is followed, which. Once the race is official
   // there's nothing left to follow, and the line is blank (it keeps its room, so nothing moves). Where the
   // line is one line, it's the longest wording that fits it.
-  let official = false, low = false;
+  let official = false, low = false, held = false; // held: opened again on a race left in the middle, waiting for ▶
   function showHint() {
     const r = following === null ? null : runners[following];
-    const says = official ? [''] : r ? [`Following #${r.number} ${r.name}. Tap again for the leaders.`, `Following #${r.number} ${r.name}.`] : [HINT, HINT_SHORT];
+    const says = official ? [''] : held ? ['You left this race before the result. Tap ▶ to watch it from the gate.', 'Tap ▶ to watch the race you left.'] : r ? [`Following #${r.number} ${r.name}. Tap again for the leaders.`, `Following #${r.number} ${r.name}.`] : [HINT, HINT_SHORT];
     hint.textContent = says[0];
     if (low) for (const text of says) { hint.textContent = text; if (hint.scrollWidth <= hint.clientWidth) break; }
   }
@@ -522,6 +532,7 @@ export function renderWatch(el, nav, params) {
   function finish() {
     ended = true;
     endedAt = performance.now();
+    clearWatching();
     audio.raceOver();
     setTimeout(() => audio.stopRace(), 2500);
     if (call.photo) stage.append(h('div', { class: 'w-flash' }, 'PHOTO'));
@@ -594,6 +605,7 @@ export function renderWatch(el, nav, params) {
   function teardown(toResults = false) {
     if (gone) return;
     gone = true;
+    clearWatching();
     cancelAnimationFrame(raf);
     el.removeEventListener('keydown', onKey);
     audio.play(); // a race left while paused leaves the sound to the next screen
@@ -621,6 +633,9 @@ export function renderWatch(el, nav, params) {
   el.addEventListener('keydown', onKey);
 
   fitOrder();
+  // Opened again on a race left in the middle (js/app.js), it waits in the gate for a tap: the browser lets
+  // the sound and the caller start only from one, and the line under the buttons says why it's there.
+  if (params.resume) { held = true; setPaused(true); showHint(); }
   raf = requestAnimationFrame(frame);
   el.tabIndex = -1;
   el.focus({ preventScroll: true });

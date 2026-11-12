@@ -400,6 +400,26 @@ export function goToGate(race) {
   return { run, pay, returns, spent, back, cashedWinner };
 }
 
+// A race left before its result came up (the page closed, or dropped by the phone, in the middle of it): the
+// game opens on it again, from the gate, as a replay. It's kept on this device only, beside the meet and not
+// in it, so another device carrying on with the same meet isn't sent into a race it never started. Cleared
+// when the result comes up (at the end of the race, or Skip to the end) and when the race is left.
+const KEY_WATCHING = 'post-time.watching';
+export function markWatching(race) {
+  try { localStorage.setItem(KEY_WATCHING, JSON.stringify({ meet: game.world.seed, day: race.day, no: race.no })); } catch { /* not kept: it opens on the card */ }
+}
+export function clearWatching() {
+  try { localStorage.removeItem(KEY_WATCHING); } catch { /* nothing to clear */ }
+}
+// The race to open on, if there is one: run, and on today's card of this meet.
+export function leftWatching() {
+  let w = null;
+  try { w = JSON.parse(localStorage.getItem(KEY_WATCHING) || 'null'); } catch { /* unreadable: none */ }
+  if (!w || !game.world || w.meet !== game.world.seed || w.day !== game.world.day) return null;
+  const race = card().races.find(r => r.no === w.no);
+  return race && race.status === 'official' ? race : null;
+}
+
 export function photoRecord(race, winIdx, won) {
   const e = race.entries[winIdx];
   const h = horseOf(e);

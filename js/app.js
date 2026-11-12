@@ -1,7 +1,7 @@
 // Post Time: a day at the races. This file starts things up and moves between screens.
 
 import { h, clear, money } from './ui/dom.js';
-import { game, load, save, notSaved, newMeet, card, nextRace, adopt, whereIs } from './game.js';
+import { game, load, save, notSaved, newMeet, card, nextRace, adopt, whereIs, leftWatching } from './game.js';
 import { renderCard, upNextInView } from './ui/card.js';
 import { renderRace } from './ui/race.js';
 import { renderWatch, rehearse } from './ui/watch.js';
@@ -453,6 +453,10 @@ const loaded = load();
 if (loaded === true) {
   applySettings();
   nav.go('card');
+  // The page was closed (or dropped by the phone) in the middle of a race: back into it, from the gate, as a
+  // replay. Nothing is bet or paid again: the race was settled as it went to the gate.
+  const left = leftWatching();
+  if (left) nav.go('watch', { no: left.no, resume: true });
   if (copy.hasTicket()) copy.keepData();
 } else if (loaded === 'damaged') {
   applySettings();

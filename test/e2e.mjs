@@ -1249,6 +1249,49 @@ await page.waitForSelector('.races');
   assert.equal(await page.evaluate(() => window.__sound.state), 'running', 'a race left while paused left the sound held');
 }
 
+// Close the page in the middle of a race and the game opens on that race again, from the gate, as a replay,
+// waiting for a tap to start it (the browser lets the sound and the caller start only from one). Nothing is bet
+// or paid again. Once the result has come up, or the race has been left for its results, it opens on the card.
+{
+  const ctxR = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
+  const back = await ctxR.newPage();
+  back.on('pageerror', e => problems.push(e.message));
+  await back.goto(base, { waitUntil: 'domcontentloaded' });
+  await back.waitForSelector('.races', { timeout: 60000 });
+  const no = await back.evaluate(async () => {
+    const { placeBet } = await import('./js/game.js');
+    const { game, nav, nextRace, save } = window.postTime;
+    game.player.settings.sound = false; save();
+    const race = nextRace();
+    placeBet(race, { type: 'win', sel: [0], amt: 2 });
+    nav.go('watch', { no: race.no });
+    return race.no;
+  });
+  await back.waitForSelector('.watch:not([hidden]) canvas.scene');
+  await back.evaluate(() => window.__watch.setT(20));
+  await back.waitForTimeout(300);
+  const before = await back.evaluate(() => ({ bank: window.postTime.game.player.bank, ledger: window.postTime.game.player.ledger.length }));
+  await back.reload({ waitUntil: 'domcontentloaded' });
+  await back.waitForSelector('.watch:not([hidden]) canvas.scene', { timeout: 30000 });
+  await back.waitForTimeout(400);
+  const reopened = await back.evaluate(no => {
+    const w = window.__watch, { game, card } = window.postTime;
+    return { no: card().races.find(r => r.no === no).status, gate: w.T < 0, paused: w.paused, hint: document.querySelector('.w-ctl .hint').textContent, bank: game.player.bank, ledger: game.player.ledger.length, title: document.querySelector('.w-top span').textContent };
+  }, no);
+  assert.deepEqual(reopened, { no: 'official', gate: true, paused: true, hint: 'You left this race before the result. Tap ▶ to watch it from the gate.', bank: before.bank, ledger: before.ledger, title: `Race ${no}` }, 'a race left in the middle is not opened again from the gate, waiting for a tap, or it was paid again');
+  await back.click('.w-ctl .pause');
+  await back.waitForTimeout(400);
+  assert.deepEqual(await back.evaluate(() => [window.__watch.paused, window.__watch.T > -window.__watch.call.gate, /^Tap a number/.test(document.querySelector('.w-ctl .hint').textContent)]), [false, true, true], 'the race opened again does not start on a tap');
+  // Its result comes up: the next visit opens on the card.
+  await back.evaluate(() => window.__watch.setT(window.__watch.endT));
+  await back.waitForSelector('.w-board');
+  await back.reload({ waitUntil: 'domcontentloaded' });
+  await back.waitForSelector('.races');
+  await back.waitForTimeout(400);
+  assert.equal(await back.evaluate(() => document.getElementById('watch').hidden), true, 'a race whose result came up was opened again');
+  await ctxR.close();
+}
+
 // With Reduce Motion on (the device's setting that asks pages for less animation), the paddock's horses
 // stand still, one picture each, instead of walking an endless loop beside the notes about them. Without
 // it they walk.
