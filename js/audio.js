@@ -788,6 +788,8 @@ export function carryResult(line) {
   };
   setTimeout(go, 0);
 }
+// Is what the winner paid waiting to be said on the results, or being said? (For the tests.)
+export function carrying() { return !!carried || !!carriedStop || (!!carriedLine && caller.saying() === carriedLine); }
 export function dropCarried() {
   carried = null;
   if (carriedStop) carriedStop();

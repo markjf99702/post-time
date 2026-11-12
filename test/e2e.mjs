@@ -937,6 +937,10 @@ await page.click('#app .setup .btn');
 await page.waitForSelector('.races', { timeout: 60000 });
 assert.equal(await page.locator('#bank').textContent(), '$200.00', 'the new meet starts with $200');
 
+// The stand-in voice is quiet and nothing is waiting to be said, what a winner paid among it: tapped before
+// the announcer got to it, it's said on the results.
+const hushed = p => p.waitForFunction(() => window.__quiet() && !window.postTime.audio.carrying(), null, { timeout: 20000 });
+
 // From here on a stand-in for the browser's voice notes what it's asked to read, and nothing is heard. Its
 // voices are the ones Chrome lists on a Mac: Apple's, novelty ones and all, then Chrome's own, which need
 // the internet.
@@ -1150,8 +1154,8 @@ await page.evaluate(() => window.__watch.setT(window.__watch.endT - 0.05));
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 await page.click('.w-ctl .btn');
 await page.waitForSelector('.official');
-// (What the winner paid is said on the results if it wasn't said before Results was tapped.)
-await page.waitForFunction(() => window.__quiet() && window.__heard.some(x => x.ev === 'end' && /^The result is official\./.test(x.text)), null, { timeout: 20000 });
+// (What the winner paid is said on the results if it wasn't said before Results was tapped: hushed waits for it.)
+await hushed(page);
 await page.locator('.post-bar .btn', { hasText: /^Race 2/ }).click();
 await toTheGate(page);
 await page.waitForSelector('.watch:not([hidden]) canvas.scene');
@@ -1219,7 +1223,7 @@ assert.ok(readBack.lines.length >= 12 && readBack.lines[0][0] === 'Gate' && /^\d
 assert.ok(readBack.lines.some(([, x]) => /The time, (\d:)?\d\d\.\d\d\.$/.test(x)), 'the call read back has no placings and time');
 assert.equal(await page.evaluate(at => window.__heard.some(x => x.ev === 'cancel' && x.at > at), toResults.at), false, 'the caller was cut off on the way to the results');
 await page.waitForFunction(({ saying, at }) => window.__heard.some(x => x.ev === 'end' && x.text === saying && x.at > at), toResults, { timeout: 15000 });
-await page.waitForFunction(() => window.__quiet());
+await hushed(page);
 await page.locator('.post-bar .btn', { hasText: /^Race 3/ }).click();
 // The announcer between races, in the call's voice: as the clock on the next race's page passes ten
 // minutes to post, "Ten minutes to post", once. (The page is opened with the clock at 11, 0.8 seconds short.)
@@ -1611,7 +1615,7 @@ assert.ok(after4.length >= 3, `only ${after4.length} lines read at 4x`);
 await page.waitForSelector('.w-ctl .btn:not([hidden])', { timeout: 15000 });
 await page.click('.w-ctl .btn');
 await page.waitForSelector('.official');
-await page.waitForFunction(() => window.__quiet());
+await hushed(page);
 // The next race at 2x from the gate, then skipped ahead once a line has said who leads: Skip cancels the
 // line being said, and the caller picks the race up twelve seconds from the wire.
 await page.locator('.post-bar .btn', { hasText: /^Race \d/ }).click();

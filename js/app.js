@@ -518,7 +518,7 @@ const driveLine = h('div', { class: 'drive-line', hidden: true, role: 'status' }
 unsaved.after(driveLine);
 
 // Tests and screenshots drive the app through this.
-window.postTime = { game, nav, save, card, nextRace };
+window.postTime = { game, nav, save, card, nextRace, audio };
 
 const loaded = load();
 if (loaded === true) {
