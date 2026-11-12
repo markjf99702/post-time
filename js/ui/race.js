@@ -662,12 +662,16 @@ function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
     // A daily double or Pick 3 has a row for each of its races, with that race's horses, and any number can
     // be picked in each.
     const legs = MULTI[st.type] ? legRaces(st.type, race) : null;
-    const rows = legs ? legs.map(r => [h('span', { 'aria-hidden': 'true' }, `R${r.no}`), h('span', { class: 'sr' }, `Race ${r.no}`)])
+    const rows = legs ? legs.map(r => `R${r.no}`)
       : st.type === 'exacta' ? ['1st', '2nd'] : st.type === 'trifecta' ? ['1st', '2nd', '3rd'] : [st.type.endsWith('box') ? 'Pick' : 'Horse'];
     const multi = st.type.endsWith('box') || !!legs;
+    // Each row of horses is a group named for what it's for, so a screen reader hears "First" or "Race 7"
+    // with the horse (an exacta was two runs of the same buttons, with the loose words "1st" and "2nd" read
+    // before them, or not at all on the way back up). The short label on the screen is the group's name.
+    const groups = legs ? legs.map(r => `Race ${r.no}`) : st.type === 'exacta' || st.type === 'trifecta' ? ['First', 'Second', 'Third'] : [st.type.endsWith('box') ? 'Pick' : 'Horse'];
     rows.forEach((label, r) => {
       const entries = legs ? legs[r].entries : race.entries;
-      const grid = evenRows(h('div', { class: 'picks-grid' }), entries.length);
+      const grid = evenRows(h('div', { class: 'picks-grid', role: 'group', 'aria-label': groups[r] }), entries.length);
       entries.forEach((e, i) => {
         const [bg, fg] = CLOTH[e.pp] || CLOTH[1];
         const on = st.picks[r].includes(i);
@@ -684,7 +688,7 @@ function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
           },
         }, h('span', {}, String(e.pp)))); // the number, on a patch of the cloth at full strength
       });
-      builder.append(h('div', { class: `pick-row${legs ? ' leg' : ''}` }, h('span', { class: 'lbl' }, label), grid));
+      builder.append(h('div', { class: `pick-row${legs ? ' leg' : ''}` }, h('span', { class: 'lbl', 'aria-hidden': 'true' }, label), grid));
     });
     const amts = h('div', { class: 'seg amounts', role: 'group', 'aria-label': 'Amount' });
     for (const a of [0.5, 1, 2, 5, 10, 20, 50, 100]) {

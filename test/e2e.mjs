@@ -424,12 +424,15 @@ const vsLine = await page.evaluate(() => {
 });
 assert.deepEqual(vsLine, { wrong: 0, fav: 0, tags: 1, key: 'ML is the morning line: ▼ shorter than it now, ▲ longer.' }, 'the board against the morning line');
 // The board names the horses under their numbers where it has room, from a tablet's width up, in two lines at
-// most and inside their cells; on a phone it's numbers.
+// most and inside their cells; on a phone it's numbers, with the names there for a screen reader alone (they
+// were taken off the page, and the board was read as numbers and prices).
 const names = async () => page.evaluate(() => [...document.querySelectorAll('.tote-cell')].map(c => {
   const nm = c.querySelector('.nm'), r = nm.getBoundingClientRect(), cell = c.getBoundingClientRect();
-  return { shown: r.height > 0, text: nm.textContent, lines: Math.round(r.height / parseFloat(getComputedStyle(nm).lineHeight)), inside: r.left >= cell.left - 0.5 && r.right <= cell.right + 0.5 };
+  return { shown: r.height > 1, read: getComputedStyle(nm).display !== 'none', text: nm.textContent, lines: Math.round(r.height / parseFloat(getComputedStyle(nm).lineHeight)), inside: r.left >= cell.left - 0.5 && r.right <= cell.right + 0.5 };
 }));
-assert.deepEqual((await names()).filter(n => n.shown), [], 'a phone has room on the board for the names');
+const phoneNames = await names();
+assert.deepEqual(phoneNames.filter(n => n.shown), [], 'a phone has room on the board for the names');
+assert.ok(phoneNames.every(n => n.read), "a phone's board has no names for a screen reader");
 await page.setViewportSize({ width: 768, height: 1024 });
 const wideNames = await names();
 assert.deepEqual(wideNames.map(n => n.text), await page.evaluate(() => { const { game, nextRace } = window.postTime; return nextRace().entries.map(e => game.world.horses[e.hid].name); }));
@@ -3421,7 +3424,8 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   assert.deepEqual(types.slice(8), ['Pick 3'], `race 6's window sells ${types.slice(8)}`);
   await day.getByRole('button', { name: 'Pick 3', exact: true }).click();
   await day.locator('.builder .amounts button', { hasText: /^\$1$/ }).click();
-  assert.deepEqual(await day.locator('.pick-row .lbl').allTextContents(), ['R6Race 6', 'R7Race 7', 'R8Race 8']);
+  assert.deepEqual(await day.locator('.pick-row .lbl').allTextContents(), ['R6', 'R7', 'R8']);
+  assert.deepEqual(await day.locator('.picks-grid[role=group]').evaluateAll(gs => gs.map(g => g.getAttribute('aria-label'))), ['Race 6', 'Race 7', 'Race 8']);
   const rows = day.locator('.pick-row');
   await rows.nth(0).locator('button').nth(won[5]).click();
   await rows.nth(0).locator('button').nth(won[5] === 0 ? 1 : 0).click();
@@ -3637,6 +3641,13 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   assert.match(more.top, /^First three: [^;]+(, by [^;]+)?; [^;]+(, by [^;]+)?; [^;,]+$/);
   assert.doesNotMatch(more.top, /\b(hd|nk|no)\b/);
   assert.match(more.figs, /^Speed figures, latest first:(\d+(, best)?)+/);
+  // Each row of horses in the betting slip is a group with a name, so the screen reader says which row a horse
+  // is in: an exacta was two runs of the same buttons.
+  await sr.evaluate(() => window.postTime.nav.go('race', { no: 1, tab: 'bet' }));
+  assert.equal(await sr.getByRole('group', { name: 'Horse' }).getByRole('button').count(), await sr.locator('.picks-grid button').count());
+  await sr.locator('[data-k="type:exacta"]').click();
+  for (const row of ['First', 'Second']) assert.ok(await sr.getByRole('group', { name: row }).getByRole('button', { name: /^1 / }).isVisible(), `no ${row} row`);
+  assert.equal(await sr.locator('.pick-row .lbl[aria-hidden="true"]').count(), 2, 'the rows are named twice');
   await ctx12.close();
 }
 
