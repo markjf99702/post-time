@@ -5,7 +5,7 @@ import { game, card, silksFor, isStarred, toggleStar, cashedOn, formBefore, race
 import { ageOf, shortDate, clockText, CLASSES, meetStats, isHandicap, prepsOf } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
 import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES, CLOTH } from '../data.js';
-import { formLine, marginShort, fmtTime, fmtWork } from '../chart.js';
+import { formLine, marginShort, marginText, ordinal, fmtTime, fmtWork } from '../chart.js';
 import { runStyle } from '../forum.js';
 import { BET_NAMES, cost as betCost, MIN, wouldPay } from '../tote.js';
 import { drawHorse } from '../draw/horse.js';
@@ -281,7 +281,10 @@ function entryCard(race, e, i, stats, board, betOn, nav) {
   return h('article', { class: 'entry' },
     head,
     h('div', { class: 'figs' },
-      fresh ? h('span', { class: 'chip' }, fresh.chip) : figs.map(f => h('span', { class: `fig${f === best ? ' best' : ''}` }, String(f))),
+      fresh ? h('span', { class: 'chip' }, fresh.chip) : [
+        figs.length ? h('span', { class: 'sr' }, 'Speed figures, latest first:') : null,
+        figs.map(f => h('span', { class: `fig${f === best ? ' best' : ''}` }, String(f), f === best ? h('span', { class: 'sr' }, ', best') : null)),
+      ],
       style ? h('span', { class: 'chip', title: 'Running style' }, styleName(style)) : null,
       chips.map(c => h('span', { class: `chip ${c[1]}` }, c[0])),
       starButton(e.hid, hs.name),
@@ -351,7 +354,8 @@ function fillMore(more, race, e, hs, bet, today = null, nav = null) {
           h('td', { class: 'f' }, String(p.fig)),
           // The calls are the one cell that may take a second line, between one call and the next, when
           // the table would otherwise be wider than the card (the cells beside it have two lines already).
-          h('td', { class: 'calls' }, calls.map(c => [h('span', {}, supCall(c)), ' ']), h('b', { class: p.fin === 1 ? 'win' : '' }, supCall(fin))),
+          h('td', { class: 'calls' }, calls.map(c => [h('span', { 'aria-hidden': 'true' }, supCall(c)), ' ']), h('b', { class: p.fin === 1 ? 'win' : '', 'aria-hidden': 'true' }, supCall(fin)),
+            h('span', { class: 'sr' }, lineWords(calls, fin))),
           h('td', {}, p.odds.toFixed(1)),
         ),
         // The rider is on this line, which wraps, and not under the odds, where a long surname made the
@@ -359,7 +363,8 @@ function fillMore(more, race, e, hs, bet, today = null, nav = null) {
         h('tr', { class: `c${mark ? ' today' : ''}` }, h('td', { colspan: 6 }, h('div', {},
           h('b', {}, p.cm), ' · ',
           p.fr.slice(0, -1).map(fmtTime).join(' '), ' ', h('b', {}, fmtTime(p.fr[p.fr.length - 1])), ' · ',
-          p.top.map((x, k) => `${x[0]}${k < 2 && x[1] ? ' ' + marginShort(x[1]) : ''}`).join(', '),
+          h('span', { 'aria-hidden': 'true' }, p.top.map((x, k) => `${x[0]}${k < 2 && x[1] ? ' ' + marginShort(x[1]) : ''}`).join(', ')),
+          h('span', { class: 'sr' }, topWords(p.top)),
           ` · ${JOCKEYS[p.j].name.split(' ')[1]} up`,
           p.claimed ? ` · Claimed from ${TRAINERS[p.claimed.from]} for $${p.claimed.price.toLocaleString('en-US')}` : '',
         ))),
@@ -389,6 +394,20 @@ function chartLink(p, nav) {
   return h('button', { class: 'pp-link', type: 'button', 'aria-label': `${shortDate(p.dt)}: the results of that race`, onclick: () => nav.go('result', { day: p.d, no: p.no }) }, shortDate(p.dt));
 }
 
+// A running line in words, for a screen reader, which read "2" with "3½" over it as "23½": "2nd, 3½ lengths
+// behind; 1st by a head; won by 2 lengths". The small figures are as the form prints them: lengths behind the
+// leader at a call (the leader's, in front of the second), and at the finish behind the winner.
+const marginWords = m => (m < 0.375 ? `a ${marginText(m)}` : marginText(m)); // "a neck", "½ length"
+function lineWords(calls, fin) {
+  const call = ([pos, m]) => (m > 0.03 ? (pos === 1 ? `${ordinal(pos)} by ${marginWords(m)}` : `${ordinal(pos)}, ${marginWords(m)} behind`) : ordinal(pos));
+  const end = fin[0] === 1 ? `won${fin[1] > 0.03 ? ` by ${marginWords(fin[1])}` : ''}` : `finished ${call(fin)}`;
+  return [...calls.map(call), end].join('; ');
+}
+// The first three home in words: "First three: Early Ticket, by a head; Mud Pie, by 2¼ lengths; Gold Rush".
+// (A screen reader read the chart's "hd" as the letters, and "no" for a nose as the word "no".)
+function topWords(top) {
+  return `First three: ${top.map((x, k) => `${x[0]}${k < 2 && x[1] ? `, by ${marginWords(x[1])}` : ''}`).join('; ')}`;
+}
 function supCall([pos, margin]) {
   return [String(pos), margin > 0.03 ? h('sup', {}, marginShort(margin)) : null];
 }

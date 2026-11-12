@@ -3597,6 +3597,49 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   await ctx11.close();
 }
 
+// Played with a screen reader, which reads the page's words and not its look.
+{
+  const ctx12 = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const sr = await ctx12.newPage();
+  sr.on('pageerror', e => problems.push(e.message));
+  sr.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
+  await sr.goto(base, { waitUntil: 'domcontentloaded' });
+  await sr.waitForSelector('.races', { timeout: 60000 });
+  await sr.evaluate(async () => { const { createWorld } = await import('./js/world.js'); const { game, save } = window.postTime; game.world = createWorld('reader', '2026-11-14'); game.player.settings.sound = false; save(); });
+  await sr.reload({ waitUntil: 'domcontentloaded' });
+  await sr.waitForSelector('.races', { timeout: 60000 });
+  // A running line was read "2 3½ 1 hd 1 2", the small figures run into the positions: "23½ 1hd 12". It's read
+  // in words, and the figures drawn on the screen are kept from the screen reader. So are the first three home
+  // ("hd" was read as the letters) and the speed figures, which say which is the best.
+  await sr.evaluate(() => window.postTime.nav.go('race', { no: 1, tab: 'form' }));
+  await sr.locator('.entry-head').first().click();
+  const lines = await sr.evaluate(() => [...document.querySelectorAll('.entry-more .pps tbody tr:not(.c)')].map(tr => {
+    const td = tr.querySelector('.calls');
+    const shown = [...td.children].filter(c => !c.classList.contains('sr'));
+    return { hidden: shown.every(c => c.getAttribute('aria-hidden') === 'true'), pos: shown.map(c => c.firstChild.textContent), said: td.querySelector('.sr')?.textContent };
+  }));
+  assert.ok(lines.length > 1, 'the first horse has no past performances to read');
+  for (const l of lines) {
+    assert.ok(l.hidden, 'the running line on the screen is read out as well as in words');
+    const words = l.said.split('; ');
+    assert.equal(words.length, l.pos.length, `the running line in words is "${l.said}"`);
+    words.forEach((w, k) => {
+      const last = k === words.length - 1;
+      if (last && l.pos[k] === '1') assert.match(w, /^won( by (a (nose|head|neck)|\S+ lengths?))?$/);
+      else assert.match(w, new RegExp(`^${last ? 'finished ' : ''}${l.pos[k]}(st|nd|rd|th)(, (a (nose|head|neck)|\\S+ lengths?) behind| by (a (nose|head|neck)|\\S+ lengths?))?$`), `"${w}" in "${l.said}"`);
+    });
+  }
+  const more = await sr.evaluate(() => {
+    const c = document.querySelector('.entry-more .pps tr.c');
+    const figs = document.querySelector('.entry .figs');
+    return { top: c.querySelector('.sr').textContent, topHidden: c.querySelector('[aria-hidden="true"]').textContent, figs: figs.textContent };
+  });
+  assert.match(more.top, /^First three: [^;]+(, by [^;]+)?; [^;]+(, by [^;]+)?; [^;,]+$/);
+  assert.doesNotMatch(more.top, /\b(hd|nk|no)\b/);
+  assert.match(more.figs, /^Speed figures, latest first:(\d+(, best)?)+/);
+  await ctx12.close();
+}
+
 await browser.close();
 server.close();
 console.log('all good');
