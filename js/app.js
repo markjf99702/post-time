@@ -105,6 +105,9 @@ window.addEventListener('popstate', e => {
   }
   // Back, onto the card's entry: one screen back from this one.
   above = false;
+  // (How to play opened from a race's "What do these mean?" goes back to that race, as its back button does.)
+  const asked = !waiting && view.screen === 'help' && view.params.from;
+  if (asked && card().races.some(r => r.no === asked.no)) { nav.go('race', asked); return; }
   // (An earlier meet's closing page was opened from the scrapbook, and goes back there.)
   const up = !waiting && (view.screen === 'meet' && view.params.no ? 'book' : UP[view.screen]);
   nav.go(up || 'card', up === 'book' ? { back: view.screen === 'photo' } : up ? { no: view.params.no, day: view.params.day } : {});
@@ -134,7 +137,7 @@ function render() {
   else if (screen === 'book') renderBook(app, nav, params);
   else if (screen === 'photo') renderPhoto(app, nav, params);
   else if (screen === 'meet') renderMeet(app, nav, params);
-  else if (screen === 'help') renderHelp(app, nav);
+  else if (screen === 'help') renderHelp(app, nav, params);
 }
 
 // A new screen fades in, a short one, rather than cutting from cream to the race's black and back. (Not a

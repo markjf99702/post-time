@@ -49,6 +49,41 @@ const runDay = (page, cash = []) => page.evaluate(async cash => {
 }, cash);
 
 try {
+  // ---------------------------------------------------------------- a first visit, and What do these mean?
+  {
+    // A first visit landed on the card with nothing to say what to do. Race day 1 of a new meet has a note,
+    // until it's put away (and it stays away), and the form and the board open How to play at their part.
+    const { ctx, page } = await freshMeet();
+    assert.match(await page.locator('.welcome').textContent(), /^First time here\? Tap race 1, read the form, buy a \$2 ticket under Bet/);
+    await page.locator('.race-row').first().click();
+    await page.locator('.panel .note .help-link').click();
+    await page.waitForSelector('.help');
+    await page.waitForFunction(() => document.activeElement?.id === 'help-form');
+    const top = await page.locator('#help-form').evaluate(el => el.getBoundingClientRect().top);
+    assert.ok(top > 50 && top < 150, `the form's part of How to play is ${top} px down the screen`);
+    assert.equal(await page.locator('.rhead .back').textContent(), '‹ Race 1');
+    await page.locator('.rhead .back').click();
+    await page.getByRole('tab', { name: 'Bet' }).click();
+    await page.locator('.tote ~ .note .help-link').click();
+    await page.waitForFunction(() => document.activeElement?.id === 'help-odds');
+    // Back, the browser's or the page's, goes to the race's tab it came from.
+    await page.goBack();
+    await page.waitForSelector('.tote');
+    assert.equal(await page.locator('[role=tab][aria-selected=true]').textContent(), 'Bet');
+    await page.locator('.rhead .back').click();
+    await page.locator('.welcome button', { hasText: 'Got it' }).click();
+    assert.equal(await page.locator('.welcome').count(), 0);
+    await page.reload();
+    await page.waitForSelector('.races');
+    assert.equal(await page.locator('.welcome').count(), 0, 'the note came back after it was put away');
+    // And it's only for the first race day: once race 1 is run it's gone anyway.
+    await page.evaluate(() => { window.postTime.game.player.settings.welcome = true; });
+    await runDay(page);
+    await page.evaluate(() => window.postTime.nav.go('card'));
+    assert.equal(await page.locator('.welcome').count(), 0);
+    await ctx.close();
+  }
+
   // ---------------------------------------------------------------- horses to watch
   {
     const { ctx, page } = await freshMeet();

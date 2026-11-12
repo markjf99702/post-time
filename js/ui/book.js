@@ -1,7 +1,7 @@
 // Your scrapbook of winner's circle photos, your record at the windows, and how to play.
 
 import { h, money, jdFoot } from './dom.js';
-import { game, START_BANK, notSaved, yourMeet, advanceDay, yourWeeks, yourKinds, raceAt } from '../game.js';
+import { game, START_BANK, notSaved, yourMeet, advanceDay, yourWeeks, yourKinds, raceAt, card } from '../game.js';
 import { TIPSTERS, JOCKEYS, TRAINERS, BIG_STAKES } from '../data.js';
 import { longDate, dayDate, dateISO, meetRecord, isClosingDay, MEET_DAYS } from '../world.js';
 import { oddsText } from '../handicap.js';
@@ -256,47 +256,74 @@ function savingText() {
   return `Everything is saved in this browser: your bankroll, tickets, scrapbook and the whole racing world. Nothing is sent anywhere.${offline}${drive.available ? ' Save to Google Drive, in the menu, keeps a copy in your own Google Drive too, to carry the meet on from another phone or computer.' : ''}`;
 }
 
-export function renderHelp(root, nav) {
+// How to play's headings, each with an id: "What do these mean?" under the form and under the board opens the
+// page at its part (`at`), and its back button goes back to the race it came from (`from`: its number and tab).
+const part = (id, title) => h('h3', { id: `help-${id}`, tabindex: '-1' }, title);
+// What a winner's speed figure is here, by the class of race: the middle of the winners' figures in 960 races,
+// six meets of twenty race days (seeds wf1 to wf6, measured 12 November 2026).
+const WINS_AT = [['A $20,000 maiden claimer', 66], ['A $10,000 claimer', 69], ['A $16,000 claimer', 73], ['A maiden special weight', 77], ['A $25,000 claimer', 78], ['A $40,000 claimer', 81], ['An allowance', 83], ['A stakes', 92]];
+
+export function renderHelp(root, nav, params = {}) {
+  const from = params.from && game.world && card().races.some(r => r.no === params.from.no) ? params.from : null;
   root.append(
     h('div', { class: 'rhead' },
-      h('button', { class: 'back', type: 'button', onclick: () => nav.go('card') }, '‹ The card'),
+      from ? h('button', { class: 'back', type: 'button', onclick: () => nav.go('race', from) }, `‹ Race ${from.no}`)
+        : h('button', { class: 'back', type: 'button', onclick: () => nav.go('card') }, '‹ The card'),
       h('div', {}, h('div', { class: 'kicker' }, 'Larkspur Downs'), h('h1', { class: 'title' }, 'How to play')),
     ),
     h('div', { class: 'help' },
       h('p', {}, `You start your first meet with ${money(START_BANK, { cents: false })}. Every race day has eight races. For each one you can read the form, look at the horses in the paddock, see what the regulars on the forum are betting, buy tickets at the window, and then watch the race from the gate to the wire.`),
       h('p', {}, "The horses are the same from week to week. Everything in a horse's past performances happened in a race that was run the same way as the ones you watch, so reading the form really does help."),
-      h('h3', {}, 'The meet'),
+      part('start', 'Your first race'),
+      h('ol', {},
+        h('li', {}, 'On the card, tap the race that\'s up next.'),
+        h('li', {}, 'Read the form: tap a horse for its past performances. The Paddock and the Forum tabs have more.'),
+        h('li', {}, `Under Bet, pick a horse and buy a ${money(2, { cents: false })} ticket to win.`),
+        h('li', {}, 'Tap To the gate, and watch them run.'),
+      ),
+      part('meet', 'The meet'),
       h('p', {}, `A meet is ${MEET_DAYS} race days. The last race of every Saturday is a stakes, and the first two home in each are pointed to the ${BIG_STAKES.name}, ${money(BIG_STAKES.purse, { cents: false })}, on closing day: they're entered in it first. After the Handicap the meet closes, with its leading rider and trainer, its horse of the meet, the forum's champion and your own meet, and the next meet opens the Saturday after with the same horses. Your bankroll carries over, and each meet's record is kept in your scrapbook.`),
-      h('h3', {}, 'Reading the form'),
+      part('form', 'Reading the form'),
       h('dl', {},
-        h('dt', {}, 'Speed figure'), h('dd', {}, 'How fast the horse ran, as one number, adjusted for the distance and how fast the track was that day. Higher is better. A horse that runs a 90 is about five lengths better than one that runs an 80 over six furlongs.'),
+        h('dt', {}, 'An entry'), h('dd', {}, 'Its number and silks, its name, and its odds on the board now (once the race is run, the odds it went off at). Under them the rider and the trainer, each with a record in brackets: (12-60) is 12 wins from 60 starts here, counted from ten weeks before your first meet. Then the weight it carries, and ML, its morning line.'),
+        h('dt', {}, 'Speed figure'), h('dd', {}, 'How fast the horse ran, as one number, adjusted for the distance and how fast the track was that day. Higher is better. A horse that runs a 90 is about five lengths better than one that runs an 80 over six furlongs. An entry shows its last five, newest first, with the best of them on green.'),
+        h('dt', {}, 'What wins here'), h('dd', {}, 'About what the winner runs, by the class of race (the middle of the winners\' figures over six meets):',
+          h('table', { class: 'help-table wins-at' }, h('tbody', {}, WINS_AT.map(([what, fig]) => h('tr', {}, h('td', {}, what), h('td', { class: 'r' }, String(fig))))))),
+        h('dt', {}, 'Chips'), h('dd', {}, "The tags beside the figures. The first is the horse's running style, from where it has been at the first call lately: Needs the lead, Close to the pace, Stalker or Closer. The rest are angles a handicapper looks for, such as First time on turf, Drops into a claimer, Bullet work or Troubled trip last time."),
         h('dt', {}, 'Calls'), h('dd', {}, 'Where the horse was at three points in the race, and how many lengths behind the leader (for the leader: how far in front of the second). "3²" is third, two lengths behind the leader. The last one is the finish, where the small figure is the lengths behind the winner (for the winner: how far it won by), so "7¹²" was seventh, beaten twelve lengths. Lines from races run before the game printed them this way show just the position at the calls. In a sprint the first two are taken a quarter of a mile and half a mile from the start (a little sooner at five furlongs and five and a half), and in a race of a mile or more at the half and the three quarters. The third is always a furlong from the finish.'),
         h('dt', {}, 'Running style'), h('dd', {}, 'Some horses need the lead, some sit just behind it, some come from the back. When several speed horses are entered they tend to tire each other out, which sets it up for a closer. A lone speed horse, left alone on the lead, is dangerous.'),
         h('dt', {}, 'Class'), h('dd', {}, 'Maiden races are for horses that have never won. In a claiming race every horse is for sale at the listed price, so trainers enter where they think they belong. A horse dropping in price may be better than these, or may have something wrong with it.'),
-        h('dt', {}, 'Workouts'), h('dd', {}, 'Morning training runs, with the rank among the horses that worked that distance that morning. A bullet (●) in front of one marks the fastest of the day, and can mean a horse is sharp.'),
+        h('dt', {}, 'Past performances'), h('dd', {}, "A horse's races, newest first. Its date (tap it for that race's results, while they're kept), and Lrk with the going: Larkspur, ft fast, gd good, sly sloppy, my muddy, fm firm, yl yielding, sf soft. The distance (6f, 1m, 1 1/16 is a mile and a sixteenth), ⓣ for the turf, and how many ran. The class: MdClm maiden claiming, MdSpWt maiden special weight, Clm16k a claimer for $16,000, Alw allowance, and a stakes by the start of its name (OddsEndsH is the Odds and Ends Handicap); f- in front is a race for fillies and mares. Then the figure, the calls and the finish, and the odds it went off at to $1 (4.5 is 9-2). On the line under it: the trip, the fractions with the final time in bold, the first three home with the margins between them, the rider, and a claim if it was claimed."),
+        h('dt', {}, 'Workouts'), h('dd', {}, 'Morning training runs: the date, the distance, dirt (ft) or turf, the time, B for breezing (under a hold) or H for handily (pushed along), and the rank among the horses that worked that distance that morning. A bullet (●) in front of one marks the fastest of the day, and can mean a horse is sharp.'),
         h('dt', {}, 'Post'), h('dd', {}, 'Where the horse starts in the gate, 1 nearest the rail. In a race of a mile or more the first turn comes up quickly: posts 2 and 3 do best, and from post 7 out a horse loses ground or has to take back. In a sprint it matters less. Riders dread drawing the rail, where a horse that doesn\'t break sharply gets squeezed as the others come over. The morning line and the odds allow for the draw.'),
         h('dt', {}, 'Morning line'), h('dd', {}, "The track handicapper's guess at the odds, printed before any money is bet. The odds on the board are what the betting public actually thinks. On the board, ▼ marks a horse at a shorter price than its morning line (it's been backed) and ▲ one at a longer price, and FAV the favourite. A win, place or show ticket remembers the price it was bought at, and its result says what it went off at."),
         h('dt', {}, 'Pedigree'), h('dd', {}, 'The sire (father) and the dam\'s sire. Some sires get horses that love grass, or mud, or a long way. Sire names link to Bloodlines, the racehorse family tree.'),
       ),
-      h('h3', {}, 'Betting'),
+      part('paddock', 'The paddock'),
+      h('p', {}, "The horses walk the paddock before each race, with a word on how each one looks. It says something about how a horse feels today, which the form can't: dappled, gleaming or bright-eyed is good news, and washed out (sweating between the legs), dull or fighting the groom is bad. Most look like nothing much either way, and that says nothing."),
+      part('betting', 'Betting'),
       h('p', {}, 'All bets go into pools. The track takes its cut (16% from win, place and show, more from exactas and trifectas) and the rest is shared by the winning tickets, so the odds move as money comes in, right up to post time. Late money tends to know a little more.'),
       h('p', {}, MOVING),
       h('dl', {},
+        h('dt', { id: 'help-odds', tabindex: '-1' }, 'The board'), h('dd', {}, "Each horse's odds now, then ▼ if they're shorter than its morning line (it's been backed) or ▲ if longer, with ML and the line beside them. FAV marks the favourite, and $2 pays is about what a $2 win ticket would pay at that price. Over it, the minutes to post and the money in the win pool so far."),
+        h('dt', {}, 'Minutes to post'), h('dd', {}, 'The race that\'s up opens at 12 minutes to post, and the clock loses a minute about every 13 seconds from then. It stops at 2 minutes to post and waits for you: the race doesn\'t go until you send them to the gate.'),
         h('dt', {}, 'Win, place, show'), h('dd', {}, 'Your horse finishes first; first or second; first, second or third.'),
+        h('dt', {}, 'Across the board'), h('dd', {}, `A win, a place and a show ticket on one horse, bought as one: ${money(6, { cents: false })} for ${money(2, { cents: false })} each. If it wins, all three pay.`),
         h('dt', {}, 'Exacta, trifecta'), h('dd', {}, 'The first two, or the first three, in order. A box covers every order of the horses you pick, one bet per order. An exacta can be bet for $1 and a trifecta for 50 cents, as at a track. What paid is given for a $2 exacta and a $1 trifecta, and a smaller ticket is paid its share.'),
         h('dt', {}, 'Daily double, Pick 3'), h('dd', {}, "One ticket on the winners of races in a row: the daily double on races 7 and 8, the Pick 3 on races 6, 7 and 8, ending in the stakes. Each is bought at the window of its first race, from $1. Pick one or more horses in each race, and the ticket is one bet for each way of putting them together: two in race 7 with three in race 8 is six bets. Each has a pool of its own, which closes when its first race goes off, so before the last race its Bet tab has the will-pays, what $1 pays with each horse in it, with yours marked."),
         h('dt', {}, 'Odds'), h('dd', {}, '5-2 means $5 profit for every $2 bet, so a $2 win ticket pays $7. Payouts are worked out per dollar and rounded down to the dime, so a $2 ticket pays in steps of 20 cents, and never less than $2.10.'),
+        h('dt', {}, 'The ATM'), h('dd', {}, "Down to less than $2, the least a ticket costs, with nothing on the race that's up, and the game shows you the ATM by the paddock: $100 a time. The meet so far counts your trips there."),
       ),
-      h('h3', {}, 'The race'),
+      part('race', 'The race'),
       h('p', {}, 'The camera follows the leaders. Tap a number in the running order to follow one horse instead. The little map shows the whole field on the oval. The button with two bars, or the space bar, pauses the race, the caller and the sound, and the same again goes on. Close the page in the middle of a race and the game opens on it again, from the gate (it was settled as it went to the gate, so nothing is bet or paid twice). In a close finish the placing judges read the photo. It comes from a finish-line camera that only sees the line, so the horses in it are stretched and squashed by their speed. When the result is official, the first four go up over the picture with the time, and your tickets say what each paid.'),
       h('p', {}, "The caller's lines are written out as the race is run, under the picture or beside it. Tick Read the race call aloud in the menu to have them spoken, or tap the microphone beside Sound during a race. Sound is the bugle, the bell and the crowd. The caller knows the favourite and the prices on the board, the riders, and the horse you've bet on. Between races he's the track's announcer: minutes to post, and what the winner paid. A race's results have the whole call under the chart, to read back."),
       // Where the downloaded voice can work (not in the one-file copy, or a viewer with nowhere to keep him).
       joeOffered() ? h('p', {}, `The list of voices there has ${JOE.name}, the track's own caller. He's a download, ${Math.round(JOE.bytes / 1e6)} MB, once, kept on this device, and he's the same wherever you play. He calls quicker than a browser's voice does, and quicker still down the stretch. His lines for a race are made while you read its form, the ones for after Skip too. If they aren't ready when the race goes to the gate, the browser's voice calls that one.`) : null,
       h('p', {}, "Back the winner and you're in the winner's circle photo. It goes in your scrapbook. Save the picture, under a photo, makes the photo and its caption one picture to keep or send."),
-      h('h3', {}, 'Between the races'),
+      part('between', 'Between the races'),
       h('p', {}, "Tap the star on a horse, in the form or in a race's results, to watch for it: the card marks every race it runs in. The horses in your photos are starred for you. When the last race is run, three lines under the card sum up the day, and Copy my day puts them on the clipboard."),
       h('p', {}, "A race's results have The form: its form, paddock and forum as they were before the race, with its own line marked. Earlier race days, at the foot of the card, has the results of this meet's race days and the last meet's, each race to watch again. The meet so far, in the menu, has the leading riders, trainers and horses, the stakes, and your own meet race day by race day and by kind of bet."),
-      h('h3', {}, 'Saving'),
+      part('saving', 'Saving'),
       h('p', { class: 'saving' }, savingText()),
       copyOffered() ? h('p', {}, 'Save a copy, in the menu, downloads the whole meet as one file. Open a copy carries the meet on from a file like that, on this device or another, in place of the one here.') : null,
       // (A game on the Home Screen keeps its storage apart from Safari's, so it opens with a meet of its own: a
@@ -307,4 +334,6 @@ export function renderHelp(root, nav) {
       jdFoot(),
     ),
   );
+  const at = params.at && document.getElementById(`help-${params.at}`);
+  if (at) requestAnimationFrame(() => { at.scrollIntoView({ block: 'start' }); at.focus({ preventScroll: true }); });
 }

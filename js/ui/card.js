@@ -2,7 +2,7 @@
 
 import { h, money, cloth, jdFoot, dotted } from './dom.js';
 import { canCopyText, copyText } from '../copy.js';
-import { game, card, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay, multiFor, starredIn, dayRecap, earlierDays } from '../game.js';
+import { game, card, save, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay, multiFor, starredIn, dayRecap, earlierDays } from '../game.js';
 import { longDate, clockText, raceDayOf, meetDays, isClosingDay, isHandicap } from '../world.js';
 import { BIG_STAKES, TIPSTERS } from '../data.js';
 import { distanceName } from '../track.js';
@@ -64,6 +64,7 @@ export function renderCard(root, nav) {
         tot.spent ? ['Today: bet ', h('b', { class: 'money' }, money(tot.spent)), ', back ', h('b', { class: 'money' }, money(tot.back)), ' ', h('b', { class: `money ${tot.net >= 0 ? 'pos' : 'neg'}` }, `(${money(tot.net, { sign: true })})`)] : null,
         tot.pending ? h('span', { class: 'muted' }, `${tot.spent ? ' · ' : ''}${money(tot.pending)} riding on races to come`) : null,
       ) : null,
+      welcome(nav),
       // The Saturday before closing day says what's coming.
       raceDayOf(w) === meetDays(w) - 1 ? h('p', { class: 'big-next' }, `Next Saturday: the ${BIG_STAKES.name}, ${money(BIG_STAKES.purse, { cents: false })}`) : null,
       atmLine(() => redraw(nav)),
@@ -86,6 +87,21 @@ export function renderCard(root, nav) {
   // The results of earlier race days.
   if (earlierDays().length) foot.append(h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('past') }, 'Earlier race days ▸'));
   root.append(foot, jdFoot());
+}
+
+// A first visit lands on the card with nothing to say what to do: on race day 1 of the first meet, until race
+// 1 is run or the note is put away, it says. (Put away on this device: `settings.welcome` is false.)
+function welcome(nav) {
+  const w = game.world, c = card();
+  if (game.player.settings.welcome === false || w.meet?.no !== 1 || raceDayOf(w) !== 1 || c.races.some(r => r.status === 'official')) return null;
+  const done = () => { game.player.settings.welcome = false; save(); redraw(nav); };
+  return h('div', { class: 'welcome', role: 'note' },
+    h('p', {}, h('b', {}, 'First time here? '), `Tap race 1, read the form, buy a ${money(2, { cents: false })} ticket under Bet, then send them to the gate.`),
+    h('div', { class: 'welcome-do' },
+      h('button', { class: 'btn ghost', type: 'button', onclick: () => nav.go('help', { at: 'start' }) }, 'How to play'),
+      h('button', { class: 'btn ghost', type: 'button', onclick: done }, 'Got it'),
+    ),
+  );
 }
 
 // The day in three lines, under "That's the card": bet and back, your best ticket, and the forum's best day.

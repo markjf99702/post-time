@@ -816,6 +816,18 @@ a { color: var(--link); }
 .help dl { margin: 0; }
 .help dt { font-weight: 600; margin-top: 10px; }
 .help dd { margin: 2px 0 0; color: var(--muted); }
+/* A part opened from "What do these mean?" comes up under the sticky header, not behind it. */
+.help [id] { scroll-margin-top: calc(66px + env(safe-area-inset-top)); }
+.help [id]:focus { outline: none; }
+.help ol { padding-left: 22px; margin: 6px 0 0; }
+.help-table { border-collapse: collapse; margin: 6px 0 2px; font-size: 14.5px; color: var(--ink); }
+.help-table td, .help-table th { padding: 3px 14px 3px 0; text-align: left; vertical-align: top; }
+.help-table .r { text-align: right; font-variant-numeric: tabular-nums; padding-right: 0; }
+.help-link { background: none; border: 0; padding: 0; font: inherit; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+/* The note a first visit finds on the card. */
+.welcome { margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--brass); background: var(--card); border-radius: 0 8px 8px 0; }
+.welcome p { margin: 0; font-size: 15px; line-height: 1.4; }
+.welcome-do { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 
 /* first visit */
 .setup { min-height: 70vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; gap: 14px; }

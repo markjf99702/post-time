@@ -82,7 +82,7 @@ export function renderRace(root, nav, params) {
     if (which === 'form') formPanel(panel, race, isNext ? betOn : null, nav);
     if (which === 'paddock') stopPanel = paddockPanel(panel, race);
     if (which === 'forum') forumPanel(panel, race);
-    if (which === 'bet') betPanel(panel, race, { changed: () => show('bet'), picked: refreshBar, open: isNext });
+    if (which === 'bet') betPanel(panel, race, { changed: () => show('bet'), picked: refreshBar, open: isNext, nav });
     refreshBar();
   }
 
@@ -200,6 +200,11 @@ export function conditions(race) {
 
 // ------------------------------------------------------------------ form
 
+// "What do these mean?": How to play, opened at its part on the form or on the board, with its back button
+// back to this race's tab.
+function helpLink(nav, at, race, tab) {
+  return h('button', { class: 'help-link', type: 'button', onclick: () => nav.go('help', { at, from: { no: race.no, tab } }) }, 'What do these mean?');
+}
 // What the small figures in a running line are, said over the entries and in How to play.
 const SMALL = 'In a running line the small figures are lengths behind the leader, and at the finish behind the winner.';
 function formPanel(panel, race, betOn, nav) {
@@ -207,7 +212,8 @@ function formPanel(panel, race, betOn, nav) {
   const board = currentBoard(race);
   panel.append(h('p', { class: 'note' }, race.status === 'official'
     ? `The form as it stood before the race: the figures, running styles and records leave this race out. Tap a horse for its past performances, with its line from this race marked. ${SMALL}`
-    : `Tap a horse for its past performances. Figures are speed figures: higher is faster, adjusted for distance and going. ${SMALL}`));
+    : `Tap a horse for its past performances. Figures are speed figures: higher is faster, adjusted for distance and going. ${SMALL}`,
+  ' ', helpLink(nav, 'form', race, 'form')));
   race.entries.forEach((e, i) => panel.append(entryCard(race, e, i, stats, board, betOn, nav)));
 }
 
@@ -559,19 +565,21 @@ function showPrinted() {
 // Said under the board and in How to play: a ticket isn't paid at the price it was bought at.
 export const MOVING = 'Odds keep moving until the gate opens. Every ticket is paid at the final odds, whatever the board said when you bought it.';
 
-function betPanel(panel, race, { changed, picked, open: isNext }) {
+function betPanel(panel, race, { changed, picked, open: isNext, nav }) {
   const open = isNext && race.status !== 'official';
 
   panel.append(toteBoard(race));
+  // (The link is in the note under the board, not on it: the board is drawn again every few seconds.)
+  const what = () => [' ', helpLink(nav, 'odds', race, 'bet')];
   // Once the races before it are run, the race that ends a daily double or Pick 3 has its will-pays.
   for (const w of willPaysFor(race)) panel.append(willPaysBoard(race, w));
   if (race.status === 'official') {
-    panel.append(h('p', { class: 'note' }, 'Betting is closed. See the results for what paid.'));
+    panel.append(h('p', { class: 'note' }, 'Betting is closed. See the results for what paid.', what()));
     panel.append(ticketList(race, false, changed));
     return;
   }
   // A later race opens for betting when the one before it is over (which isn't always the one that's up).
-  panel.append(h('p', { class: 'note' }, open ? MOVING : `You can bet this race once race ${race.no - 1} is over. The odds will have moved by then.`));
+  panel.append(h('p', { class: 'note' }, open ? MOVING : `You can bet this race once race ${race.no - 1} is over. The odds will have moved by then.`, what()));
   // A race that isn't up yet has its board and that note, and no betting slip: the slip used to be there,
   // working, with a Buy ticket button that could never buy anything.
   if (!open) {
