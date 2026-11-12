@@ -1,10 +1,11 @@
 // The race card: today's date and weather, the eight races, and what happened in the ones already run.
 
 import { h, money, cloth, jdFoot, dotted } from './dom.js';
-import { game, card, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay, multiFor } from '../game.js';
+import { game, card, raceKey, horseOf, nextRace, raceLabel, dayTotals, myBets, atm, advanceDay, multiFor, starredIn } from '../game.js';
 import { longDate, clockText, raceDayOf, meetDays, isClosingDay, isHandicap } from '../world.js';
 import { BIG_STAKES } from '../data.js';
 import { distanceName } from '../track.js';
+import { ordinal } from '../chart.js';
 
 const SKY = { sunny: '☀️', 'partly cloudy': '⛅', overcast: '☁️', rain: '🌧️', showers: '🌦️' };
 
@@ -136,7 +137,22 @@ function raceRow(r, nxt, nav) {
   h('div', { class: 'what' }, raceLabel(r)),
   state,
   h('div', { class: 'sub' }, dotted([distanceName(r.distance), r.surface === 'dirt' ? 'Dirt' : null, `${r.entries.length} horses`, `$${(r.purse / 1000).toFixed(0)}k purse`]), tags.length ? ' ' : '', ...tags.flatMap(t => [t, ' '])),
+  starLine(r),
   );
+}
+
+// A race with a horse you've starred in it says so: "★ Quiet Ramble runs", and once it's run where it finished.
+function starLine(r) {
+  const mine = starredIn(r);
+  if (!mine.length) return null;
+  const done = r.status === 'official';
+  const names = mine.map(i => {
+    const name = horseOf(r.entries[i]).name;
+    const fin = done ? r.result.order.find(o => o.k === i) : null;
+    return fin ? `${name}, ${ordinal(fin.pos)}` : name;
+  });
+  const list = done ? names.join('; ') : names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+  return h('div', { class: 'starred' }, h('span', { 'aria-hidden': 'true' }, '★ '), h('span', { class: 'sr' }, 'Starred: '), done ? list : `${list} ${names.length > 1 ? 'run' : 'runs'}`);
 }
 
 function cap(s) { return s[0].toUpperCase() + s.slice(1); }

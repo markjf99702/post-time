@@ -1,7 +1,7 @@
 // A race before it runs: the past performances, the paddock, the forum and the betting window.
 
 import { h, money, stake, cloth, silksCanvas, clear, ago, plural, dotted } from './dom.js';
-import { game, card, silksFor, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor, toteFor, MULTI, multiStarting, legRaces, multiFor, multiState, cancelMulti, willPaysFor, multiWouldPay, multiNumbers } from '../game.js';
+import { game, card, silksFor, isStarred, toggleStar, cashedOn, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor, toteFor, MULTI, multiStarting, legRaces, multiFor, multiState, cancelMulti, willPaysFor, multiWouldPay, multiNumbers } from '../game.js';
 import { ageOf, shortDate, clockText, CLASSES, meetStats, isHandicap, prepsOf } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
 import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES, CLOTH } from '../data.js';
@@ -238,16 +238,37 @@ function entryCard(race, e, i, stats, board, betOn) {
     if (open) opened.add(e.hid); else opened.delete(e.hid);
     if (open && !more.firstChild) fillMore(more, race, e, hs, betOn && (() => betOn(i)));
   });
+  // A horse you cashed on when it won says so, from your winner's circle photos.
+  const cashed = cashedOn(e.hid, race);
   return h('article', { class: 'entry' },
     head,
     h('div', { class: 'figs' },
       fresh ? h('span', { class: 'chip' }, fresh.chip) : figs.map(f => h('span', { class: `fig${f === best ? ' best' : ''}` }, String(f))),
       style ? h('span', { class: 'chip', title: 'Running style' }, styleName(style)) : null,
       chips.map(c => h('span', { class: `chip ${c[1]}` }, c[0])),
+      starButton(e.hid, hs.name),
     ),
+    cashed.length ? h('p', { class: 'cashed-on' }, cashedText(cashed, hs)) : null,
     more,
   );
 }
+
+// The star on a horse: a horse to watch for, marked on the card whenever it runs. On its entry in the form and
+// on its row in a race's results.
+export function starButton(hid, name) {
+  const b = h('button', { class: 'star', type: 'button', 'aria-pressed': String(isStarred(hid)), 'aria-label': `Star ${name}`, title: 'A horse to watch' }, '★');
+  b.addEventListener('click', () => b.setAttribute('aria-pressed', String(toggleStar(hid))));
+  return b;
+}
+// "You cashed $4.80 when she won on Nov 14." Each time before that is counted.
+function cashedText(list, hs) {
+  const she = ['f', 'm'].includes(hs.sex) ? 'she' : 'he';
+  const [last] = list;
+  const more = list.length - 1;
+  return `You cashed ${money(last.won)} when ${she} won on ${shortDay(last.date)}${more ? `, and ${more === 1 ? 'once' : more === 2 ? 'twice' : `${more} times`} before` : ''}.`;
+}
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export const shortDay = iso => `${MONTHS[+iso.slice(5, 7) - 1]} ${+iso.slice(8, 10)}`;
 
 function styleName(s) {
   return { E: 'Needs the lead', 'E/P': 'Close to the pace', P: 'Stalker', S: 'Closer' }[s];

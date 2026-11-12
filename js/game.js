@@ -24,7 +24,8 @@ export const game = { world: null, player: null };
 // `callerBehind` is there, as true, while the last race he was to call went to the browser's voice because
 // this device couldn't make his lines in time: the menu says so. `betType` is the kind of bet last chosen at
 // the window, which a race's betting slip starts on. `multi` is the day's daily double and Pick 3 tickets,
-// which span races (see the section below).
+// which span races (see the section below). `stars` is the ids of the horses you've starred, to watch for:
+// it's made the first time it's wanted (and from a save without one, as it loads: starsKept).
 function freshPlayer() {
   return {
     v: 1, bank: START_BANK, bets: {}, multi: [], settled: {}, ledger: [], book: [], atm: 0, opened: {},
@@ -48,7 +49,7 @@ export function load() {
       }
       game.world = world;
       game.player = { ...freshPlayer(), ...player };
-      for (const fix of [multiTickets, redrawShort, refundStrays, stopEarlyClocks, countRecords, capMorningLines, meetsEnd]) {
+      for (const fix of [multiTickets, redrawShort, refundStrays, stopEarlyClocks, countRecords, capMorningLines, meetsEnd, starsKept]) {
         try { fix(); } catch { /* a save this can't make sense of loads as it is */ }
       }
       return true;
@@ -156,6 +157,14 @@ function capMorningLines() {
 // Its bankroll at the start was $200, with no trip to the ATM: it's the first meet.
 function meetsEnd() {
   ensureMeet(game.world);
+}
+
+// A save from before horses could be starred has no list of them: it starts with the horses in your winner's
+// circle photos, which are starred for you. (Only then: a horse taken off the list stays off it.)
+function starsKept() {
+  const p = game.player;
+  if (Array.isArray(p.stars)) { p.stars = p.stars.filter(Number.isInteger); return; }
+  p.stars = [...new Set(p.book.map(photoHorse).filter(id => id !== null))];
 }
 
 function inRace(race, sel) {
@@ -395,7 +404,11 @@ export function goToGate(race) {
   // The winner's circle photo goes in your scrapbook if you backed the winner.
   const winIdx = order[0];
   const cashedWinner = bets.some((b, i) => returns[i] > 0 && (b.type === 'exbox' || b.type === 'tribox' || b.sel[0] === winIdx)) || ending.some(t => t.back > 0);
-  if (cashedWinner) game.player.book.push(photoRecord(race, winIdx, back));
+  if (cashedWinner) {
+    game.player.book.push(photoRecord(race, winIdx, back));
+    // And its horse is starred for you, to follow.
+    star(race.entries[winIdx].hid, true);
+  }
   save();
   return { run, pay, returns, spent, back, cashedWinner };
 }
@@ -429,10 +442,44 @@ export function photoRecord(race, winIdx, won) {
     day: race.day, date: race.date, no: race.no, name: race.name, cls: race.cls, claim: race.claim, dist: distanceName(race.distance),
     surface: race.surface, time: race.result.time, horse: { name: h.name, coat: h.coat, marks: h.marks, sex: h.sex },
     owner, number: e.pp, jockey: JOCKEYS[e.j].name, trainer: TRAINERS[trainer], ownerName: OWNERS[owner],
-    seed: race.seed, won: round2(won || 0), stakes: race.cls === 'STK',
+    seed: race.seed, won: round2(won || 0), stakes: race.cls === 'STK', hid: e.hid,
     // The cap the winner wore, when it wasn't the owner's own (an owner's second runner in the race).
     ...(worn.cap !== ownerSilks(owner).cap ? { cap: worn.cap } : {}),
   };
+}
+
+// ------------------------------------------------------------------ horses to watch
+
+// The horse in a winner's circle photo. A photo kept before photos had the horse's id has its name, and a name
+// belongs to one horse in a meet.
+function photoHorse(rec) {
+  if (Number.isInteger(rec?.hid)) return rec.hid;
+  const name = rec?.horse?.name;
+  const h = name ? game.world.horses.find(x => x.name === name) : null;
+  return h ? h.id : null;
+}
+export const isStarred = hid => Array.isArray(game.player.stars) && game.player.stars.includes(hid);
+// Stars a horse (`on`), or takes its star off. Not saved: the caller saves, or goToGate does.
+function star(hid, on) {
+  const p = game.player;
+  if (!Array.isArray(p.stars)) p.stars = [];
+  const i = p.stars.indexOf(hid);
+  if (on && i < 0) p.stars.push(hid);
+  if (!on && i >= 0) p.stars.splice(i, 1);
+}
+export function toggleStar(hid) {
+  const on = !isStarred(hid);
+  star(hid, on);
+  save();
+  return on;
+}
+// The starred horses in a race, as its entries' indices.
+export const starredIn = race => race.entries.map((e, i) => (isStarred(e.hid) ? i : -1)).filter(i => i >= 0);
+// The races you cashed when this horse won, from your winner's circle photos, newest first: [{ won, date, day,
+// no }]. With `before` (a race), only the ones run before it.
+export function cashedOn(hid, before = null) {
+  return game.player.book.filter(rec => photoHorse(rec) === hid && rec.won > 0 && (!before || rec.day < before.day || (rec.day === before.day && rec.no < before.no)))
+    .map(rec => ({ won: rec.won, date: rec.date, day: rec.day, no: rec.no })).reverse();
 }
 
 // The race call, planned at the gate (see liveCall in call.js for what `opts` may say about the voice).
