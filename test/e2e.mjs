@@ -3069,6 +3069,11 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   assert.equal(rehearsed.up, false, 'with the race rehearsed, his worker is still holding its memory');
 
   // To the gate. He takes the race, and the plan is his: its lines are the ones that were made.
+  // (The announcer may have said "Ten minutes to post" while the lines were being made, 26 seconds after the
+  // race's page opened: in the browser's voice if his sound of it wasn't made yet, as announce() has it. On a
+  // busy machine making this race's 27 lines can take that long. Nothing else is said before the gate.)
+  const beforeGate = await page.evaluate(() => { const said = window.__said.filter(u => !u.silent).map(u => u.text); window.__said.length = 0; return said; });
+  assert.ok(beforeGate.every(t => / minutes to post\.$/.test(t)), `said in the browser's voice before the gate: ${beforeGate.join(' / ')}`);
   await page.evaluate(() => { window.__watch = null; });
   await toTheGate(page);
   await page.waitForFunction(() => window.__watch, null, { timeout: 15000 });
@@ -3120,14 +3125,25 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   await page.click('text=Watch again');
   await page.waitForFunction(() => window.__watch, null, { timeout: 15000 });
   if (await page.evaluate(() => { const r = window.__audio.rehearsal(); return !!r && r.calling && !r.ready; })) {
-    const midLine = () => page.waitForFunction(() => { const c = window.__played[window.__played.length - 1]; return c && c.buffer.duration > 1.8 && !c.__ended && performance.now() - c.__at > 400; }, null, { timeout: 60000, polling: 50 });
+    // In the middle of a line (under way, with most of a second of it still to come), the Caller button is
+    // tapped or the race is left, in the same moment in the page. (Waited for from here and then done in a
+    // second step, the line could play to its end in between on a busy machine: a 1.9-second line had run
+    // 1.76 seconds when the race was left, and looked as if leaving hadn't stopped it.)
+    const midLine = what => page.evaluate(async what => {
+      for (const end = performance.now() + 60000; performance.now() < end; await new Promise(r => setTimeout(r, 20))) {
+        const c = window.__played[window.__played.length - 1], now = performance.now();
+        if (!c || c.buffer.duration <= 1.8 || c.__ended || now - c.__at < 400 || c.__at + c.buffer.duration * 1000 - now < 800) continue;
+        if (what === 'caller') document.querySelector('.w-ctl button.caller').click(); else window.__watch.leave('card');
+        return;
+      }
+      throw new Error('no line of his long enough to stop in the middle of');
+    }, what);
     const stopped = () => page.evaluate(async () => {
       const n = window.__played.length, c = window.__played[n - 1];
       await new Promise(r => setTimeout(r, 250));
       return { early: !!c.__ended && (c.__ended - c.__at) / 1000 < c.buffer.duration - 0.5, n };
     });
-    await midLine();
-    await page.evaluate(() => document.querySelector('.w-ctl button.caller').click());
+    await midLine('caller');
     const hushed = await stopped();
     await page.waitForTimeout(3500);
     assert.deepEqual([hushed.early, await page.evaluate(() => window.__played.length)], [true, hushed.n], 'the Caller button did not stop him at once, or he went on with the call');
@@ -3147,8 +3163,7 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
     await page.waitForTimeout(1000);
     const again = await page.evaluate(() => { const asked = window.__asked.map(a => a[0]); [...document.querySelectorAll('.w-ctl button')].find(b => b.textContent === '1×').click(); return asked; });
     assert.ok(up.length >= 3 && !again.some(say => up.includes(say)), `at 2x, ${up.length} lines in, his worker was asked again for lines already said: ${again.filter(say => up.includes(say)).join(' / ')}`);
-    await midLine();
-    await page.evaluate(() => window.__watch.leave('card'));
+    await midLine('leave');
     const left = await stopped();
     await page.waitForFunction(() => !window.__joe.running(), null, { timeout: 15000 });
     assert.deepEqual([left.early, await page.evaluate(() => [window.__audio.rehearsal(), window.__played.length, window.__said.filter(u => !u.silent).length]), await page.evaluate(() => window.postTime.game.player.settings.sound)],
