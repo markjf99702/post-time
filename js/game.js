@@ -523,15 +523,26 @@ export function formBefore(race, e, stats) {
     life.starts--; if (fin === 1) life.w--; else if (fin === 2) life.p--; else if (fin === 3) life.s--;
     life.earn -= earnedIn(race, fin);
   }
-  // (A trainer can have more than one runner in the race: each was a start, and the winner a win.)
+  // The rider's and the trainer's records come back from this race and every race run after it today, as
+  // they were counted (applyResult in js/world.js): race 3 looked at once race 7 is run leaves out races 3 to 7.
+  // (A trainer can have more than one runner in a race: each was a start, and the winner a win.)
   const now = fin && race.day === game.world.day;
-  const winner = race.entries[race.result.order[0].k];
-  const ran = race.entries.filter(x => ranFor(x).trainer === trainer).length;
+  const since = { j: [0, 0], t: [0, 0] };
+  if (now) {
+    for (const r of card().races) {
+      if (r.no < race.no || r.status !== 'official' || !r.result) continue;
+      for (const o of r.result.order) {
+        const x = r.entries[o.k];
+        if (x.j === e.j) { since.j[0]++; if (o.pos === 1) since.j[1]++; }
+        if (ranFor(x).trainer === trainer) { since.t[0]++; if (o.pos === 1) since.t[1]++; }
+      }
+    }
+  }
   return {
     hs: { ...hs, pps: hs.pps.filter(before), works: hs.works.filter(w => w.dt < race.date), life },
     today,
-    rider: now ? { starts: rider.starts - 1, w: rider.w - (fin === 1 ? 1 : 0) } : rider,
-    trainer: now ? { starts: trains.starts - ran, w: trains.w - (ranFor(winner).trainer === trainer ? 1 : 0) } : trains,
+    rider: now ? { starts: rider.starts - since.j[0], w: rider.w - since.j[1] } : rider,
+    trainer: now ? { starts: trains.starts - since.t[0], w: trains.w - since.t[1] } : trains,
   };
 }
 

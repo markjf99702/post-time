@@ -162,19 +162,24 @@ test('a race looked at again after it is run has its form as it stood before: fi
   buildOn('before-1');
   save(); load();
   let checked = 0;
+  const form = race => race.entries.map(e => {
+    const { hs, rider, trainer } = G.formBefore(race, e, W.meetStats(game.world));
+    return JSON.stringify({ figs: hs.pps.map(p => p.fig), style: runStyle(hs), chips: angles(race, hs, game.world.day), life: hs.life, rider, trainer });
+  });
+  const stood = new Map();
   for (const race of card().races) {
-    const was = () => race.entries.map(e => {
-      const { hs, rider, trainer } = G.formBefore(race, e, W.meetStats(game.world));
-      return JSON.stringify({ figs: hs.pps.map(p => p.fig), style: runStyle(hs), chips: angles(race, hs, game.world.day), life: hs.life, rider, trainer });
-    });
-    const before = was();
+    const before = form(race);
+    stood.set(race.no, before);
     goToGate(race);
-    assert.deepEqual(was(), before, `race ${race.no}: the form changed once the race was run`);
+    assert.deepEqual(form(race), before, `race ${race.no}: the form changed once the race was run`);
     // And each horse's line from the race is there, to be marked.
     for (const e of race.entries) assert.equal(G.formBefore(race, e, W.meetStats(game.world)).today?.no, race.no);
     checked++;
   }
   assert.equal(checked, 8);
+  // And still once the whole card is run: the riders and trainers in race 1 have ridden and trained in races
+  // after it, which their records before race 1 leave out.
+  for (const race of card().races) assert.deepEqual(form(race), stood.get(race.no), `race ${race.no}: the form changed once later races were run`);
 });
 
 test("earlier race days are kept, this meet's and the last meet's, and each race comes back as it was: its result, its odds and its running", () => {
