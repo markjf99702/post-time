@@ -6,7 +6,7 @@ import { rng } from './rng.js';
 import { runRace, figureFor, ENGINE } from './sim.js';
 import { coursePath, FURLONG } from './track.js';
 import { runningLine, tripComment } from './chart.js';
-import { SIRES, DAMSIRES, JOCKEYS, TRAINERS, OWNERS, SILK_COLORS, PATTERNS, STAKES, BIG_STAKES, makeName, damName } from './data.js';
+import { SIRES, DAMSIRES, JOCKEYS, TRAINERS, OWNERS, SILK_COLORS, PATTERNS, STAKES, BIG_STAKES, AWAY, makeName, damName } from './data.js';
 import { morningLine, formRating, oddsText } from './handicap.js';
 import { forumPosts, scoreTipsters, favouriteAtTheOff } from './forum.js';
 import { makeTote, board, settle } from './tote.js';
@@ -325,7 +325,7 @@ function tallyFromLines(world, first) {
     for (let i = h.pps.length - 1; i >= 0; i--) {
       const p = h.pps[i];
       if (p.claimed) then = p.claimed.from;
-      if (!(p.d >= first)) continue;
+      if (!(p.d >= first) || p.at) continue;
       const purse = p.cls === 'STK' ? (p.nm === BIG_STAKES.name ? BIG_STAKES.purse : 150000) : CLASSES[p.cls]?.purse || 0;
       countRace(tally, { j: p.j, t: p.tr ?? then, hid: h.id, pos: p.fin, earn: Math.round(share(p.fin, p.fs) * purse), odds: p.odds, day: p.d, no: p.no });
       if (p.cls === 'STK' && p.fin <= 2) {
@@ -447,15 +447,91 @@ function endOfDay(world, day) {
 
 // A new meet opens with the barn made up to its size (barnFor): from the second meet on, that's eighty more
 // horses than the first meet had, shipped in on its first race day. They're drawn from a stream of their own,
-// so nothing else drawn that day changes.
+// so nothing else drawn that day changes. They come with the races they ran where they shipped from (awayForm).
 function shipIn(world, day) {
   const R = rng(`open:${world.seed}:${world.meet.no}`);
   const active = world.horses.filter(h => !h.retired).length;
+  const came = [];
   for (let i = active; i < barnFor(world); i++) {
     const h = newHorse(world, R, { age: R.weighted([[3, 50], [4, 30], [5, 20]]), id: world.horses.length, day });
     world.horses.push(h);
+    came.push(h);
     addWork(world, h, day, R); addWork(world, h, day, R);
   }
+  awayForm(world, came, day);
+}
+
+// The horses that ship in for a new meet come with three or four races each at the track they shipped from,
+// run the way Larkspur's are, among the horses shipping from the same track. (With nothing but two works to
+// go on, they were three runners in five on the second meet's first race day, and one in four on its second:
+// a card nobody could handicap.) Each track races every third Saturday, its last race day four or five weeks
+// before the meet opens. A line from there says where (`at`, the track's short name) and counts for nothing
+// at Larkspur: not on a rider's or a trainer's record, not on the meet's, and no claims. Between race days the
+// horses' form comes and goes as it does at Larkspur. All of it from a stream of its own.
+function awayForm(world, came, first) {
+  if (!came.length) return;
+  const R = rng(`away:${world.seed}:${world.meet.no}`);
+  AWAY.forEach((track, k) => {
+    const horses = came.filter((_, i) => i % AWAY.length === k);
+    const days = [0, 1, 2, 3].map(i => first - (4 + k) - 3 * (3 - i)); // oldest first
+    // Three races or four: a horse with three misses one of the first three race days.
+    const misses = new Map(horses.map(h => [h, R.chance(0.5) ? R.int(0, 2) : -1]));
+    let week = days[0] - 1;
+    const pass = to => { for (; week < to; week++) for (const h of horses) h.form = h.form * 0.8 + R.gauss() * 1.4; };
+    days.forEach((day, d) => {
+      pass(day);
+      const going = horses.filter(h => misses.get(h) !== d);
+      awayDay(world, going, day, R, track, d);
+    });
+    pass(first);
+  });
+}
+
+// One race day at a track a horse shipped from: the maidens and the winners each split, best to worst as their
+// trainers see them, into fields of about eight, each at the class that suits it. Maidens too few for a race
+// of their own run with the winners' last field, made a $10,000 claimer.
+function awayDay(world, going, day, R, track, d) {
+  const est = new Map(going.map(h => [h, trainerEstimate(h, R)]));
+  const best = list => list.slice().sort((a, b) => est.get(b) - est.get(a));
+  let maidens = best(going.filter(h => h.maiden)), winners = best(going.filter(h => !h.maiden));
+  if (maidens.length < 5) { winners = winners.concat(maidens); maidens = []; }
+  const fields = [];
+  const split = (list, maiden) => {
+    const n = Math.max(1, Math.round(list.length / 8.5), Math.ceil(list.length / 11)); // eleven at most, as here
+    for (let i = 0; i < n; i++) fields.push({ maiden, horses: list.slice(Math.round(i * list.length / n), Math.round((i + 1) * list.length / n)) });
+  };
+  if (winners.length) split(winners, false);
+  if (maidens.length) split(maidens, true);
+  const date = dateISO(dayDate(world, day));
+  fields.forEach(({ maiden, horses }, i) => {
+    if (horses.length < 2) return;
+    const level = horses.reduce((s, h) => s + est.get(h), 0) / horses.length;
+    const mixed = !maiden && horses.some(h => h.maiden);
+    const classes = maiden ? ['MCL', 'MSW'] : mixed ? ['C10'] : ['C10', 'C16', 'C25', 'C40', 'ALW'];
+    const cls = classes.reduce((a, b) => (Math.abs(CLASSES[b].par - level) < Math.abs(CLASSES[a].par - level) ? b : a));
+    const surface = R.chance(0.25) ? 'turf' : 'dirt';
+    const f = surface === 'turf' ? R.pick([5, 5.5, 8, 8, 8.5, 9]) : R.pick([5.5, 6, 6, 6, 6.5, 7, 7, 8, 8.5, 8.5, 9]);
+    const cond = surface === 'turf' ? R.weighted([['firm', 80], ['good', 12], ['yielding', 8]]) : R.weighted([['fast', 75], ['good', 10], ['sloppy', 10], ['muddy', 5]]);
+    const C = CLASSES[cls];
+    const no = i + 1;
+    const race = {
+      no, day, date, cls, surface, f, distance: f * FURLONG, cond, par: C.par, claim: C.claim || null, purse: C.purse,
+      name: null, fm: false, post: postTime(no), seed: `${world.seed}:${track.short}:${world.meet.no}:${d}:${no}`, entries: [], status: 'official',
+    };
+    race.entries = R.shuffle(horses.map(h => ({ hid: h.id })));
+    race.entries.forEach((e, k) => { e.pp = k + 1; });
+    const riders = JOCKEYS.map((j, k) => ({ k, s: j.skill + R.gauss() * 0.45 })).sort((a, b) => b.s - a.s);
+    race.entries.map(e => ({ e, s: est.get(world.horses[e.hid]) + R.gauss() * 2.83 })).sort((a, b) => b.s - a.s).forEach(({ e }, k) => { e.j = riders[k].k; });
+    for (const e of race.entries) {
+      const h = world.horses[e.hid];
+      e.wt = R.pick([118, 120, 120, 121, 122, 124]) - (h.sex === 'f' || h.sex === 'm' ? 2 : 0);
+      e.rating = dayRating(h, race, e, R);
+      e.pdk = paddockNote(h, R);
+    }
+    setMorningLine(world, race);
+    const odds = board(makeTote(race, world), 1).odds;
+    applyResult(world, race, simulateRace(race, world, { record: false }), odds, { at: track.short });
+  });
 }
 
 // A morning workout: its time depends on how the horse is doing right now.
@@ -730,14 +806,16 @@ const share = (pos, fs) => SPLIT[pos - 1] || (pos <= fs ? 0.02 / Math.max(1, fs 
 // What a horse earned for finishing `pos` in `race`, as it went on its record.
 export const earnedIn = (race, pos) => Math.round(share(pos, race.entries.length) * race.purse);
 
-export function applyResult(world, race, run, odds) {
+// `at` is the short name of another track, for a race run where a horse shipped in from (awayForm): it goes
+// on the horses' lines and records, and nowhere else.
+export function applyResult(world, race, run, odds, { at = null } = {}) {
   const R = rng(`apply:${race.seed}`);
   const D = race.distance;
   const fs = race.entries.length;
   const names = run.results.slice(0, 3).map((r, k) => [world.horses[race.entries[r.h].hid].name, k < 2 ? +(run.results[k + 1]?.toPrev || 0).toFixed(2) : 0]);
   const fr = run.fractions.map(f => +f.t.toFixed(2));
   const stats = ensureStats(world);
-  const meet = world.meet && race.day >= world.meet.first && race.day <= world.meet.last ? world.meet : null;
+  const meet = !at && world.meet && race.day >= world.meet.first && race.day <= world.meet.last ? world.meet : null;
   race.entries.forEach((e, k) => {
     const h = world.horses[e.hid];
     const r = run.results.find(x => x.h === k);
@@ -748,12 +826,13 @@ export function applyResult(world, race, run, odds) {
       nm: race.name, fm: race.fm, fs, pp: e.pp, j: e.j, wt: e.wt, odds: +odds[k].toFixed(2), fin: r.pos, bl: +r.behind.toFixed(2),
       line: runningLine(run, k), lead: 1, fig, t: +r.time.toFixed(2), fr, cm: tripComment(run, k, fs), top: names,
       tr: h.trainer, // who trained it that day, for the trainers' records
+      ...(at ? { at } : {}),
     };
     // (`lead`: the line's margins are the Racing Form's, behind the leader at each call. A line saved before
     // has none, and js/chart.js formLine prints its calls without them.)
     // Claimed out of the race by another trainer. It ran for the people who entered it, so the race keeps
     // who they were: the silks it ran in, and the trainer and owner in the winner's circle, are theirs.
-    if (race.claim && R.chance(0.08)) {
+    if (race.claim && !at && R.chance(0.08)) {
       const to = (h.trainer + R.int(1, TRAINERS.length - 1)) % TRAINERS.length;
       pp.claimed = { from: h.trainer, price: race.claim };
       e.ran = { owner: h.owner, trainer: h.trainer };
@@ -768,7 +847,7 @@ export function applyResult(world, race, run, odds) {
     h.pps.push(pp);
     if (h.pps.length > 10) h.pps.shift();
     // The race goes on the rider's record, and on the record of the trainer it ran for.
-    for (const rec of [pair(stats.j, e.j), pair(stats.t, pp.tr)]) { rec[0]++; if (r.pos === 1) rec[1]++; }
+    if (!at) for (const rec of [pair(stats.j, e.j), pair(stats.t, pp.tr)]) { rec[0]++; if (r.pos === 1) rec[1]++; }
     h.life.starts++;
     if (r.pos === 1) { h.life.w++; h.maiden = false; } else if (r.pos === 2) h.life.p++; else if (r.pos === 3) h.life.s++;
     const earn = Math.round(share(r.pos, fs) * race.purse);
@@ -834,6 +913,7 @@ function statsFromLines(world) {
     for (let i = h.pps.length - 1; i >= 0; i--) {
       const p = h.pps[i];
       if (p.claimed) then = p.claimed.from;
+      if (p.at) continue; // a race at another track
       add(pair(st.j, p.j), p);
       add(pair(st.t, p.tr ?? then), p);
     }

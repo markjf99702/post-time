@@ -4,7 +4,7 @@ import { h, money, stake, cloth, silksCanvas, clear, ago, plural, dotted, keepFo
 import { game, card, silksFor, isStarred, toggleStar, cashedOn, formBefore, raceAt, raceKey, memoKey, horseOf, ranFor, nextRace, raceLabel, myBets, placeBet, cancelBet, currentBoard, mtpState, forumFor, runnersFor, toteFor, MULTI, multiStarting, legRaces, multiFor, multiState, cancelMulti, willPaysFor, multiWouldPay, multiNumbers } from '../game.js';
 import { ageOf, shortDate, clockText, CLASSES, meetStats, isHandicap, prepsOf } from '../world.js';
 import { distanceName, distanceShort, FURLONG } from '../track.js';
-import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES, CLOTH } from '../data.js';
+import { JOCKEYS, TRAINERS, OWNERS, TIPSTERS, IN_BLOODLINES, SIRES, CLOTH, TRACK } from '../data.js';
 import { formLine, marginShort, marginText, ordinal, fmtTime, fmtWork } from '../chart.js';
 import { runStyle } from '../forum.js';
 import { BET_NAMES, cost as betCost, MIN, wouldPay } from '../tote.js';
@@ -358,7 +358,7 @@ function fillMore(more, race, e, hs, bet, today = null, nav = null) {
       const mark = p === today;
       tb.append(
         h('tr', { class: mark ? 'today' : null },
-          h('td', {}, mark ? h('b', { class: 'today-tag' }, 'This race') : chartLink(p, nav), h('br'), h('span', { class: 'muted' }, mark ? shortDate(p.dt) : `Lrk ${COND[p.cond] || p.cond}`)),
+          h('td', {}, mark ? h('b', { class: 'today-tag' }, 'This race') : chartLink(p, nav), h('br'), h('span', { class: 'muted' }, mark ? shortDate(p.dt) : `${p.at || TRACK.short} ${COND[p.cond] || p.cond}`)),
           h('td', {}, `${distanceShort(p.f * FURLONG)}${p.surf === 't' ? ' ⓣ' : ''}`, h('br'), h('span', { class: 'muted' }, `${p.fs} ran`)),
           h('td', {}, p.nm ? shortStakes(p.nm) : (p.fm ? 'f-' : '') + shortClass(p.cls)),
           h('td', { class: 'f' }, String(p.fig)),
@@ -398,8 +398,10 @@ function fillMore(more, race, e, hs, bet, today = null, nav = null) {
   if (bet) more.append(h('div', { class: 'bet-on' }, h('button', { class: 'btn ghost', type: 'button', onclick: bet, 'aria-label': `Bet on ${e.pp} ${hs.name}` }, `Bet on ${e.pp} ▸`)));
 }
 
+// (A line from the track a horse shipped in from has no results here: its race day and number are another
+// track's, and the race kept under them at Larkspur is a different race.)
 function chartLink(p, nav) {
-  const kept = nav && raceAt(p.d, p.no);
+  const kept = nav && !p.at && raceAt(p.d, p.no);
   if (!kept || kept.status !== 'official') return shortDate(p.dt);
   return h('button', { class: 'pp-link', type: 'button', 'aria-label': `${shortDate(p.dt)}: the results of that race`, onclick: () => nav.go('result', { day: p.d, no: p.no }) }, shortDate(p.dt));
 }

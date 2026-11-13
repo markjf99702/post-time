@@ -3447,6 +3447,19 @@ assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems w
   // The same horses, and eighty more shipped in for the second meet: a barn of 290.
   const barn2 = await meet.evaluate(() => { const hs = window.postTime.game.world.horses; return { added: hs.length, active: hs.filter(h => !h.retired).length }; });
   assert.ok(barn2.added - horses >= 80 && barn2.added - horses < 90 && barn2.active === 290, `meet 2 opened with ${barn2.added - horses} horses added and a barn of ${barn2.active}`);
+  // They come with their last few races from where they shipped: on a race's form a line from there says
+  // Fnv or Slt with the going, and its date doesn't open the race kept at Larkspur under that day and number.
+  const shipped = await meet.evaluate(() => {
+    const w = window.postTime.game.world, away = e => w.horses[e.hid].pps.some(p => p.at);
+    const r = window.postTime.card().races.find(x => x.entries.some(away));
+    return { no: r.no, i: r.entries.findIndex(away) };
+  });
+  await meet.evaluate(no => window.postTime.nav.go('race', { no, tab: 'form' }), shipped.no);
+  const shipper = meet.locator('.entry').nth(shipped.i);
+  await shipper.locator('.entry-head').click();
+  const where = await shipper.locator('table.pps tbody tr:not(.c) td:first-child .muted').allTextContents();
+  assert.ok(where.length >= 3 && where.every(t => /^(Fnv|Slt) [a-z]+$/.test(t)), `a shipped-in horse's lines say ${where}`);
+  assert.equal(await shipper.locator('.pp-link').count(), 0, 'a line from where it shipped opens a race at Larkspur');
   // The scrapbook is meet 2's, with meet 1 under Earlier meets; its row opens meet 1's page, and Back goes
   // back to the scrapbook.
   await meet.evaluate(() => window.postTime.nav.go('book'));

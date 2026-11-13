@@ -2,6 +2,8 @@
 // (the ones marked `bl` are in Bloodlines, the drawer's racehorse family tree, so their names link there).
 
 export const TRACK = { name: 'Larkspur Downs', short: 'Lrk' };
+// The two tracks the horses that come for the second meet ship in from, with the races they ran there.
+export const AWAY = [{ name: 'Fernvale Park', short: 'Fnv' }, { name: 'Saltmarsh Downs', short: 'Slt' }];
 
 // dist: the distance (furlongs) their foals like best; turf and mud: -1..1; speed: how quick they are early.
 export const SIRES = [

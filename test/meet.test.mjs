@@ -14,7 +14,7 @@ globalThis.window = new EventTarget();
 const { game, load, save, card, goToGate, advanceDay, placeBet, atm, yourMeet, START_BANK } = await import('../js/game.js');
 const W = await import('../js/world.js');
 const { makeTote } = await import('../js/tote.js');
-const { STAKES, BIG_STAKES, JOCKEYS } = await import('../js/data.js');
+const { STAKES, BIG_STAKES, JOCKEYS, AWAY } = await import('../js/data.js');
 
 // A meet with a fixed seed and first race day, and a new player.
 function buildOn(seed, start = '2026-09-26') {
@@ -22,10 +22,12 @@ function buildOn(seed, start = '2026-09-26') {
   game.player = { v: 1, bank: START_BANK, bets: {}, settled: {}, ledger: [], book: [], atm: 0, opened: {}, settings: { sound: true, voice: false }, best: null };
 }
 // Race days run the quick way, with nobody watching: the world only.
-function runDays(world, days, each = () => {}) {
+// `after` is called once a day's races are run, before the next race day.
+function runDays(world, days, each = () => {}, after = () => {}) {
   for (let d = 0; d < days; d++) {
     each(world.cards[world.day]);
     for (const race of world.cards[world.day].races) W.makeOfficial(world, race, W.simulateRace(race, world, { record: false }), { tote: makeTote(race, world) });
+    after();
     W.nextDay(world);
   }
 }
@@ -97,7 +99,7 @@ test('when the second meet opens eighty horses ship in, and from then on a horse
     if (world.day === 10) {
       const came = world.horses.slice(before);
       assert.ok(came.length >= 80, `${came.length} horses shipped in for the second meet`);
-      for (const h of came) assert.ok(W.ageOf(world, h) >= 3 && W.ageOf(world, h) <= 5 && !h.pps.length, `${h.name}, ${W.ageOf(world, h)}`);
+      for (const h of came) assert.ok(W.ageOf(world, h) >= 3 && W.ageOf(world, h) <= 5, `${h.name}, ${W.ageOf(world, h)}`);
     }
     for (const race of c.races) {
       if (W.isHandicap(race)) continue; // (the horses pointed to it run whenever they last ran)
@@ -108,6 +110,45 @@ test('when the second meet opens eighty horses ship in, and from then on a horse
   assert.equal(active(), W.BARN_LATER, 'the barn stays at its size');
   assert.ok(gaps[1].filter(g => g === 2).length > gaps[1].length / 3, 'the first meet runs as it did: horses back after one Saturday off');
   assert.equal(Math.min(...gaps[2]), 3, 'a horse ran in the second meet after only one Saturday off');
+});
+
+// They used to come with nothing on their card but two works: three runners in five on the second meet's first
+// race day had never run at Larkspur, one in four on its second. Now each has three or four races at the track
+// it shipped from, and those races count for nothing here.
+test('the horses that ship in for the second meet come with their last few races from where they shipped', () => {
+  const world = W.createWorld('meet-away', '2026-09-26');
+  const shorts = AWAY.map(t => t.short);
+  let stats = null, tally = null;
+  const noLines = [];
+  runDays(world, 13, c => {
+    if (world.day === 10) {
+      // (The last eighty to arrive: the closing day's own few, come to take the places of horses retired, are
+      // before them.)
+      const came = world.horses.slice(-(W.BARN_LATER - W.BARN));
+      for (const h of came) {
+        assert.ok(h.pps.length >= 3 && h.pps.length <= 4, `${h.name} came with ${h.pps.length} races`);
+        for (const p of h.pps) {
+          assert.ok(shorts.includes(p.at), `${h.name}'s line says it ran at ${p.at}`);
+          assert.ok(p.d <= world.day - 4 && p.dt < c.date, `${h.name} ran there on race day ${p.d}`);
+          assert.ok(p.fs >= 5 && p.fs <= 11 && p.top.length === 3 && Number.isFinite(p.fig) && p.odds > 0, JSON.stringify(p));
+          assert.ok(!p.claimed, 'claimed at another track');
+        }
+        assert.equal(new Set(h.pps.map(p => p.at)).size, 1, `${h.name} ran at two tracks`);
+        assert.ok(h.last <= world.day - W.restFor(world), `${h.name} is not rested enough to run on the opening day`);
+        assert.ok(h.life.starts >= h.pps.length);
+      }
+      // Nothing at Larkspur counts them: the riders' and trainers' records are as the closing day left them,
+      // and the new meet's count is empty.
+      assert.deepEqual(world.stats, stats);
+      assert.deepEqual(world.meet.tally, { j: {}, t: {}, h: {}, long: null, stk: [] });
+    }
+    if (world.day >= 10) {
+      const runners = c.races.flatMap(r => r.entries);
+      noLines.push(runners.filter(e => !world.horses[e.hid].pps.length).length / runners.length);
+    }
+  }, () => { if (world.day === 9) { stats = structuredClone(world.stats); tally = world.meet.tally; } });
+  assert.ok(tally);
+  for (const [k, share] of noLines.entries()) assert.ok(share <= 0.08, `${Math.round(100 * share)}% of the runners on race day ${k + 1} of meet 2 have no lines`);
 });
 
 test("the first two home in each weekly stakes are entered in the Handicap first, whether or not they ran last week", () => {
