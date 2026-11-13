@@ -12,7 +12,7 @@ export const BASE = { win: 2, place: 2, show: 2, exacta: 2, trifecta: 1, dd: 1, 
 // half a $1 trifecta. (Exactas were $2 and trifectas $1, twice what tracks sell them for.)
 export const MIN = { win: 2, place: 2, show: 2, exacta: 1, trifecta: 0.5, dd: 1, p3: 1 };
 
-const PADDOCK_LATE = 0.08;
+const PADDOCK_LATE = 0.1;
 const POOL = { MCL: 70000, MSW: 95000, C10: 65000, C16: 80000, C25: 95000, C40: 110000, ALW: 140000, STK: 260000 };
 
 export function makeTote(race, world) {
@@ -23,7 +23,10 @@ export function makeTote(race, world) {
   const early = probsFrom(pub, 0.15).map((p, i) => 0.6 * p + 0.4 * (1 / (race.entries[i].ml + 1)));
   // The late money knows what the public knows, and has a fair but rough idea of how each horse is
   // doing today: its day rating, give or take about seven points. It's most of the pool by the off, so
-  // what it knows is in the final price as well as in the way the odds moved.
+  // what it knows is in the final price as well as in the way the odds moved. (It leaned on the public's
+  // view and too little on its own, and was 85% of the pool by the off: the price at the off kept too
+  // little of what it knew, and $2 to win on the horse whose odds came in most by 2 minutes to post made
+  // about 7% with no handicapping. Now it leans more on its own idea, and is 92% of the pool.)
   const L = rng(`late:${race.seed}`);
   // (It knows the draw, and a horse that should have the lead to itself, as the public does: they're in what
   // it sees, and in its idea of the day rating.)
@@ -31,7 +34,7 @@ export function makeTote(race, world) {
   // looks poor a little less. (Nobody at the track bet on the paddock, which is read from how a horse
   // really is that day, and $2 to win on every good-looker made a profit with no handicapping at all.)
   const looks = e => ({ good: PADDOCK_LATE, poor: -PADDOCK_LATE }[e.pdk?.kind] || 0);
-  const late = probsFrom(seen.map((r, i) => 0.062 * r + 0.101 * (race.entries[i].rating + postEdge(race, race.entries[i].pp) + paceEdge(race, world.horses, race.entries[i]) + L.gauss() * 7) + looks(race.entries[i])), 1);
+  const late = probsFrom(seen.map((r, i) => 0.052 * r + 0.111 * (race.entries[i].rating + postEdge(race, race.entries[i].pp) + paceEdge(race, world.horses, race.entries[i]) + L.gauss() * 7) + looks(race.entries[i])), 1);
   const size = (POOL[race.cls] || 80000) * (race.purse >= 300000 ? 2.2 : 1) * R.range(0.8, 1.25) * (race.no === 8 ? 1.3 : 1);
   const wig = [...Array(n)].map(() => R.range(0, 1000));
   return { n, early: norm(early), late: norm(late), size, wig, seed: race.seed };
@@ -40,9 +43,9 @@ export function makeTote(race, world) {
 function norm(a) { const s = a.reduce((x, y) => x + y, 0); return a.map(x => x / s); }
 
 // The public's win money at a moment in the betting, `frac` from 0 (window opens) to 1 (post time).
-// The late money comes in as post time nears: by the off it's 85% of the pool.
+// The late money comes in as post time nears: by the off it's 92% of the pool.
 export function publicWin(tote, frac) {
-  const a = 0.85 * frac * frac;
+  const a = 0.92 * frac * frac;
   const total = tote.size * (0.22 + 0.78 * Math.pow(frac, 1.5));
   const tick = Math.floor(frac * 40);
   const mix = tote.early.map((p, i) => ((1 - a) * p + a * tote.late[i]) * (1 + 0.06 * Math.sin(tote.wig[i] + tick * 1.7) * (1 - frac * 0.6)));

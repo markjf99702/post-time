@@ -828,6 +828,36 @@ test("following the late money doesn't pay, and neither do long-shot trifectas",
   assert.ok(tri / races < 0.9, `a random trifecta got back $${(tri / races).toFixed(2)} for every $1`);
 });
 
+// The same bet, worked out from its chances rather than from the one way each race was run: each race is run
+// again sixteen times from seeds of its own, and the ticket's worth is its chance of winning times what it
+// would pay. The price at the off kept too little of what the late money knew (it leaned on the public's view,
+// and was 85% of the pool), and over 48 meets x 3 seeds (npm run sim) the bet made about 3% with no
+// handicapping; it now loses about 11%. This meet's first twelve race days are a poor run for it either way:
+// worth $0.82 for every $1 at the old settings, $0.69 now.
+test('the horse whose odds come in most is worth less than its price', () => {
+  const w = createWorld('steamer-worth', '2026-09-26');
+  let worth = 0, bets = 0;
+  for (let d = 0; d < 12; d++) {
+    for (const r of w.cards[w.day].races) {
+      const tote = makeTote(r, w);
+      const open = board(tote, 0).odds, late = board(tote, 0.9).odds;
+      const move = late.map((o, i) => (open[i] + 1) / (o + 1));
+      const steam = move.indexOf(Math.max(...move));
+      if (move[steam] > 1.15) {
+        let won = 0;
+        for (let k = 0; k < 16; k++) if (simulateRace({ ...r, seed: `${r.seed}:again${k}` }, w, { record: false }).results[0].h === steam) won++;
+        const pays = settle(tote, [steam, ...r.entries.map((_, i) => i).filter(i => i !== steam)]).win[steam];
+        worth += (won / 16) * pays / 2;
+        bets++;
+      }
+      applyResult(w, r, simulateRace(r, w, { record: false }), board(tote, 1).odds);
+    }
+    nextDay(w);
+  }
+  assert.ok(bets > 60, `${bets} races with a horse whose odds came in`);
+  assert.ok(worth / bets < 0.76, `$2 on the horse whose odds came in most was worth $${(worth / bets).toFixed(3)} for every $1`);
+});
+
 // Two bets made money with no handicapping. $2 to win on every horse that looked good in the paddock made
 // 4.9%: nobody at the track bet on the paddock, which is read from how the horse really is that day. And $2
 // to place on a favourite at 3-5 or shorter made 6.9%: the public's place money was spread by the chances
